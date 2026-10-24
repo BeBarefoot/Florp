@@ -7,7 +7,8 @@ import {API,request,Geometry,Layout,Pt,Wall,Opening} from '../../../lib/api';
 import {editableEdges,snapPoint,openingPlacement,segmentDistance} from '../../../lib/geometryEditing';
 const Viewer=dynamic(()=>import('../../../components/Viewer3D'),{ssr:false});
 type Candidate={x1:number;y1:number;x2:number;y2:number;score:number};
-type Evidence={segments:(Candidate & {source:string})[];candidates:Candidate[];labels:{text:string;bbox:number[];source:string}[];vector_pdf:boolean;ocr_available:boolean};
+type ScaleSuggestion={text:string;source:string;confidence:number;dimension_m:number;pixels:number;px_per_meter:number};
+type Evidence={scale_suggestions:ScaleSuggestion[];segments:(Candidate & {source:string})[];candidates:Candidate[];labels:{text:string;bbox:number[];source:string}[];vector_pdf:boolean;ocr_available:boolean};
 const dist=(a:Pt,b:Pt)=>Math.hypot(a.x-b.x,a.y-b.y);
 function inside(p:Pt,poly:Pt[]):boolean{
  let result=false;
@@ -110,15 +111,21 @@ export default function Editor(){
    setLayout(l);setGeometry(l.geometry);setStatus('Suggestion accepted as a draft wall.');
   }catch(e){setStatus(String(e))}finally{setBusy(false)}
  }
- function addOpening(edge:{id:string;start:Pt;end:Pt;thickness_m:number;height_m:number},p:Pt,kind:'door'|'window'){
+ async function addOpening(edge:{id:string;start:Pt;end:Pt;thickness_m:number;height_m:number},p:Pt,kind:'door'|'window'){
   if(!geometry)return;
-  if(!geometry.px_per_meter){setStatus('Door/window tool: enter Pixels per meter in Geometry first (e.g. measured from a known dimension).');return;}
-  const opening=openingPlacement(edge,p,geometry,kind);
-  if(!opening){setStatus('Wall is too short for an opening.');return;}
+  const dx=edge.end.x-edge.start.x,dy=edge.end.y-edge.start.y,len2=dx*dx+dy*dy;
+  if(len2<100){setStatus('Wall segment is too short.');return;}
+  const fraction=Math.max(0,Math.min(1,((p.x-edge.start.x)*dx+(p.y-edge.start.y)*dy)/len2));
+  setBusy(true);
   try{
-   const next={...geometry,openings:[...geometry.openings,opening]};
-   setGeometry(next);setStatus(kind+' added (inferred dimensions). Adjust its width, height and sill in the sidebar, then save draft.');
-  }catch(e){setStatus(String(e))}
+    // Save an explicitly provisional opening on the server when scale is unknown.
+    const l=await request<Layout>(`/blueprints/${id}/openings/propose`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({wall_id:edge.id,fraction,kind})
+    });
+    setLayout(l);setGeometry(l.geometry);
+    setStatus(kind+' inserted. Dimensions are provisional until verified against plan measurements.');
+  }catch(e){setStatus(String(e))}finally{setBusy(false)}
  }
  function removeOpening(id:string){if(!geometry)return;setGeometry({...geometry,openings:geometry.openings.filter(o=>o.id!==id)});}
  function changeOpening(id:string,field:'width_m'|'height_m'|'offset_m'|'sill_m',raw:string){
@@ -139,7 +146,7 @@ export default function Editor(){
  {geometry&&<div className="grid" style={{gridTemplateColumns:'minmax(0,2fr) minmax(290px,1fr)'}}>
  <div className="panel"><h2>{view==='2d'?'Floor-plan overlay':'3D shell · same outline'}</h2>
  {view==='2d'&&<div className="notice" style={{marginBottom:12}}>
- {mode==='door'||mode==='window'?'Click anywhere NEAR a wall to add an opening. Set pixels per meter first.':
+ {mode==='door'||mode==='window'?'Click near a wall to place a provisional opening. No manual scale entry required.':
  mode==='wall'?'Click two points to draw a wall; snapping is enabled.':
  'Auto-detected wall candidates are shown in blue. Select a candidate to label it or accept it.'}
  </div>}
@@ -190,8 +197,8 @@ export default function Editor(){
  </svg>:<Viewer geometry={geometry}/>}
  <p className="muted">{mode==='wall'?'Click two points to draw a continuous wall. Endpoints snap to nearby vertices and near-horizontal/vertical axes.':mode==='door'||mode==='window'?'Click a wall edge to place an opening. Draw continuous walls first—never leave a gap manually.':'Drag room vertices; nearby joints snap and matching walls follow.'} Detection is shown by default but is not verified geometry.</p></div>
  <div className="stack"><div className="panel stack"><h2>Geometry</h2>
- <label>Pixels per meter <input type="number" min=".001" step=".1" value={geometry.px_per_meter??''}
- onChange={e=>setGeometry({...geometry,px_per_meter:e.target.value?Number(e.target.value):null})} placeholder="Set from reliable dimension"/></label>
+ <details><summary>Advanced calibration (optional)</summary><label>Pixels per meter <input type="number" min=".001" step=".1" value={geometry.px_per_meter??''}
+ onChange={e=>setGeometry({...geometry,px_per_meter:e.target.value?Number(e.target.value):null})} placeholder="Use confirmed dimension"/></label></details>
  <span className="pill">{geometry.rooms.length} rooms · {geometry.walls.length} stored walls</span>
  <small>Detected {evidence?.segments.length??0} raw strokes · {evidence?.candidates.length??0} unfiltered possible walls · {suggestions.length} shown after local filtering</small>
  <small>Draw the full continuous perimeter and partitions, including across openings. Use Add door / Add window to cut into a wall. Snapping uses existing geometry, not image pixels.</small>
@@ -205,6 +212,15 @@ export default function Editor(){
  <button className="secondary" onClick={()=>void acceptSuggestion(selectedCandidate)}>Accept as draft</button></div>
  </div>}
  <button className="secondary" onClick={()=>void exportLabels()}>Export training annotations (JSON)</button>
+ <h2>Dimension evidence</h2>
+ {geometry.px_per_meter?<p><small>Scale set: {geometry.px_per_meter.toFixed(2)} px/m — confirm against plan dimensioning.</small></p>:
+ <p className="notice">No confirmed scale yet. Openings can be drafted, but their physical widths need confirmation.</p>}
+ {(evidence?.scale_suggestions||[]).length===0&&<small>No confidently paired OCR dimensions. Check PDF quality or confirm a labeled dimension later.</small>}
+ {(evidence?.scale_suggestions||[]).map((s,i)=><div key={i} className="row">
+ <small>{s.text} cm? alongside {Math.round(s.pixels)} px → {Math.round(s.px_per_meter)} px/m (low confidence)</small>
+ <button className="secondary" onClick={()=>{if(!geometry)return;
+   setGeometry({...geometry,px_per_meter:s.px_per_meter,warnings:geometry.warnings.filter(w=>!w.toLowerCase().includes('provisional'))});
+   setStatus('Scale hypothesis selected. Confirm that '+s.text+' is centimeters and refers to the highlighted plan dimension.');}}>Use estimate</button></div>)}
  <h2>Openings ({geometry.openings.length})</h2>
  {geometry.openings.map(o=><div className="stack" key={o.id} style={{padding:10,border:'1px solid #dce2e8',borderRadius:8}}>
  <div className="row"><strong>{o.kind} · {o.wall_id.slice(0,25)}</strong><button className="secondary" onClick={()=>removeOpening(o.id)}>Remove</button></div>

@@ -86,3 +86,12 @@ The 2D editor again displays **all automatic paired-line wall candidates by defa
 Door/window tools now use the nearest wall centerline to a canvas click instead of requiring a precisely hit transparent SVG stroke. Set **Pixels per meter** first. Openings are editable and unverified until confirmed.
 
 If the OpenAI API returns HTTP 401/403, Florp provides a targeted authentication error. Put an active API key from the correct provider in `apps/api/.env` as `LLM_API_KEY`, confirm `LLM_BASE_URL` and `LLM_MODEL`, and restart the backend. ChatGPT Plus is not an OpenAI API credential.
+
+
+## Extraction-first workflow and measurement evidence
+
+Local OCR/PDF labels and long axis-aligned vector/scan lines are combined to yield *low-confidence* scale hypotheses via `GET /blueprints/{id}/evidence`, under `scale_suggestions`. These are speculative label-to-line matches, not a verified measurement: clicking **Use estimate** accepts one tentative scale, but the association and unit must be checked. No numeric annotation is silently promoted to verified geometry. The editor allows provisional door/window placement without user entering a scale; provisional metrics remain flagged and verification is blocked until confirmed. Manual pixels-per-meter entry remains an advanced option, not the primary workflow. Accurate semantic wall, door and window identification still requires a reviewed benchmark and dedicated extraction work.
+
+## Groq configuration
+
+Groq: `LLM_BASE_URL=https://api.groq.com/openai/v1`, `LLM_MODEL=qwen/qwen3.8-27b` (check currently available models), and `LLM_API_KEY` set to a valid Groq key. OpenAI model IDs do not transfer automatically to Groq. `GET /vision/provider-check` performs a credential-protected model-list lookup and returns only model status without revealing the key. HTTP 404 and 400 yield actionable configuration messages rather than a generic 502.

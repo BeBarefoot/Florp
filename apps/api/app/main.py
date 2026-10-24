@@ -10,7 +10,7 @@ import fitz
 from .config import settings
 from .models import Project, Blueprint, Layout, Render, WallAnnotation
 from .geometry import Geometry, fallback_geometry, validate_geometry
-from .providers import extract_geometry, ProviderUnavailable, ProviderAuthenticationError
+from .providers import extract_geometry, ProviderUnavailable, ProviderAuthenticationError, ProviderConfigurationError
 from .evidence import inspect_plan
 from .reconcile import reconcile
 from .geometry import Wall, Pt
@@ -78,12 +78,35 @@ def blueprint_evidence(bid:str):
     if not bp:raise HTTPException(404,'Not found')
     return inspect_plan(Path(bp.local_path),Path(bp.preview_path))
 
+
+@app.get('/vision/provider-check')
+async def vision_provider_check():
+    # No credentials are exposed. This endpoint only verifies model access.
+    import httpx
+    from .config import settings
+    if not settings.llm_api_key:
+        return {'configured':False,'message':'LLM_API_KEY not configured'}
+    url=settings.llm_base_url.rstrip('/')+'/models'
+    try:
+        async with httpx.AsyncClient(timeout=12) as client:
+            response=await client.get(url,headers={'Authorization':'Bearer '+settings.llm_api_key})
+        if response.status_code in (401,403):
+            return {'configured':True,'ok':False,'message':'Provider authentication rejected API key'}
+        if response.status_code!=200:
+            return {'configured':True,'ok':False,'message':'Provider model-list HTTP '+str(response.status_code)}
+        ids={m.get('id') for m in response.json().get('data',[]) if isinstance(m,dict)}
+        return {'configured':True,'ok':settings.llm_model in ids,'model':settings.llm_model,
+          'message':'Model is listed by provider' if settings.llm_model in ids else 'Configured LLM_MODEL not found in provider model list; choose a vision-capable model'}
+    except (httpx.HTTPError,ValueError,KeyError) as exc:
+        return {'configured':True,'ok':False,'message':'Unable to validate provider models: '+type(exc).__name__}
+
 @app.post('/blueprints/{bid}/extract')
 async def extract(bid:str):
     with Session(engine) as s:bp=s.get(Blueprint,bid)
     if not bp:raise HTTPException(404,'Not found')
     data=Path(bp.preview_path).read_bytes()
     try:g=await extract_geometry(data,'image/png',bp.width,bp.height)
+    except ProviderConfigurationError as e:raise HTTPException(424,str(e))
     except ProviderAuthenticationError as e:raise HTTPException(424,str(e))
     except ProviderUnavailable as e:raise HTTPException(424,str(e))
     except Exception as e:raise HTTPException(502,f'Vision provider error: {type(e).__name__}: {e}')
@@ -178,6 +201,54 @@ def accept_candidate(bid:str, body:AcceptCandidate):
         s.add(row);s.commit();s.refresh(row)
         return row
 
+class ProvisionalOpeningInput(BaseModel):
+    kind: str
+    wall_id: str
+    fraction: float
+
+@app.post('/blueprints/{bid}/openings/propose')
+def propose_opening(bid:str,body:ProvisionalOpeningInput):
+    # Persist a draft without requiring user to manually calibrate measurement.
+    # When scale is absent, use an explicit provisional estimate; never mark verified.
+    from uuid import uuid4
+    from math import hypot
+    from .geometry import Opening
+    if body.kind not in ('door','window') or not 0<=body.fraction<=1:
+        raise HTTPException(422,'Invalid opening type or position')
+    with Session(engine) as s:
+        bp=s.get(Blueprint,bid)
+        if not bp:raise HTTPException(404,'Blueprint not found')
+        current=s.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
+        if not current:raise HTTPException(404,'Layout not found')
+        g=Geometry.model_validate(current.geometry).model_copy(deep=True)
+        edges={w.id:(w.start,w.end) for w in g.walls}
+        for room in g.rooms:
+            for i,p in enumerate(room.points):
+                edges['boundary:'+room.id+':'+str(i)]=(p,room.points[(i+1)%len(room.points)])
+        if body.wall_id not in edges:raise HTTPException(422,'Wall no longer exists')
+        a,b=edges[body.wall_id]
+        length_px=hypot(b.x-a.x,b.y-a.y)
+        if length_px<10:raise HTTPException(422,'Wall too short')
+        # This value is only a draft metric convenience if no dimension is verified.
+        ppm=g.px_per_meter or 60.0
+        length_m=length_px/ppm
+        width=min(.9 if body.kind=='door' else 1.2,length_m*.6)
+        if width<.12:raise HTTPException(422,'Wall too short')
+        offset=max(0,min(length_m-width,body.fraction*length_m-width/2))
+        # Fail safely if the tentative span collides with an existing opening.
+        for existing in g.openings:
+            if existing.wall_id==body.wall_id and offset < existing.offset_m+existing.width_m and existing.offset_m < offset+width:
+                raise HTTPException(409,'Opening overlaps an existing opening')
+        opening=Opening(id='opening-'+uuid4().hex[:12],kind=body.kind,wall_id=body.wall_id,
+          offset_m=round(offset,3),width_m=round(width,3),height_m=2.1 if body.kind=='door' else 1.2,
+          sill_m=0 if body.kind=='door' else .9,inferred=True)
+        g.openings.append(opening)
+        if not g.px_per_meter:
+            g.warnings=list(dict.fromkeys(g.warnings+['Opening metrics are provisional; scale must be confirmed before verification']))
+        row=Layout(blueprint_id=bid,version=current.version+1,verified=False,geometry=g.model_dump())
+        s.add(row);s.commit();s.refresh(row)
+        return row
+
 class SaveLayout(BaseModel):
     geometry:Geometry
     verified:bool=False
@@ -187,6 +258,8 @@ def save_layout(bid:str,body:SaveLayout):
         if not s.get(Blueprint,bid):raise HTTPException(404,'Not found')
         last=s.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
         warnings=validate_geometry(body.geometry)
+        if body.verified and body.geometry.openings and any('provisional' in w.lower() for w in body.geometry.warnings):
+            warnings.append('Confirm scale and provisional opening dimensions before verification')
         if body.verified and warnings:raise HTTPException(422,{'message':'Resolve validation issues before verification','issues':warnings})
         row=Layout(blueprint_id=bid,version=(last.version+1 if last else 1),verified=body.verified,geometry=body.geometry.model_dump())
         s.add(row);s.commit();s.refresh(row);return row

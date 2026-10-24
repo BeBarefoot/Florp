@@ -4,6 +4,7 @@ from .config import settings
 from .geometry import Geometry
 class ProviderUnavailable(RuntimeError): pass
 class ProviderAuthenticationError(ProviderUnavailable): pass
+class ProviderConfigurationError(ProviderUnavailable): pass
 async def extract_geometry(image_bytes:bytes,mime:str,width:int,height:int)->Geometry:
     if not settings.llm_api_key: raise ProviderUnavailable('LLM_API_KEY is missing. Add it to apps/api/.env')
     schema=Geometry.model_json_schema()
@@ -19,6 +20,14 @@ async def extract_geometry(image_bytes:bytes,mime:str,width:int,height:int)->Geo
         r=await c.post(settings.llm_base_url.rstrip('/')+'/chat/completions',headers={'Authorization':f'Bearer {settings.llm_api_key}'},json=body)
         if r.status_code in (401,403):
             raise ProviderAuthenticationError('Vision API authentication failed (HTTP '+str(r.status_code)+'). Check LLM_API_KEY in apps/api/.env, the key provider and LLM_BASE_URL. A ChatGPT Plus subscription is not an API key. Restart the backend after changing .env. No API key was logged.')
+        if r.status_code==404:
+            raise ProviderConfigurationError(
+                'Vision endpoint/model returned HTTP 404. Check LLM_BASE_URL and LLM_MODEL together. '
+                'For Groq use https://api.groq.com/openai/v1 and a supported vision model (check GET /models). '
+                'An OpenAI model name such as gpt-4.1-mini cannot be used on Groq. '
+                'Provider message: '+str(r.text[:350]))
+        if r.status_code==400:
+            raise ProviderConfigurationError('Vision provider rejected the request (HTTP 400). Confirm the model supports image input and the required API format. Provider message: '+str(r.text[:350]))
         r.raise_for_status()
         content=r.json()['choices'][0]['message']['content']
     if content.strip().startswith('```'):
