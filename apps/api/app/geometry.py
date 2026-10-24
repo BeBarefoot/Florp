@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 from math import hypot
 class Pt(BaseModel):
@@ -18,7 +18,7 @@ class Wall(BaseModel):
     inferred: bool = True
 class Opening(BaseModel):
     id: str
-    kind: str
+    kind: Literal['door', 'window']
     wall_id: str
     offset_m: float = Field(ge=0)
     width_m: float = Field(gt=0)
@@ -35,13 +35,28 @@ class Geometry(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     @model_validator(mode='after')
     def check(self):
-        ids={w.id for w in self.walls}
+        edges={w.id:(w.start,w.end,w.height_m) for w in self.walls}
+        for room in self.rooms:
+            for i,a in enumerate(room.points):
+                edges['boundary:'+room.id+':'+str(i)]=(a,room.points[(i+1)%len(room.points)],2.8)
+        by_wall={}
         for o in self.openings:
-            if o.wall_id not in ids: raise ValueError(f'Opening {o.id} has unknown wall')
-            w=next(w for w in self.walls if w.id==o.wall_id)
-            length=hypot(w.end.x-w.start.x,w.end.y-w.start.y)
-            if self.px_per_meter and (o.offset_m+o.width_m)*self.px_per_meter > length+1:
-                raise ValueError(f'Opening {o.id} exceeds wall length')
+            if o.wall_id not in edges: raise ValueError(f'Opening {o.id} has unknown wall')
+            a,b,height=edges[o.wall_id]
+            if o.sill_m+o.height_m>height+0.001:
+                raise ValueError(f'Opening {o.id} exceeds wall height')
+            if o.kind=='door' and o.sill_m>0.001:
+                raise ValueError(f'Door {o.id} must start at floor')
+            if self.px_per_meter:
+                length=hypot(b.x-a.x,b.y-a.y)/self.px_per_meter
+                if o.offset_m+o.width_m>length+0.001:
+                    raise ValueError(f'Opening {o.id} exceeds wall length')
+            by_wall.setdefault(o.wall_id,[]).append(o)
+        for wall_id,items in by_wall.items():
+            items=sorted(items,key=lambda x:x.offset_m)
+            for left,right in zip(items,items[1:]):
+                if left.offset_m+left.width_m>right.offset_m+0.001:
+                    raise ValueError(f'Overlapping openings on {wall_id}')
         return self
 
 def _segments_cross(a,b,c,d):
@@ -72,6 +87,7 @@ def validate_geometry(g:Geometry)->list[str]:
         for p in (wall.start,wall.end):
             if not (0<=p.x<=g.width_px and 0<=p.y<=g.height_px):
                 errors.append(f'Wall {wall.id} exceeds image')
+    if g.openings and not g.px_per_meter: errors.append('Openings require calibrated scale')
     if not g.px_per_meter: errors.append('Scale is not calibrated; metric geometry is provisional')
     return errors
 

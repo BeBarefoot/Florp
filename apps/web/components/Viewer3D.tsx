@@ -3,7 +3,8 @@ import {useMemo} from 'react';
 import {Canvas} from '@react-three/fiber';
 import {OrbitControls, Grid} from '@react-three/drei';
 import * as THREE from 'three';
-import type {Geometry, Pt, Wall} from '../lib/api';
+import type {Geometry, Pt, Opening} from '../lib/api';
+import {editableEdges} from '../lib/geometryEditing';
 
 // The editable 2D room outlines are authoritative for the displayed 3D shell.
 // Legacy w0-w3 starter walls are deliberately not rendered as a second rectangle.
@@ -31,19 +32,35 @@ function shellEdges(geometry:Geometry):Edge[]{
       const b=r.points[(i+1)%r.points.length];
       if(Math.hypot(a.x-b.x,a.y-b.y)<2)return;
       const ends=[key(a),key(b)].sort().join('|');
-      if(!unique.has(ends))unique.set(ends,{a,b,id:'boundary-'+ends,thickness:.15,height:2.8});
+      if(!unique.has(ends))unique.set(ends,{a,b,id:'boundary:'+r.id+':'+i,thickness:.15,height:2.8});
     });
   }
   return [...unique.values()];
 }
-function WallMesh({edge,scale,color}:{edge:Edge;scale:number;color:string}){
-  const dx=edge.b.x-edge.a.x,dz=edge.b.y-edge.a.y;
-  const len=Math.hypot(dx,dz)/scale;
-  return <mesh position={[(edge.a.x+edge.b.x)/(2*scale),edge.height/2,(edge.a.y+edge.b.y)/(2*scale)]}
-    rotation={[0,-Math.atan2(dz,dx),0]}>
-    <boxGeometry args={[len,edge.height,edge.thickness]}/>
-    <meshStandardMaterial color={color} transparent opacity={.76}/>
-  </mesh>;
+function WallMesh({edge,scale,color,openings}:{edge:Edge;scale:number;color:string;openings:Opening[]}){
+ const dx=edge.b.x-edge.a.x,dz=edge.b.y-edge.a.y,length=Math.hypot(dx,dz)/scale;
+ const pos=[(edge.a.x+edge.b.x)/(2*scale),0,(edge.a.y+edge.b.y)/(2*scale)] as const;
+ const cuts=openings.filter(o=>o.wall_id===edge.id).sort((a,b)=>a.offset_m-b.offset_m);
+ const chunks:{start:number;end:number;low:number;high:number}[]=[];
+ let cursor=0;
+ for(const o of cuts){
+  const start=Math.max(cursor,Math.min(length,o.offset_m)),end=Math.min(length,start+o.width_m);
+  if(start>cursor+.001)chunks.push({start:cursor,end:start,low:0,high:edge.height});
+  if(end>start){
+   if(o.sill_m>.001)chunks.push({start,end,low:0,high:Math.min(o.sill_m,edge.height)});
+   const top=o.sill_m+o.height_m;
+   if(top<edge.height-.001)chunks.push({start,end,low:top,high:edge.height});
+  }
+  cursor=Math.max(cursor,end);
+ }
+ if(cursor<length-.001)chunks.push({start:cursor,end:length,low:0,high:edge.height});
+ return <group position={[pos[0],0,pos[2]]} rotation={[0,-Math.atan2(dz,dx),0]}>
+  {chunks.filter(c=>c.end-c.start>.001&&c.high-c.low>.001).map((c,i)=>
+   <mesh key={i} position={[(c.start+c.end-length)/2,(c.low+c.high)/2,0]}>
+    <boxGeometry args={[c.end-c.start,c.high-c.low,edge.thickness]}/>
+    <meshStandardMaterial color={color} transparent opacity={.83}/>
+   </mesh>)}
+ </group>;
 }
 export default function Viewer3D({geometry}:{geometry:Geometry}){
   const scale=geometry.px_per_meter||60;
@@ -77,8 +94,8 @@ export default function Viewer3D({geometry}:{geometry:Geometry}){
       <Grid infiniteGrid cellSize={1} sectionSize={5}/>
       {data.floors.map(f=><mesh key={f.id} geometry={f.mesh} position={[0,.015,0]}>
         <meshStandardMaterial color="#dceae2" side={THREE.DoubleSide}/></mesh>)}
-      {data.edges.map(e=><WallMesh key={e.id} edge={e} scale={scale} color="#d1dae0"/>)}
-      {data.independent.map(w=><WallMesh key={w.id} edge={{a:w.start,b:w.end,id:w.id,thickness:w.thickness_m,height:w.height_m}} scale={scale} color="#5b8aab"/>)}
+      {data.edges.map(e=><WallMesh key={e.id} edge={e} scale={scale} openings={geometry.openings} color="#d1dae0"/>)}
+      {data.independent.map(w=><WallMesh key={w.id} edge={{a:w.start,b:w.end,id:w.id,thickness:w.thickness_m,height:w.height_m}} scale={scale} openings={geometry.openings} color="#5b8aab"/>)}
       <OrbitControls makeDefault target={target}/>
     </Canvas>
     {geometry.rooms.some(r=>!validPolygon(r.points))&&<p className="notice">A room polygon is invalid or self-intersecting; its 3D floor and boundary were skipped. Correct it in 2D.</p>}
