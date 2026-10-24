@@ -7,6 +7,8 @@ import {API,request,Geometry,Layout,Pt,Wall,Opening} from '../../../lib/api';
 import {editableEdges,snapPoint,openingPlacement,segmentDistance} from '../../../lib/geometryEditing';
 const Viewer=dynamic(()=>import('../../../components/Viewer3D'),{ssr:false});
 type Candidate={x1:number;y1:number;x2:number;y2:number;score:number};
+type ModelBox={category:string;confidence:number;x1:number;y1:number;x2:number;y2:number};
+type ModelDetections={provider:string;output_type:string;image_width:number;image_height:number;boxes:ModelBox[];warning:string};
 type ScaleSuggestion={text:string;source:string;confidence:number;dimension_m:number;pixels:number;px_per_meter:number};
 type Evidence={automatic_scale?:{px_per_meter:number;confidence:number;evidence_count:number;supporting_labels:string[]}|null;scale_suggestions:ScaleSuggestion[];segments:(Candidate & {source:string})[];candidates:Candidate[];labels:{text:string;bbox:number[];source:string}[];vector_pdf:boolean;ocr_available:boolean};
 const dist=(a:Pt,b:Pt)=>Math.hypot(a.x-b.x,a.y-b.y);
@@ -38,6 +40,8 @@ export default function Editor(){
  const [evidence,setEvidence]=useState<Evidence|null>(null);
  const [status,setStatus]=useState(''),[busy,setBusy]=useState(false);
  const [view,setView]=useState<'2d'|'3d'>('2d');
+ const [modelDetections,setModelDetections]=useState<ModelDetections|null>(null);
+ const [showModelDetections,setShowModelDetections]=useState(true),[modelBusy,setModelBusy]=useState(false);
  const [grayscale,setGrayscale]=useState(true),[showRaw,setShowRaw]=useState(false),[showSuggestions,setShowSuggestions]=useState(true);
  const [reviewScope,setReviewScope]=useState<'all'|'near'>('all');
  const [reviewLabels,setReviewLabels]=useState<Record<string,string>>({}),[selectedCandidate,setSelectedCandidate]=useState<Candidate|null>(null);
@@ -61,6 +65,15 @@ export default function Editor(){
    return geometry.rooms.some(r=>nearPolygon(p,r.points,margin));
   });
  },[evidence,geometry,reviewScope]);
+ async function runPretrained(){
+   setModelBusy(true);setStatus('');
+   try{
+     const result=await request<ModelDetections>(`/blueprints/${id}/pretrained-detections`,{method:'POST'});
+     setModelDetections(result);setShowModelDetections(true);
+     setStatus('Local pretrained detector found '+result.boxes.length+' object boxes. These are provisional, not wall centerlines.');
+   }catch(err){setStatus(String(err))}
+   finally{setModelBusy(false)}
+ }
  async function extract(){setBusy(true);setStatus('');try{
   const l=await request<Layout>(`/blueprints/${id}/extract`,{method:'POST'});
   setLayout(l);setGeometry(l.geometry);setStatus('AI proposal loaded. Review and calibrate all geometry before verifying.');
@@ -151,6 +164,9 @@ export default function Editor(){
  'Auto-detected wall candidates are shown in blue. Select a candidate to label it or accept it.'}
  </div>}
  {view==='2d'&&<div className="row" style={{marginBottom:12}}>
+ <button className="secondary" disabled={modelBusy||busy} onClick={()=>void runPretrained()}>
+ {modelBusy?'Running local model…':'Run pretrained model'}</button>
+ {modelDetections&&<label><input type="checkbox" checked={showModelDetections} onChange={e=>setShowModelDetections(e.target.checked)}/> Model boxes ({modelDetections.boxes.length})</label>}
  <label><input type="checkbox" checked={grayscale} onChange={e=>setGrayscale(e.target.checked)}/> Grayscale</label>
  <label><input type="checkbox" checked={showSuggestions} onChange={e=>setShowSuggestions(e.target.checked)}/> Auto-detected walls ({suggestions.length}/{evidence?.candidates.length??0})</label>
  <select value={reviewScope} onChange={e=>setReviewScope(e.target.value as 'all'|'near')} aria-label="Candidate filter">
@@ -171,6 +187,11 @@ export default function Editor(){
  }}>
  <image href={`${API}/blueprints/${id}/preview`} width={geometry.width_px} height={geometry.height_px}
  style={{filter:grayscale?'grayscale(1) contrast(1.12) brightness(1.08)':'none'}}/>
+ {showModelDetections&&modelDetections?.boxes.map((b,i)=>
+ <g key={'model-'+i} pointerEvents="none"><rect x={b.x1} y={b.y1} width={b.x2-b.x1} height={b.y2-b.y1}
+ stroke={b.category.includes('wall')?'#8b5cf6':b.category.includes('door')?'#ea580c':b.category.includes('window')?'#0891b2':'#737373'}
+ strokeWidth={Math.max(2,geometry.width_px/420)} fill="none" strokeDasharray="8 5"/>
+ <title>{b.category+' · '+(b.confidence*100).toFixed(1)+'%'}</title></g>)}
  {showRaw&&evidence?.segments.map((s,i)=><line key={'raw'+i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke="#d98d26" strokeWidth={Math.max(1,geometry.width_px/700)} opacity={.3} pointerEvents="none"/>)}
  {showSuggestions&&suggestions.map((s,i)=><line key={'candidate'+i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
  stroke={reviewLabels[candidateKey(s)]==='not_wall'?'#b91c1c':reviewLabels[candidateKey(s)]==='wall'?'#16a34a':'#2563eb'} strokeWidth={Math.max(3,geometry.width_px/230)} opacity={.82} style={{cursor:'pointer'}}
@@ -202,6 +223,13 @@ export default function Editor(){
  <span className="pill">{geometry.rooms.length} rooms · {geometry.walls.length} stored walls</span>
  <small>Detected {evidence?.segments.length??0} raw strokes · {evidence?.candidates.length??0} unfiltered possible walls · {suggestions.length} shown after local filtering</small>
  <small>Draw the full continuous perimeter and partitions, including across openings. Use Add door / Add window to cut into a wall. Snapping uses existing geometry, not image pixels.</small>
+ <h2>Pretrained object detection</h2>
+ <small>Purple dashed boxes: walls. Orange: doors. Cyan: windows. Gray: other classes. Boxes do NOT provide exact wall endpoints or opening locations.</small>
+ {modelDetections?<div className="stack">
+ <strong>{modelDetections.provider}: {modelDetections.boxes.length} detected objects</strong>
+ {Object.entries(modelDetections.boxes.reduce<Record<string,number>>((count,b)=>({...count,[b.category]:(count[b.category]||0)+1}),{})).map(([name,count])=><small key={name}>{name}: {count}</small>)}
+ <small>{modelDetections.warning}</small></div>:
+ <small>Click Run pretrained model above after installing the optional local checkpoint. No API token required.</small>}
  <h2>Wall detection review</h2>
  <small>Blue: unreviewed · green: wall · red: not wall. All candidates are heuristic, not a trained segmentation model.</small>
  {selectedCandidate&&<div className="stack" style={{border:'1px solid #ccd5e0',padding:9,borderRadius:8}}>

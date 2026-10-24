@@ -22,6 +22,10 @@ dependencies = [
  "python-dotenv>=1,<2",
  "pytesseract>=0.3.13,<1"
 ]
+[project.optional-dependencies]
+# Experimental only: consult AGPL-3.0 / Enterprise licensing for Ultralytics.
+pretrained-yolo = ["ultralytics>=8.2.8,<9"]
+
 [dependency-groups]
 dev=["pytest>=8,<10"]
 [tool.hatch.build.targets.wheel]

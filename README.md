@@ -107,3 +107,16 @@ uv run python scripts/analyze_training.py "/path/to/training session1.json"
 ```
 
 Session 1 currently contains 31 `not_wall` labels, zero positive walls and zero manually drawn walls. These are valuable negative examples but insufficient to train or evaluate a wall model. We need confirmed walls, missing walls, different blueprint styles and a held-out evaluation set. The report flags class imbalance and duplicate segment labels; it does not claim trained accuracy.
+
+
+## Optional pretrained YOLO detector (research integration)
+
+Florp can run the actual pretrained `best.pt` from [sanatladkat/floor-plan-object-detection](https://github.com/sanatladkat/floor-plan-object-detection) on the local machine. The upstream project includes a 49.6 MB YOLOv8 checkpoint and is MIT-licensed, **but its Ultralytics inference runtime has AGPL-3.0 / Enterprise licensing considerations**; do not deploy this in a proprietary SaaS without reviewing those terms. This feature is opt-in and NOT enabled in the baseline install.
+
+1. Review the checkpoint source and licensing; PyTorch checkpoint loading can execute code and must only be used with trusted weights.
+2. Run `cd apps/api && uv sync --extra pretrained-yolo`.
+3. Download the upstream `best.pt` from `https://github.com/sanatladkat/floor-plan-object-detection/blob/main/best.pt` yourself and store it outside Git (e.g. `apps/api/models/best.pt`).
+4. Set `PRETRAINED_YOLO_WEIGHTS=./models/best.pt` in `apps/api/.env`; restart API.
+5. In the 2D editor click **Run pretrained model**. A local POST to `/blueprints/{id}/pretrained-detections` returns class-labelled bounding boxes and confidence, and draws dashed outlines (purple wall / orange door / cyan window). This does not contact OpenAI, Groq, or another API.
+
+**Do not mistake boxes for geometrically aligned wall centerlines or cut actual openings automatically.** This is a baseline for comparing class detection to the existing line heuristic. Check the real model classes and quality on your scanned plans. Weights are never redistributed by Florp.

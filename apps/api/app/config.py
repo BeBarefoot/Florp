@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     image_api_key: str = ''
     image_model: str = 'fal-ai/flux-control-lora-depth'
     fal_api_base: str = 'https://queue.fal.run'
+    pretrained_yolo_weights: str = ''
     max_upload_mb: int = 20
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
 settings = Settings()

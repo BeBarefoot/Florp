@@ -14,6 +14,7 @@ from .providers import extract_geometry, ProviderUnavailable, ProviderAuthentica
 from .evidence import inspect_plan
 from .reconcile import reconcile
 from .geometry import Wall, Pt
+from .pretrained_detector import DetectorResult, DetectorUnavailable, detect_objects
 
 Path(settings.storage_path).mkdir(parents=True,exist_ok=True)
 if settings.database_url.startswith('sqlite:///'):
@@ -105,6 +106,16 @@ async def vision_provider_check():
           'message':'Model is listed by provider' if settings.llm_model in ids else 'Configured LLM_MODEL not found in provider model list; choose a vision-capable model'}
     except (httpx.HTTPError,ValueError,KeyError) as exc:
         return {'configured':True,'ok':False,'message':'Unable to validate provider models: '+type(exc).__name__}
+
+@app.post('/blueprints/{bid}/pretrained-detections', response_model=DetectorResult)
+def pretrained_detections(bid: str):
+    with Session(engine) as s:
+        bp=s.get(Blueprint,bid)
+        if not bp:raise HTTPException(404,'Blueprint not found')
+    try:
+        return detect_objects(Path(bp.preview_path),bp.width,bp.height)
+    except DetectorUnavailable as exc:
+        raise HTTPException(424,str(exc))
 
 @app.post('/blueprints/{bid}/extract')
 async def extract(bid:str):

@@ -15,3 +15,8 @@ data/
 **/.venv/
 training-data/
 apps/api/training-data/
+
+*.pt
+*.pth
+*.onnx
+models/
