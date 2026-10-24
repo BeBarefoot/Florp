@@ -11,6 +11,8 @@ from .config import settings
 from .models import Project, Blueprint, Layout, Render
 from .geometry import Geometry, fallback_geometry, validate_geometry
 from .providers import extract_geometry, ProviderUnavailable
+from .evidence import inspect_plan
+from .reconcile import reconcile
 
 Path(settings.storage_path).mkdir(parents=True,exist_ok=True)
 if settings.database_url.startswith('sqlite:///'):
@@ -69,6 +71,12 @@ def get_layout(bid:str):
         row=s.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
         if not row:raise HTTPException(404,'No layout')
         return row
+@app.get('/blueprints/{bid}/evidence')
+def blueprint_evidence(bid:str):
+    with Session(engine) as s:bp=s.get(Blueprint,bid)
+    if not bp:raise HTTPException(404,'Not found')
+    return inspect_plan(Path(bp.local_path),Path(bp.preview_path))
+
 @app.post('/blueprints/{bid}/extract')
 async def extract(bid:str):
     with Session(engine) as s:bp=s.get(Blueprint,bid)
@@ -77,7 +85,7 @@ async def extract(bid:str):
     try:g=await extract_geometry(data,'image/png',bp.width,bp.height)
     except ProviderUnavailable as e:raise HTTPException(424,str(e))
     except Exception as e:raise HTTPException(502,f'Vision provider error: {type(e).__name__}: {e}')
-    warnings=validate_geometry(g);g.warnings.extend(warnings)
+    g=reconcile(g,inspect_plan(Path(bp.local_path),Path(bp.preview_path)))
     with Session(engine) as s:
         last=s.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
         row=Layout(blueprint_id=bid,version=(last.version+1 if last else 1),geometry=g.model_dump())

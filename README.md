@@ -53,3 +53,10 @@ The local API is intended for trusted development on localhost only. There is no
 2. Constraint graph and shared-wall editor, structural validator and annotation diffs.
 3. Robust 3D opening meshes, deterministic depth/edge renders, provider-specific image generation and polling.
 4. Design-state revisions and masked editing, benchmarks/telemetry, auth, queue and model-training exports.
+
+
+## Milestone 2: evidence extraction and conservative fusion
+
+The editor's **Show detected line evidence** option overlays PDF-native vector lines (blue) or OpenCV raster Hough lines (orange); the sidebar displays native PDF text or Tesseract OCR tokens. These are *observations*, not verified geometry. The explicit `GET /blueprints/{id}/evidence` endpoint runs locally and needs no API key. When a configured vision model produces a proposed layout, the backend reconciles duplicate wall segments, checks nearby geometric evidence and preserves room coordinates rather than moving them based on uncertain line matches.
+
+For OCR on scanned plans, install the open-source `tesseract` executable on your machine in addition to Python requirements. Without it, the app still works and reports that OCR is unavailable. The current extractor does **not** infer full room polygons solely from OpenCV line detection and does not claim the 90% accuracy target; that requires benchmark evaluation and advanced wall graph reconstruction.
