@@ -8,6 +8,7 @@ import fitz
 import numpy as np
 from PIL import Image
 from pydantic import BaseModel, Field
+from .wall_candidates import WallCandidate, wall_candidates
 
 class Segment(BaseModel):
     x1: float
@@ -31,6 +32,7 @@ class Evidence(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     vector_pdf: bool = False
     ocr_available: bool = False
+    candidates: list[WallCandidate] = Field(default_factory=list)
 
 def _segments(image: Image.Image) -> list[Segment]:
     rgb = np.asarray(image.convert('RGB'))
@@ -117,5 +119,7 @@ def inspect_plan(original: Path, preview: Path) -> Evidence:
             result.warnings.append('OCR skipped; install pytesseract and Tesseract for local OCR')
     if not result.ocr_available:
         result.warnings.append('Tesseract not installed: raster OCR unavailable; vector PDF text still works')
+    result.candidates = wall_candidates(result.segments, result.labels, result.width, result.height)
+    result.warnings.append('Wall candidates are heuristic paired-lines; manually accept only actual walls')
     result.warnings.append('Lines and text are evidence only, not verified walls, rooms or scale')
     return result

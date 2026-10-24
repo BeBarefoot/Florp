@@ -13,6 +13,7 @@ from .geometry import Geometry, fallback_geometry, validate_geometry
 from .providers import extract_geometry, ProviderUnavailable
 from .evidence import inspect_plan
 from .reconcile import reconcile
+from .geometry import Wall, Pt
 
 Path(settings.storage_path).mkdir(parents=True,exist_ok=True)
 if settings.database_url.startswith('sqlite:///'):
@@ -91,6 +92,37 @@ async def extract(bid:str):
         row=Layout(blueprint_id=bid,version=(last.version+1 if last else 1),geometry=g.model_dump())
         s.add(row);s.commit();s.refresh(row)
         return row
+class AcceptCandidate(BaseModel):
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+@app.post('/blueprints/{bid}/wall-candidates/accept')
+def accept_candidate(bid:str, body:AcceptCandidate):
+    # The user explicitly promotes one suggestion to draft wall geometry.
+    from uuid import uuid4
+    from math import hypot
+    with Session(engine) as s:
+        bp=s.get(Blueprint,bid)
+        if not bp:raise HTTPException(404,'Not found')
+        current=s.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
+        if not current:raise HTTPException(404,'No layout')
+        evidence=inspect_plan(Path(bp.local_path),Path(bp.preview_path))
+        if hypot(body.x2-body.x1,body.y2-body.y1)<5:raise HTTPException(422,'Candidate too short')
+        for x,y in [(body.x1,body.y1),(body.x2,body.y2)]:
+            if not (0<=x<=bp.width and 0<=y<=bp.height):raise HTTPException(422,'Candidate outside image')
+        if not any(max(abs(body.x1-c.x1),abs(body.y1-c.y1),abs(body.x2-c.x2),abs(body.y2-c.y2))<3 for c in evidence.candidates):
+            raise HTTPException(422,'Wall must match a currently detected suggestion')
+        g=Geometry.model_validate(current.geometry).model_copy(deep=True)
+        if any((hypot(w.start.x-body.x1,w.start.y-body.y1)<5 and hypot(w.end.x-body.x2,w.end.y-body.y2)<5) or
+               (hypot(w.start.x-body.x2,w.start.y-body.y2)<5 and hypot(w.end.x-body.x1,w.end.y-body.y1)<5) for w in g.walls):
+            raise HTTPException(409,'Wall already exists')
+        g.walls.append(Wall(id='user-'+uuid4().hex[:12],start=Pt(x=body.x1,y=body.y1),end=Pt(x=body.x2,y=body.y2)))
+        row=Layout(blueprint_id=bid,version=current.version+1,verified=False,geometry=g.model_dump())
+        s.add(row);s.commit();s.refresh(row)
+        return row
+
 class SaveLayout(BaseModel):
     geometry:Geometry
     verified:bool=False
