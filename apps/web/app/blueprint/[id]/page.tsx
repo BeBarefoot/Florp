@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import {useParams} from 'next/navigation';
 import {API,request,Geometry,Layout,Pt,Wall,Opening} from '../../../lib/api';
-import {editableEdges,snapPoint,openingPlacement} from '../../../lib/geometryEditing';
+import {editableEdges,snapPoint,openingPlacement,segmentDistance} from '../../../lib/geometryEditing';
 const Viewer=dynamic(()=>import('../../../components/Viewer3D'),{ssr:false});
 type Candidate={x1:number;y1:number;x2:number;y2:number;score:number};
 type Evidence={segments:(Candidate & {source:string})[];candidates:Candidate[];labels:{text:string;bbox:number[];source:string}[];vector_pdf:boolean;ocr_available:boolean};
@@ -37,12 +37,15 @@ export default function Editor(){
  const [evidence,setEvidence]=useState<Evidence|null>(null);
  const [status,setStatus]=useState(''),[busy,setBusy]=useState(false);
  const [view,setView]=useState<'2d'|'3d'>('2d');
- const [grayscale,setGrayscale]=useState(true),[showRaw,setShowRaw]=useState(false),[showSuggestions,setShowSuggestions]=useState(false);
+ const [grayscale,setGrayscale]=useState(true),[showRaw,setShowRaw]=useState(false),[showSuggestions,setShowSuggestions]=useState(true);
+ const [reviewScope,setReviewScope]=useState<'all'|'near'>('all');
+ const [reviewLabels,setReviewLabels]=useState<Record<string,string>>({}),[selectedCandidate,setSelectedCandidate]=useState<Candidate|null>(null);
  const [mode,setMode]=useState<'edit'|'wall'|'door'|'window'>('edit'),[wallStart,setWallStart]=useState<Pt|null>(null);
  const [prompt,setPrompt]=useState('A sunlit Scandinavian living room with natural oak floors and green velvet furniture');
  useEffect(()=>{
   request<Layout>(`/blueprints/${id}/layout`).then(l=>{setLayout(l);setGeometry(l.geometry)}).catch(e=>setStatus(String(e)));
   request<Evidence>(`/blueprints/${id}/evidence`).then(setEvidence).catch(e=>setStatus('Evidence unavailable: '+String(e)));
+  request<{candidate_key:string;label:string}[]>(`/blueprints/${id}/wall-annotations`).then(a=>setReviewLabels(Object.fromEntries(a.map(x=>[x.candidate_key,x.label])))).catch(()=>{});
  },[id]);
  const edges=useMemo(()=>geometry?editableEdges(geometry):[],[geometry]);
  const suggestions=useMemo(()=>{
@@ -50,12 +53,13 @@ export default function Editor(){
   // Conservative UI review: ignore sheet margins and very short strokes.
   const minLength=Math.max(65,Math.min(geometry.width_px,geometry.height_px)*.23);
   const margin=Math.max(14,Math.min(geometry.width_px,geometry.height_px)*.03);
+  if(reviewScope==='all')return evidence.candidates;
   return evidence.candidates.filter(s=>{
    if(s.score<.59 || Math.hypot(s.x2-s.x1,s.y2-s.y1)<minLength)return false;
    const p={x:(s.x1+s.x2)/2,y:(s.y1+s.y2)/2};
    return geometry.rooms.some(r=>nearPolygon(p,r.points,margin));
   });
- },[evidence,geometry]);
+ },[evidence,geometry,reviewScope]);
  async function extract(){setBusy(true);setStatus('');try{
   const l=await request<Layout>(`/blueprints/${id}/extract`,{method:'POST'});
   setLayout(l);setGeometry(l.geometry);setStatus('AI proposal loaded. Review and calibrate all geometry before verifying.');
@@ -84,6 +88,21 @@ export default function Editor(){
   setGeometry({...geometry,walls:[...geometry.walls,wall]});setWallStart(null);
   setStatus('Draft wall added; save the draft when finished.');
  }
+ const candidateKey=(c:Candidate)=>[c.x1,c.y1,c.x2,c.y2].map(v=>v.toFixed(1)).join(':');
+ async function labelCandidate(c:Candidate,label:'wall'|'not_wall'|'unsure'){
+   try{
+     await request(`/blueprints/${id}/wall-annotations`,{method:'POST',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({...c,label})});
+     setReviewLabels(old=>({...old,[candidateKey(c)]:label}));
+     setStatus('Saved '+label+' label for future detector evaluation/training.');
+   }catch(e){setStatus(String(e))}
+ }
+ async function exportLabels(){
+   try{const data=await request(`/blueprints/${id}/training-export`);
+     const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+     const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='florp-training-'+id+'.json';a.click();URL.revokeObjectURL(url);
+   }catch(e){setStatus(String(e))}
+ }
  async function acceptSuggestion(c:Candidate){
   if(!window.confirm('Accept this uncertain suggestion as a draft wall?'))return;
   setBusy(true);
@@ -93,7 +112,7 @@ export default function Editor(){
  }
  function addOpening(edge:{id:string;start:Pt;end:Pt;thickness_m:number;height_m:number},p:Pt,kind:'door'|'window'){
   if(!geometry)return;
-  if(!geometry.px_per_meter){setStatus('Calibrate pixels per meter before placing door/window widths.');return;}
+  if(!geometry.px_per_meter){setStatus('Door/window tool: enter Pixels per meter in Geometry first (e.g. measured from a known dimension).');return;}
   const opening=openingPlacement(edge,p,geometry,kind);
   if(!opening){setStatus('Wall is too short for an opening.');return;}
   try{
@@ -119,21 +138,37 @@ export default function Editor(){
  {status&&<p className="notice">{status}</p>}
  {geometry&&<div className="grid" style={{gridTemplateColumns:'minmax(0,2fr) minmax(290px,1fr)'}}>
  <div className="panel"><h2>{view==='2d'?'Floor-plan overlay':'3D shell · same outline'}</h2>
+ {view==='2d'&&<div className="notice" style={{marginBottom:12}}>
+ {mode==='door'||mode==='window'?'Click anywhere NEAR a wall to add an opening. Set pixels per meter first.':
+ mode==='wall'?'Click two points to draw a wall; snapping is enabled.':
+ 'Auto-detected wall candidates are shown in blue. Select a candidate to label it or accept it.'}
+ </div>}
  {view==='2d'&&<div className="row" style={{marginBottom:12}}>
  <label><input type="checkbox" checked={grayscale} onChange={e=>setGrayscale(e.target.checked)}/> Grayscale</label>
- <label><input type="checkbox" checked={showSuggestions} onChange={e=>setShowSuggestions(e.target.checked)}/> Experimental suggestions ({suggestions.length})</label>
+ <label><input type="checkbox" checked={showSuggestions} onChange={e=>setShowSuggestions(e.target.checked)}/> Auto-detected walls ({suggestions.length}/{evidence?.candidates.length??0})</label>
+ <select value={reviewScope} onChange={e=>setReviewScope(e.target.value as 'all'|'near')} aria-label="Candidate filter">
+ <option value="all">All detections</option><option value="near">Near current outline</option></select>
  <label><input type="checkbox" checked={showRaw} onChange={e=>setShowRaw(e.target.checked)}/> Raw lines ({evidence?.segments.length??0})</label>
  {(['wall','door','window'] as const).map(tool=><button key={tool} className={mode===tool?'':'secondary'} onClick={()=>{setMode(mode===tool?'edit':tool);setWallStart(null)}}>{tool==='wall'?'Draw wall':tool==='door'?'Add door':'Add window'}</button>)}
  </div>}
  {view==='2d'?<svg className="canvas" viewBox={`0 0 ${geometry.width_px} ${geometry.height_px}`}
  style={{aspectRatio:geometry.width_px/geometry.height_px,touchAction:'none',cursor:mode!=='edit'?'crosshair':'default'}}
- onClick={e=>{if(mode!=='wall')return;const p=localPoint(e.currentTarget,e.clientX,e.clientY);if(p)addWall({x:Math.max(0,Math.min(geometry.width_px,Math.round(p.x))),y:Math.max(0,Math.min(geometry.height_px,Math.round(p.y)))})}}>
+ onClick={e=>{const p=localPoint(e.currentTarget,e.clientX,e.clientY);if(!p)return;
+ if(mode==='wall'){addWall({x:Math.max(0,Math.min(geometry.width_px,Math.round(p.x))),y:Math.max(0,Math.min(geometry.height_px,Math.round(p.y)))});return;}
+ if(mode==='door'||mode==='window'){
+  const ranked=edges.map(edge=>({edge,d:segmentDistance(p,edge)})).sort((a,b)=>a.d-b.d);
+  const closest=ranked[0];
+  if(!closest||closest.d>Math.max(25,Math.min(geometry.width_px,geometry.height_px)*.05)){setStatus('No nearby wall found. Click closer to a wall centerline.');return;}
+  addOpening(closest.edge,p,mode);
+ }
+ }}>
  <image href={`${API}/blueprints/${id}/preview`} width={geometry.width_px} height={geometry.height_px}
  style={{filter:grayscale?'grayscale(1) contrast(1.12) brightness(1.08)':'none'}}/>
  {showRaw&&evidence?.segments.map((s,i)=><line key={'raw'+i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke="#d98d26" strokeWidth={Math.max(1,geometry.width_px/700)} opacity={.3} pointerEvents="none"/>)}
  {showSuggestions&&suggestions.map((s,i)=><line key={'candidate'+i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
- stroke="#2563eb" strokeWidth={Math.max(3,geometry.width_px/230)} opacity={.82} style={{cursor:'pointer'}}
- onClick={e=>{e.stopPropagation();if(!busy)void acceptSuggestion(s)}}/>)}
+ stroke={reviewLabels[candidateKey(s)]==='not_wall'?'#b91c1c':reviewLabels[candidateKey(s)]==='wall'?'#16a34a':'#2563eb'} strokeWidth={Math.max(3,geometry.width_px/230)} opacity={.82} style={{cursor:'pointer'}}
+ pointerEvents={mode==='edit'?'stroke':'none'}
+ onClick={e=>{e.stopPropagation();setSelectedCandidate(s)}}/>)}
  {geometry.rooms.map((r,ri)=><g key={r.id}>
  <polygon points={r.points.map(p=>`${p.x},${p.y}`).join(' ')} fill="#46b494" fillOpacity={.08} stroke="#008a70" strokeWidth={Math.max(2,geometry.width_px/400)} pointerEvents="none"/>
  {mode==='edit'&&r.points.map((p,pi)=><circle key={pi} cx={p.x} cy={p.y} r={Math.max(5,geometry.width_px/140)} fill="white" stroke="#008a70"
@@ -143,7 +178,7 @@ export default function Editor(){
  </g>)}
  {edges.map(e=><line key={'edge-'+e.id} x1={e.start.x} y1={e.start.y} x2={e.end.x} y2={e.end.y}
  stroke="transparent" strokeWidth={Math.max(18,geometry.width_px/75)} style={{cursor:mode==='door'||mode==='window'?'crosshair':'inherit'}}
- pointerEvents={mode==='door'||mode==='window'?'stroke':'none'}
+ pointerEvents="none"
  onClick={event=>{if(mode!=='door'&&mode!=='window')return;event.stopPropagation();const svg=event.currentTarget.ownerSVGElement;if(!svg)return;const p=localPoint(svg,event.clientX,event.clientY);if(p)addOpening(e,p,mode)}}/>)}
  {geometry.openings.map(o=>{const e=edges.find(e=>e.id===o.wall_id);if(!e)return null;
   const scale=geometry.px_per_meter||60,len=dist(e.start,e.end),t=o.offset_m*scale/len,u=(o.offset_m+o.width_m)*scale/len;
@@ -153,13 +188,23 @@ export default function Editor(){
  {geometry.walls.filter(w=>w.id.startsWith('user-')).map(w=><line key={w.id} x1={w.start.x} y1={w.start.y} x2={w.end.x} y2={w.end.y} stroke="#d97706" strokeWidth={Math.max(3,geometry.width_px/260)} pointerEvents="none"/>)}
  {wallStart&&<circle cx={wallStart.x} cy={wallStart.y} r={Math.max(5,geometry.width_px/130)} fill="#d97706" pointerEvents="none"/>}
  </svg>:<Viewer geometry={geometry}/>}
- <p className="muted">{mode==='wall'?'Click two points to draw a continuous wall. Endpoints snap to nearby vertices and near-horizontal/vertical axes.':mode==='door'||mode==='window'?'Click a wall edge to place an opening. Draw continuous walls first—never leave a gap manually.':'Drag room vertices; nearby joints snap and matching walls follow.'} Experimental detection remains optional.</p></div>
+ <p className="muted">{mode==='wall'?'Click two points to draw a continuous wall. Endpoints snap to nearby vertices and near-horizontal/vertical axes.':mode==='door'||mode==='window'?'Click a wall edge to place an opening. Draw continuous walls first—never leave a gap manually.':'Drag room vertices; nearby joints snap and matching walls follow.'} Detection is shown by default but is not verified geometry.</p></div>
  <div className="stack"><div className="panel stack"><h2>Geometry</h2>
  <label>Pixels per meter <input type="number" min=".001" step=".1" value={geometry.px_per_meter??''}
  onChange={e=>setGeometry({...geometry,px_per_meter:e.target.value?Number(e.target.value):null})} placeholder="Set from reliable dimension"/></label>
  <span className="pill">{geometry.rooms.length} rooms · {geometry.walls.length} stored walls</span>
  <small>Detected {evidence?.segments.length??0} raw strokes · {evidence?.candidates.length??0} unfiltered possible walls · {suggestions.length} shown after local filtering</small>
  <small>Draw the full continuous perimeter and partitions, including across openings. Use Add door / Add window to cut into a wall. Snapping uses existing geometry, not image pixels.</small>
+ <h2>Wall detection review</h2>
+ <small>Blue: unreviewed · green: wall · red: not wall. All candidates are heuristic, not a trained segmentation model.</small>
+ {selectedCandidate&&<div className="stack" style={{border:'1px solid #ccd5e0',padding:9,borderRadius:8}}>
+ <strong>Selected detected segment</strong><small>score {selectedCandidate.score.toFixed(2)} (not calibrated)</small>
+ <div className="row"><button onClick={()=>void labelCandidate(selectedCandidate,'wall')}>Wall ✓</button>
+ <button className="secondary" onClick={()=>void labelCandidate(selectedCandidate,'not_wall')}>Not wall ×</button>
+ <button className="secondary" onClick={()=>void labelCandidate(selectedCandidate,'unsure')}>Unsure</button>
+ <button className="secondary" onClick={()=>void acceptSuggestion(selectedCandidate)}>Accept as draft</button></div>
+ </div>}
+ <button className="secondary" onClick={()=>void exportLabels()}>Export training annotations (JSON)</button>
  <h2>Openings ({geometry.openings.length})</h2>
  {geometry.openings.map(o=><div className="stack" key={o.id} style={{padding:10,border:'1px solid #dce2e8',borderRadius:8}}>
  <div className="row"><strong>{o.kind} · {o.wall_id.slice(0,25)}</strong><button className="secondary" onClick={()=>removeOpening(o.id)}>Remove</button></div>

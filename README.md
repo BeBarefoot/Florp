@@ -77,3 +77,12 @@ The **3D floor and boundary walls are generated from the same room polygon point
 ## Wall and opening editing
 
 **Draw continuous wall lines across door/window spans.** The opening is a separate wall-attached record with `wall_id`, offset, width, sill and height (meters). Use **Draw wall** to add interior wall centerlines; clicks snap to existing geometry vertices and nearly orthogonal orientations. Use **Add door** or **Add window**, then click the desired perimeter edge or interior wall to create an opening. Default door: 0.9m width, 2.1m tall, sill 0; window: 1.2m width, 1.2m tall, 0.9m sill. All are *inferred* until manually confirmed. The sidebar allows editing opening dimensions, and the 3D viewer splits walls around openings. Geometry validation rejects missing wall references, opening overflow, overlapping openings and height excess. A calibrated `px_per_meter` is required to position openings. Auto-recognition of doors and windows from the raster input is not yet trustworthy or implemented.
+
+
+## Detector review and training data
+
+The 2D editor again displays **all automatic paired-line wall candidates by default** (blue). The scope filter switches between *All detections* and *Near current outline*. Select a candidate, then label it **Wall**, **Not wall**, or **Unsure**, or explicitly accept it as a draft wall. Labels persist in SQLite, and **Export training annotations (JSON)** includes reviewed segments and manually drawn walls. This is a dataset collection/evaluation mechanism, not automatic model training. Evaluate precision/recall on labeled plans before considering fine-tuning; screenshots with colored dimension marks and furniture are known failure cases. Candidate scores remain heuristic.
+
+Door/window tools now use the nearest wall centerline to a canvas click instead of requiring a precisely hit transparent SVG stroke. Set **Pixels per meter** first. Openings are editable and unverified until confirmed.
+
+If the OpenAI API returns HTTP 401/403, Florp provides a targeted authentication error. Put an active API key from the correct provider in `apps/api/.env` as `LLM_API_KEY`, confirm `LLM_BASE_URL` and `LLM_MODEL`, and restart the backend. ChatGPT Plus is not an OpenAI API credential.

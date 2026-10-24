@@ -3,6 +3,7 @@ import httpx
 from .config import settings
 from .geometry import Geometry
 class ProviderUnavailable(RuntimeError): pass
+class ProviderAuthenticationError(ProviderUnavailable): pass
 async def extract_geometry(image_bytes:bytes,mime:str,width:int,height:int)->Geometry:
     if not settings.llm_api_key: raise ProviderUnavailable('LLM_API_KEY is missing. Add it to apps/api/.env')
     schema=Geometry.model_json_schema()
@@ -16,6 +17,8 @@ async def extract_geometry(image_bytes:bytes,mime:str,width:int,height:int)->Geo
     body={'model':settings.llm_model,'temperature':0,'messages':[{'role':'user','content':[{'type':'text','text':prompt},{'type':'image_url','image_url':{'url':f'data:{mime};base64,{b64}'}}]}]}
     async with httpx.AsyncClient(timeout=150) as c:
         r=await c.post(settings.llm_base_url.rstrip('/')+'/chat/completions',headers={'Authorization':f'Bearer {settings.llm_api_key}'},json=body)
+        if r.status_code in (401,403):
+            raise ProviderAuthenticationError('Vision API authentication failed (HTTP '+str(r.status_code)+'). Check LLM_API_KEY in apps/api/.env, the key provider and LLM_BASE_URL. A ChatGPT Plus subscription is not an API key. Restart the backend after changing .env. No API key was logged.')
         r.raise_for_status()
         content=r.json()['choices'][0]['message']['content']
     if content.strip().startswith('```'):

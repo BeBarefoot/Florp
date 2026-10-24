@@ -37,3 +37,11 @@ class Render(SQLModel, table=True):
     error: Optional[str] = None
     provider_job_id: Optional[str] = None
     created_at: datetime = Field(default_factory=now)
+
+class WallAnnotation(SQLModel, table=True):
+    id: str = Field(default_factory=uid, primary_key=True)
+    blueprint_id: str = Field(index=True, foreign_key='blueprint.id')
+    candidate_key: str = Field(index=True)
+    label: str
+    coordinates: dict = Field(default_factory=dict, sa_type=JSON)
+    created_at: datetime = Field(default_factory=now)
