@@ -65,3 +65,10 @@ For OCR on scanned plans, install the open-source `tesseract` executable on your
 ## Milestone 3: wall candidates and inspection UI
 
 The evidence overlay now defaults to a grayscale scan with a **Wall candidates** layer rather than drawing all raw detected lines. A separate **Raw lines (diagnostic)** layer is available. The backend pairs long, nearly parallel lines and filters some text-centered detections; they remain unverified suggestions, not confirmed structure. Click a blue candidate line to preview/accept it as a new **draft wall**. Acceptance is validated against the current evidence and creates a new layout version. Walls may still need careful manual correction; see `docs/CALIBRATION.md` for limitations and benchmarking steps.
+
+
+## Geometry sync and review update
+
+The **3D floor and boundary walls are generated from the same room polygon points** used by the 2D editor; legacy starter w0–w3 segments no longer create a second stale rectangle. Moving a shared room vertex also moves matching room vertices and stored wall endpoints. Separate manual interior walls use amber strokes and appear in 3D; draw one by clicking two points in **Draw interior wall** mode, then **Save draft**. Remove user-added walls in the geometry sidebar. Invalid, self-intersecting room polygons are omitted from 3D and blocked at verification.
+
+**Wall suggestions are off by default.** When enabled, they are restricted by length, confidence heuristic, and proximity to existing drawn rooms. They are NOT reliable structural wall matches. Raw line diagnostics are also off by default. Floor-plan extraction has not yet reached the desired accuracy target or learned to distinguish all symbols/furniture/windows.

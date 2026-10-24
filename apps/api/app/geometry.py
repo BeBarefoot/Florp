@@ -44,14 +44,34 @@ class Geometry(BaseModel):
                 raise ValueError(f'Opening {o.id} exceeds wall length')
         return self
 
+def _segments_cross(a,b,c,d):
+    def orient(p,q,r):
+        return (q.x-p.x)*(r.y-p.y)-(q.y-p.y)*(r.x-p.x)
+    return orient(a,b,c)*orient(a,b,d)<0 and orient(c,d,a)*orient(c,d,b)<0
+
 def validate_geometry(g:Geometry)->list[str]:
     errors=[]
     for room in g.rooms:
         coords=[(p.x,p.y) for p in room.points]
         area=abs(sum(x*y2-x2*y for (x,y),(x2,y2) in zip(coords,coords[1:]+coords[:1]))/2)
         if area<4: errors.append(f'Room {room.id} has near-zero area')
+        pts=room.points
+        for i in range(len(pts)):
+            if hypot(pts[i].x-pts[(i+1)%len(pts)].x,pts[i].y-pts[(i+1)%len(pts)].y)<2:
+                errors.append(f'Room {room.id} has a zero-length edge')
+            for j in range(i+1,len(pts)):
+                if j==i+1 or (i==0 and j==len(pts)-1): continue
+                if _segments_cross(pts[i],pts[(i+1)%len(pts)],pts[j],pts[(j+1)%len(pts)]):
+                    errors.append(f'Room {room.id} self-intersects')
+                    break
         for p in room.points:
             if not (0<=p.x<=g.width_px and 0<=p.y<=g.height_px): errors.append(f'Room {room.id} exceeds image')
+    for wall in g.walls:
+        if hypot(wall.end.x-wall.start.x,wall.end.y-wall.start.y)<3:
+            errors.append(f'Wall {wall.id} is too short')
+        for p in (wall.start,wall.end):
+            if not (0<=p.x<=g.width_px and 0<=p.y<=g.height_px):
+                errors.append(f'Wall {wall.id} exceeds image')
     if not g.px_per_meter: errors.append('Scale is not calibrated; metric geometry is provisional')
     return errors
 
