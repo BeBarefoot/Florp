@@ -10,3 +10,8 @@ __pycache__/
 *.sqlite*
 data/
 .coverage
+
+.venv/
+**/.venv/
+training-data/
+apps/api/training-data/

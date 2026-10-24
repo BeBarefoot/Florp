@@ -29,6 +29,7 @@ class Geometry(BaseModel):
     width_px: int = Field(gt=0)
     height_px: int = Field(gt=0)
     px_per_meter: float | None = Field(default=None, gt=0)
+    scale_source: Literal['unknown','provisional_auto','user_confirmed'] = 'unknown'
     rooms: list[Room] = Field(default_factory=list)
     walls: list[Wall] = Field(default_factory=list)
     openings: list[Opening] = Field(default_factory=list)
@@ -88,7 +89,8 @@ def validate_geometry(g:Geometry)->list[str]:
             if not (0<=p.x<=g.width_px and 0<=p.y<=g.height_px):
                 errors.append(f'Wall {wall.id} exceeds image')
     if g.openings and not g.px_per_meter: errors.append('Openings require calibrated scale')
-    if not g.px_per_meter: errors.append('Scale is not calibrated; metric geometry is provisional')
+    if not g.px_per_meter: errors.append('Metric scale could not be inferred from blueprint; verify a dimension')
+    elif g.scale_source=='provisional_auto': errors.append('Automatic scale is provisional; confirm a shown dimension before verification')
     return errors
 
 def fallback_geometry(width:int,height:int)->Geometry:

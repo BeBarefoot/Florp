@@ -8,7 +8,7 @@ import {editableEdges,snapPoint,openingPlacement,segmentDistance} from '../../..
 const Viewer=dynamic(()=>import('../../../components/Viewer3D'),{ssr:false});
 type Candidate={x1:number;y1:number;x2:number;y2:number;score:number};
 type ScaleSuggestion={text:string;source:string;confidence:number;dimension_m:number;pixels:number;px_per_meter:number};
-type Evidence={scale_suggestions:ScaleSuggestion[];segments:(Candidate & {source:string})[];candidates:Candidate[];labels:{text:string;bbox:number[];source:string}[];vector_pdf:boolean;ocr_available:boolean};
+type Evidence={automatic_scale?:{px_per_meter:number;confidence:number;evidence_count:number;supporting_labels:string[]}|null;scale_suggestions:ScaleSuggestion[];segments:(Candidate & {source:string})[];candidates:Candidate[];labels:{text:string;bbox:number[];source:string}[];vector_pdf:boolean;ocr_available:boolean};
 const dist=(a:Pt,b:Pt)=>Math.hypot(a.x-b.x,a.y-b.y);
 function inside(p:Pt,poly:Pt[]):boolean{
  let result=false;
@@ -197,8 +197,8 @@ export default function Editor(){
  </svg>:<Viewer geometry={geometry}/>}
  <p className="muted">{mode==='wall'?'Click two points to draw a continuous wall. Endpoints snap to nearby vertices and near-horizontal/vertical axes.':mode==='door'||mode==='window'?'Click a wall edge to place an opening. Draw continuous walls first—never leave a gap manually.':'Drag room vertices; nearby joints snap and matching walls follow.'} Detection is shown by default but is not verified geometry.</p></div>
  <div className="stack"><div className="panel stack"><h2>Geometry</h2>
- <details><summary>Advanced calibration (optional)</summary><label>Pixels per meter <input type="number" min=".001" step=".1" value={geometry.px_per_meter??''}
- onChange={e=>setGeometry({...geometry,px_per_meter:e.target.value?Number(e.target.value):null})} placeholder="Use confirmed dimension"/></label></details>
+ <details><summary>Advanced scale override (optional)</summary><label>Pixels per meter <input type="number" min=".001" step=".1" value={geometry.px_per_meter??''}
+ onChange={e=>setGeometry({...geometry,px_per_meter:e.target.value?Number(e.target.value):null,scale_source:'user_confirmed'})} placeholder="Use confirmed dimension"/></label></details>
  <span className="pill">{geometry.rooms.length} rooms · {geometry.walls.length} stored walls</span>
  <small>Detected {evidence?.segments.length??0} raw strokes · {evidence?.candidates.length??0} unfiltered possible walls · {suggestions.length} shown after local filtering</small>
  <small>Draw the full continuous perimeter and partitions, including across openings. Use Add door / Add window to cut into a wall. Snapping uses existing geometry, not image pixels.</small>
@@ -215,11 +215,12 @@ export default function Editor(){
  <h2>Dimension evidence</h2>
  {geometry.px_per_meter?<p><small>Scale set: {geometry.px_per_meter.toFixed(2)} px/m — confirm against plan dimensioning.</small></p>:
  <p className="notice">No confirmed scale yet. Openings can be drafted, but their physical widths need confirmation.</p>}
+ {evidence?.automatic_scale&&<div className="notice">Auto-estimated scale from {evidence.automatic_scale.evidence_count} matching dimensions: {Math.round(evidence.automatic_scale.px_per_meter)} px/m (provisional). <button className="secondary" onClick={()=>setGeometry({...geometry,px_per_meter:evidence.automatic_scale!.px_per_meter,scale_source:'user_confirmed'})}>Confirm scale</button></div>}
  {(evidence?.scale_suggestions||[]).length===0&&<small>No confidently paired OCR dimensions. Check PDF quality or confirm a labeled dimension later.</small>}
  {(evidence?.scale_suggestions||[]).map((s,i)=><div key={i} className="row">
  <small>{s.text} cm? alongside {Math.round(s.pixels)} px → {Math.round(s.px_per_meter)} px/m (low confidence)</small>
  <button className="secondary" onClick={()=>{if(!geometry)return;
-   setGeometry({...geometry,px_per_meter:s.px_per_meter,warnings:geometry.warnings.filter(w=>!w.toLowerCase().includes('provisional'))});
+   setGeometry({...geometry,px_per_meter:s.px_per_meter,scale_source:'user_confirmed',warnings:geometry.warnings.filter(w=>!w.toLowerCase().includes('provisional'))});
    setStatus('Scale hypothesis selected. Confirm that '+s.text+' is centimeters and refers to the highlighted plan dimension.');}}>Use estimate</button></div>)}
  <h2>Openings ({geometry.openings.length})</h2>
  {geometry.openings.map(o=><div className="stack" key={o.id} style={{padding:10,border:'1px solid #dce2e8',borderRadius:8}}>

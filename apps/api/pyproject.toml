@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "florp-api"
+version = "0.1.0"
+description = "Local-first floor-plan extraction backend"
+requires-python = ">=3.11"
+dependencies = [
+ "fastapi>=0.115,<1",
+ "uvicorn[standard]>=0.30,<1",
+ "python-multipart>=0.0.9",
+ "pydantic>=2.8,<3",
+ "pydantic-settings>=2.4,<3",
+ "sqlmodel>=0.0.22,<1",
+ "pillow>=10,<13",
+ "pymupdf>=1.24,<2",
+ "opencv-python-headless>=4.10,<5",
+ "numpy>=1.26,<3",
+ "httpx>=0.27,<1",
+ "python-dotenv>=1,<2",
+ "pytesseract>=0.3.13,<1"
+]
+[dependency-groups]
+dev=["pytest>=8,<10"]
+[tool.hatch.build.targets.wheel]
+packages=["app"]
+[tool.pytest.ini_options]
+pythonpath=["."]
+testpaths=["tests"]

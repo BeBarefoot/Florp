@@ -95,3 +95,15 @@ Local OCR/PDF labels and long axis-aligned vector/scan lines are combined to yie
 ## Groq configuration
 
 Groq: `LLM_BASE_URL=https://api.groq.com/openai/v1`, `LLM_MODEL=qwen/qwen3.8-27b` (check currently available models), and `LLM_API_KEY` set to a valid Groq key. OpenAI model IDs do not transfer automatically to Groq. `GET /vision/provider-check` performs a credential-protected model-list lookup and returns only model status without revealing the key. HTTP 404 and 400 yield actionable configuration messages rather than a generic 502.
+
+
+## Review local annotation exports
+
+Do not commit users' annotated floor plans into a public repo. Analyze an exported session locally:
+
+```bash
+cd apps/api
+uv run python scripts/analyze_training.py "/path/to/training session1.json"
+```
+
+Session 1 currently contains 31 `not_wall` labels, zero positive walls and zero manually drawn walls. These are valuable negative examples but insufficient to train or evaluate a wall model. We need confirmed walls, missing walls, different blueprint styles and a held-out evaluation set. The report flags class imbalance and duplicate segment labels; it does not claim trained accuracy.

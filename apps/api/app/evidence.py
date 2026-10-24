@@ -10,6 +10,7 @@ from PIL import Image
 from pydantic import BaseModel, Field
 from .wall_candidates import WallCandidate, wall_candidates
 from .measurements import ScaleSuggestion, scale_suggestions
+from .scale_inference import ScaleEstimate, automatic_scale
 
 class Segment(BaseModel):
     x1: float
@@ -35,6 +36,7 @@ class Evidence(BaseModel):
     ocr_available: bool = False
     candidates: list[WallCandidate] = Field(default_factory=list)
     scale_suggestions: list[ScaleSuggestion] = Field(default_factory=list)
+    automatic_scale: ScaleEstimate | None = None
 
 def _segments(image: Image.Image) -> list[Segment]:
     rgb = np.asarray(image.convert('RGB'))
@@ -123,6 +125,7 @@ def inspect_plan(original: Path, preview: Path) -> Evidence:
         result.warnings.append('Tesseract not installed: raster OCR unavailable; vector PDF text still works')
     result.candidates = wall_candidates(result.segments, result.labels, result.width, result.height)
     result.scale_suggestions = scale_suggestions(result.segments, result.labels, result.width, result.height)
+    result.automatic_scale = automatic_scale(result.scale_suggestions)
     result.warnings.append('Wall candidates are heuristic paired-lines; manually accept only actual walls')
     result.warnings.append('Lines and text are evidence only, not verified walls, rooms or scale')
     return result

@@ -58,7 +58,13 @@ async def upload(pid:str,file:UploadFile=File(...)):
     raw=folder/('original'+suffix);raw.write_bytes(contents)
     preview=folder/'preview.png';image.save(preview)
     bp.local_path=str(raw);bp.preview_path=str(preview)
-    layout=Layout(blueprint_id=bp.id,geometry=fallback_geometry(bp.width,bp.height).model_dump())
+    starting=fallback_geometry(bp.width,bp.height)
+    evidence=inspect_plan(raw,preview)
+    if evidence.automatic_scale:
+        starting.px_per_meter=evidence.automatic_scale.px_per_meter
+        starting.scale_source='provisional_auto'
+        starting.warnings.append('Automatic metric scale is provisional: review a recognized dimension')
+    layout=Layout(blueprint_id=bp.id,geometry=starting.model_dump())
     with Session(engine) as s:s.add(bp);s.add(layout);s.commit();s.refresh(bp)
     return bp
 @app.get('/blueprints/{bid}/preview')
@@ -110,7 +116,12 @@ async def extract(bid:str):
     except ProviderAuthenticationError as e:raise HTTPException(424,str(e))
     except ProviderUnavailable as e:raise HTTPException(424,str(e))
     except Exception as e:raise HTTPException(502,f'Vision provider error: {type(e).__name__}: {e}')
-    g=reconcile(g,inspect_plan(Path(bp.local_path),Path(bp.preview_path)))
+    evidence=inspect_plan(Path(bp.local_path),Path(bp.preview_path))
+    if g.px_per_meter is None and evidence.automatic_scale:
+        g.px_per_meter=evidence.automatic_scale.px_per_meter
+        g.scale_source='provisional_auto'
+        g.warnings.append('Scale inferred from '+str(evidence.automatic_scale.evidence_count)+' OCR/line clues; requires confirmation before verification')
+    g=reconcile(g,evidence)
     with Session(engine) as s:
         last=s.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
         row=Layout(blueprint_id=bid,version=(last.version+1 if last else 1),geometry=g.model_dump())
@@ -258,7 +269,9 @@ def save_layout(bid:str,body:SaveLayout):
         if not s.get(Blueprint,bid):raise HTTPException(404,'Not found')
         last=s.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
         warnings=validate_geometry(body.geometry)
-        if body.verified and body.geometry.openings and any('provisional' in w.lower() for w in body.geometry.warnings):
+        if body.verified and body.geometry.scale_source=='provisional_auto':
+        warnings.append('Review and confirm the inferred physical scale first')
+    if body.verified and body.geometry.openings and any('provisional' in w.lower() for w in body.geometry.warnings):
             warnings.append('Confirm scale and provisional opening dimensions before verification')
         if body.verified and warnings:raise HTTPException(422,{'message':'Resolve validation issues before verification','issues':warnings})
         row=Layout(blueprint_id=bid,version=(last.version+1 if last else 1),verified=body.verified,geometry=body.geometry.model_dump())
