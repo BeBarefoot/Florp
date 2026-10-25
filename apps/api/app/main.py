@@ -15,6 +15,7 @@ from .evidence import inspect_plan
 from .reconcile import reconcile
 from .geometry import Wall, Pt
 from .pretrained_detector import DetectorResult, DetectorUnavailable, detect_objects
+from .model_reconstruction import reconstruct
 
 Path(settings.storage_path).mkdir(parents=True,exist_ok=True)
 if settings.database_url.startswith('sqlite:///'):
@@ -116,6 +117,22 @@ def pretrained_detections(bid: str):
         return detect_objects(Path(bp.preview_path),bp.width,bp.height)
     except DetectorUnavailable as exc:
         raise HTTPException(424,str(exc))
+
+@app.post('/blueprints/{bid}/pretrained-reconstruct')
+def pretrained_reconstruct(bid:str):
+    with Session(engine) as session:
+        bp=session.get(Blueprint,bid)
+        if not bp:raise HTTPException(404,'Blueprint not found')
+        previous=session.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
+        if not previous:raise HTTPException(404,'No layout')
+        try:
+            detection=detect_objects(Path(bp.preview_path),bp.width,bp.height)
+            geometry=reconstruct(detection,Geometry.model_validate(previous.geometry))
+        except DetectorUnavailable as exc:raise HTTPException(424,str(exc))
+        except ValueError as exc:raise HTTPException(422,str(exc))
+        draft=Layout(blueprint_id=bid,version=previous.version+1,verified=False,geometry=geometry.model_dump())
+        session.add(draft);session.commit();session.refresh(draft)
+        return {'layout':draft,'detections':detection}
 
 @app.post('/blueprints/{bid}/extract')
 async def extract(bid:str):
