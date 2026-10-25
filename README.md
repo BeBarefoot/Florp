@@ -129,3 +129,12 @@ Click **Auto-build 2D + 3D** in the blueprint editor. Florp runs the optional lo
 This is NOT exact wall reconstruction: a box detector does not output room topology, robust corners, wall materials, usable floor polygons, or exact openings. There is intentionally no invented floor mesh for the model draft. Scale falls back to an illustrative 60 px/m for the 3D preview if no dimension was verified; real architectural fidelity needs further validation. Detection overlays can still be toggled independently from editable geometry. The action requires the local pretrained checkpoint; it does not use a paid LLM API.
 
 OpenCV Hough line extraction now reshapes both standard `(N,1,4)` and `(N,4)` arrays into proper 4-coordinate segments. Tests for this regression and the model geometry adapter are in `apps/api/tests/`.
+
+
+## Stabilization update: wall review vs metric verification
+
+Model-generated 2D cyan wall centerlines can be selected in **Edit** mode. Drag the two green endpoints to correct their positions; **Reject / delete selected wall** removes false positives, along with any openings attached to the wall. Click **Confirm wall positions** to persist a structural review **without requiring metric scale**. **Verify physical dimensions** is a separate, stricter operation and can still be blocked by unknown scale or provisional openings. The training export now includes `model_wall_corrections` with confirmed/adjusted/rejected model-wall results, in addition to legacy Hough-line annotations. This is evaluation/correction data, not model fine-tuning.
+
+Vision-model JSON may be incomplete or truncated. Florp sends a shorter extraction prompt, requests `LLM_MAX_COMPLETION_TOKENS` (default 8192), retries once on invalid or truncated output, and gives an actionable 424 rather than leaking a long Pydantic 502 traceback. API model output quality remains model-dependent. Set an output token count supported by your configured provider and account.
+
+See [roadmap and acceptance gates](docs/ROADMAP_AND_GATES.md). CI checks Python compilation and tests and Next.js type/build on push; check GitHub Actions for actual job results.
