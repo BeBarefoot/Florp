@@ -45,3 +45,13 @@ class WallAnnotation(SQLModel, table=True):
     label: str
     coordinates: dict = Field(default_factory=dict, sa_type=JSON)
     created_at: datetime = Field(default_factory=now)
+
+class ModelWallCorrection(SQLModel, table=True):
+    id: str = Field(default_factory=uid, primary_key=True)
+    blueprint_id: str = Field(index=True, foreign_key='blueprint.id')
+    model_wall_id: str = Field(index=True)
+    action: str
+    original: dict = Field(default_factory=dict, sa_type=JSON)
+    corrected: dict = Field(default_factory=dict, sa_type=JSON)
+    layout_version: int
+    created_at: datetime = Field(default_factory=now)
