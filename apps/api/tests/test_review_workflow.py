@@ -113,3 +113,23 @@ def test_click_near_multiple_predicted_openings_does_not_create_third(monkeypatc
     parsed=Geometry.model_validate(result.geometry)
     assert len(parsed.openings)==2
     assert any(opening.kind=='door' for opening in parsed.openings)
+
+def test_propose_opening_uses_unsaved_geometry_in_request(monkeypatch):
+    engine=create_engine('sqlite://',connect_args={'check_same_thread':False},
+                         poolclass=StaticPool)
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(main,'engine',engine)
+    with Session(engine) as session:
+        project=Project(title='unsaved');session.add(project);session.flush()
+        blueprint=Blueprint(project_id=project.id,filename='test.png',local_path='',
+                            preview_path='',width=800,height=600)
+        session.add(blueprint);session.flush()
+        base=Geometry(width_px=800,height_px=600)
+        session.add(Layout(blueprint_id=blueprint.id,geometry=base.model_dump()))
+        session.commit();bid=blueprint.id
+    edited=Geometry(width_px=800,height_px=600,walls=[
+        Wall(id='user-new',start=Pt(x=100,y=100),end=Pt(x=500,y=100))])
+    result=main.propose_opening(bid,main.ProvisionalOpeningInput(
+        kind='door',wall_id='user-new',fraction=.5,geometry=edited))
+    assert result.geometry['walls'][0]['id']=='user-new'
+    assert result.geometry['openings'][0]['wall_id']=='user-new'
