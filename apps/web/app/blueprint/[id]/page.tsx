@@ -163,7 +163,7 @@ export default function Editor(){
  function removeOpening(id:string){if(!geometry)return;setGeometry({...geometry,openings:geometry.openings.filter(o=>o.id!==id)});}
  function changeOpening(id:string,field:'width_m'|'height_m'|'offset_m'|'sill_m',raw:string){
   if(!geometry)return;const value=Number(raw);if(!Number.isFinite(value)||value<0)return;
-  setGeometry({...geometry,openings:geometry.openings.map(o=>o.id===id?{...o,[field]:value}:o)});
+  setGeometry({...geometry,openings:geometry.openings.map(o=>o.id===id?{...o,[field]:value,inferred:true}:o)});
  }
  function removeWall(id:string){if(!geometry)return;setSelectedWall(null);setGeometry({...geometry,structure_reviewed:false,walls:geometry.walls.filter(w=>w.id!==id),openings:geometry.openings.filter(o=>o.wall_id!==id)});setStatus('Draft wall removed. Save to persist changes.')}
  return <div className="app"><aside><h2>✦ Florp</h2><Link href="/">← Projects</Link>
@@ -303,7 +303,11 @@ export default function Editor(){
  {geometry.openings.map(o=><div className="stack" key={o.id} style={{padding:10,border:'1px solid #dce2e8',borderRadius:8}}>
  <div className="row"><strong>{o.kind} · {o.wall_id.slice(0,25)}</strong><button className="secondary" onClick={()=>removeOpening(o.id)}>Remove</button></div>
  {(['offset_m','width_m','height_m','sill_m'] as const).map(k=><label key={k}>{k.replace('_m','')} (m) <input type="number" min="0" step=".05" value={o[k]} onChange={e=>changeOpening(o.id,k,e.target.value)}/></label>)}
- <small>Dimensions are assumptions until confirmed from a plan/elevation.</small>
+ <div className="row"><small>{o.inferred?'Provisional opening — dimensions not confirmed':'Opening dimensions confirmed by user'}</small>
+ {o.inferred&&<button className="secondary" onClick={()=>{
+   setGeometry({...geometry,openings:geometry.openings.map(item=>item.id===o.id?{...item,inferred:false}:item)});
+   setStatus('Opening dimensions marked confirmed. Save the draft or verify physical dimensions.');
+ }}>Confirm dimensions</button>}</div>
  </div>)}
  {geometry.walls.filter(w=>w.id.startsWith('user-')||w.id.startsWith('model-')).map(w=><div className="row" key={w.id}><small>{w.id.slice(0,18)}</small><button className="secondary" onClick={()=>removeWall(w.id)}>Remove</button></div>)}
  {geometry.warnings.map((w,i)=><div className="notice" key={i}>{w}</div>)}
