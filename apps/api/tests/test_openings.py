@@ -1,6 +1,6 @@
 import pytest
 from pydantic import ValidationError
-from app.geometry import Geometry, Room, Pt, Opening
+from app.geometry import Geometry, Room, Pt, Opening, validate_geometry
 
 def geometry():
     return Geometry(width_px=800,height_px=600,px_per_meter=100,rooms=[
@@ -17,10 +17,13 @@ def test_opening_exceeds_wall_rejected():
     g['openings']=[dict(id='window',kind='window',wall_id='boundary:r:0',offset_m=3.5,width_m=1,height_m=1,sill_m=.9)]
     with pytest.raises(ValidationError):Geometry.model_validate(g)
 
-def test_overlapping_openings_rejected():
+def test_overlapping_openings_allowed_as_draft_but_flagged_for_verification():
     g=geometry().model_dump()
     g['openings']=[dict(id=str(i),kind='door',wall_id='boundary:r:0',offset_m=x,width_m=1,height_m=2.1,sill_m=0) for i,x in enumerate([1,1.5])]
-    with pytest.raises(ValidationError):Geometry.model_validate(g)
+    draft=Geometry.model_validate(g)
+    assert len(draft.openings)==2
+    assert any('Overlapping openings on boundary:r:0' in issue
+               for issue in validate_geometry(draft))
 
 def test_missing_wall_rejected():
     g=geometry().model_dump()
