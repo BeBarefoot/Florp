@@ -282,7 +282,7 @@ export default function Editor(){
  <details><summary>Advanced scale override (optional)</summary><label>Pixels per meter <input type="number" min=".001" step=".1" value={geometry.px_per_meter??''}
  onChange={e=>setGeometry({...geometry,px_per_meter:e.target.value?Number(e.target.value):null,scale_source:'user_confirmed'})} placeholder="Use confirmed dimension"/></label></details>
  <span className="pill">{geometry.rooms.length} rooms · {geometry.walls.length} stored walls</span>
- {geometry.walls.some(w=>w.id.startsWith('model-'))&&<div className="notice">Model geometry is now active. Blue wall centerlines in 2D correspond to the 3D walls. Room floors are not yet reconstructed. All wall and opening positions are provisional.</div>}
+ {geometry.walls.some(w=>w.id.startsWith('model-'))&&<div className="notice">Model geometry is active. Blue centerlines in 2D correspond to 3D walls. Any enclosed rooms/floors are unverified geometry proposals; wall and opening positions remain provisional.</div>}
  <small>Detected {evidence?.segments.length??0} raw strokes · {evidence?.candidates.length??0} unfiltered possible walls · {suggestions.length} shown after local filtering</small>
  <small>Draw the full continuous perimeter and partitions, including across openings. Use Add door / Add window to cut into a wall. Snapping uses existing geometry, not image pixels.</small>
  <h2>Pretrained object detection</h2>
