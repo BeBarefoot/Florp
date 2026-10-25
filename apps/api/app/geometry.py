@@ -30,6 +30,7 @@ class Geometry(BaseModel):
     height_px: int = Field(gt=0)
     px_per_meter: float | None = Field(default=None, gt=0)
     scale_source: Literal['unknown','provisional_auto','user_confirmed'] = 'unknown'
+    structure_reviewed: bool = False
     rooms: list[Room] = Field(default_factory=list)
     walls: list[Wall] = Field(default_factory=list)
     openings: list[Opening] = Field(default_factory=list)
