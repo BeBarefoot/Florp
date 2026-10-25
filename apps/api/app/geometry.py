@@ -18,6 +18,7 @@ class Wall(BaseModel):
     inferred: bool = True
 class Opening(BaseModel):
     id: str
+    source_detection_id: str | None = None
     kind: Literal['door', 'window']
     wall_id: str
     offset_m: float = Field(ge=0)
