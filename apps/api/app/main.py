@@ -18,6 +18,7 @@ from .pretrained_detector import DetectorResult, DetectorUnavailable, detect_obj
 from .model_reconstruction import reconstruct, detection_audit
 from .topology import audit_topology
 from .graph_reconstruction import propose_connected_geometry
+from .wall_segmentation import infer_wall_mask, mask_centerlines, propose_mask_walls
 
 Path(settings.storage_path).mkdir(parents=True,exist_ok=True)
 if settings.database_url.startswith('sqlite:///'):
@@ -179,6 +180,30 @@ def pretrained_reconstruct(bid:str):
         draft=Layout(blueprint_id=bid,version=previous.version+1,verified=False,geometry=geometry.model_dump())
         session.add(draft);session.commit();session.refresh(draft)
         return {'layout':draft,'detections':detection,'detection_audit':detection_audit(detection),'topology':audit_topology(geometry)}
+
+@app.post('/blueprints/{bid}/segmentation/propose')
+def segmentation_proposal(bid:str):
+    """An explicit experiment: never overwrite a verified or manually edited layout."""
+    with Session(engine) as session:
+        bp=session.get(Blueprint,bid)
+        if not bp:raise HTTPException(404,'Blueprint not found')
+        previous=session.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
+        if not previous:raise HTTPException(404,'No layout')
+        current=Geometry.model_validate(previous.geometry)
+        if previous.verified or current.structure_reviewed or any(w.id.startswith('user-') for w in current.walls):
+            raise HTTPException(409,'Current layout contains approved or manually edited geometry. Save an independent experiment copy before applying segmentation.')
+        try:
+            mask,checkpoint=infer_wall_mask(Path(bp.preview_path),bp.width,bp.height)
+            report=mask_centerlines(mask,min_length=max(22,min(bp.width,bp.height)//18))
+            if report.line_count==0:raise ValueError('Segmentation yielded no supported wall centerlines')
+            draft=propose_mask_walls(current,report)
+            draft=propose_connected_geometry(draft)
+        except DetectorUnavailable as exc:raise HTTPException(424,str(exc))
+        except ValueError as exc:raise HTTPException(422,str(exc))
+        version=Layout(blueprint_id=bid,version=previous.version+1,verified=False,geometry=draft.model_dump())
+        session.add(version);session.commit();session.refresh(version)
+        return {'layout':version,'report':{'checkpoint':checkpoint,**report.model_dump()},
+                'topology':audit_topology(draft)}
 
 @app.post('/blueprints/{bid}/extract')
 async def extract(bid:str):
