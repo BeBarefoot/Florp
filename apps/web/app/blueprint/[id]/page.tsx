@@ -42,6 +42,7 @@ export default function Editor(){
  const [status,setStatus]=useState(''),[busy,setBusy]=useState(false);
  const [view,setView]=useState<'2d'|'3d'>('2d');
  const [modelDetections,setModelDetections]=useState<ModelDetections|null>(null);
+ const [topology,setTopology]=useState<{wall_count:number;junction_count:number;disconnected_components:number;dangling_endpoints:number;crossing_pairs:[string,string][];notes:string[]}|null>(null);
  const [showModelDetections,setShowModelDetections]=useState(true),[modelBusy,setModelBusy]=useState(false);
  const [grayscale,setGrayscale]=useState(true),[showRaw,setShowRaw]=useState(false),[showSuggestions,setShowSuggestions]=useState(true);
  const [reviewScope,setReviewScope]=useState<'all'|'near'>('all');
@@ -77,6 +78,13 @@ export default function Editor(){
      setStatus('Pretrained model generated '+result.layout.geometry.walls.length+' draft walls and '+result.layout.geometry.openings.length+' provisional openings. Both 2D and 3D now use the same draft. Room floors are not yet recovered.');
    }catch(err){setStatus(String(err))}
    finally{setModelBusy(false)}
+ }
+ async function inspectTopology(){
+   try{
+     const result=await request<{wall_count:number;junction_count:number;disconnected_components:number;dangling_endpoints:number;crossing_pairs:[string,string][];notes:string[]}>(`/blueprints/${id}/topology`);
+     setTopology(result);
+     setStatus('Topology audit read from last saved layout. Save draft first to include current edits.');
+   }catch(e){setStatus(String(e))}
  }
  async function extract(){setBusy(true);setStatus('');try{
   const l=await request<Layout>(`/blueprints/${id}/extract`,{method:'POST'});
@@ -292,6 +300,12 @@ export default function Editor(){
  <button className="secondary" onClick={()=>{if(!geometry)return;
    setGeometry({...geometry,px_per_meter:s.px_per_meter,scale_source:'user_confirmed',warnings:geometry.warnings.filter(w=>!w.toLowerCase().includes('provisional'))});
    setStatus('Scale hypothesis selected. Confirm that '+s.text+' is centimeters and refers to the highlighted plan dimension.');}}>Use estimate</button></div>)}
+ <h2>Wall graph health</h2>
+ <button className="secondary" onClick={()=>void inspectTopology()}>Inspect saved wall connections</button>
+ {topology&&<div className="stack">
+ <small>{topology.wall_count} walls · {topology.junction_count} joined endpoints · {topology.disconnected_components} groups · {topology.dangling_endpoints} loose ends · {topology.crossing_pairs.length} crossings</small>
+ {topology.notes.map((note,i)=><div className="notice" key={i}>{note}</div>)}
+ </div>}
  <h2>Wall corrections</h2>
  {selectedWall?<div className="stack">
  <small>Selected {selectedWall}: drag the green endpoint handles in the plan. Changes appear in 3D.</small>
