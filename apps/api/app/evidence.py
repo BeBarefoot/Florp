@@ -53,7 +53,9 @@ def _segments(image: Image.Image) -> list[Segment]:
     out=[]
     if lines is None: return out
     inv=1/scale
-    for item in lines[:,0][:1200]:
+    raw=np.asarray(lines)
+    if raw.size % 4: raise ValueError('Unexpected HoughLinesP result shape: '+str(raw.shape))
+    for item in raw.reshape(-1,4)[:1200]:
         x1,y1,x2,y2=[float(v)*inv for v in item]
         length=((x2-x1)**2+(y2-y1)**2)**0.5
         if length<min(w,h)*.035: continue
