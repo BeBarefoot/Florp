@@ -54,3 +54,37 @@ def reconstruct(result:DetectorResult, base:Geometry)->Geometry:
         warnings=['Model-generated draft: wall centerlines approximate YOLO bounding boxes.',
                   'The model did not reconstruct closed room polygons or floor surfaces.',
                   'Opening positions and physical dimensions are provisional; confirmation required.'])
+
+def detection_audit(result:DetectorResult)->dict:
+    """Explain why detection boxes do not become walls; never imply missing
+    detections are absent from the architectural drawing."""
+    counts={'wall_boxes':0,'accepted_wall_boxes':0,'below_confidence':0,
+            'too_short':0,'not_elongated':0,'duplicate':0,
+            'door_boxes':0,'window_boxes':0}
+    kept=[]
+    for i,b in enumerate(result.boxes):
+        if b.category in ('door','window'):
+            counts[b.category+'_boxes']+=1
+        if b.category!='wall':continue
+        counts['wall_boxes']+=1
+        if b.confidence<.35:
+            counts['below_confidence']+=1;continue
+        bw=b.x2-b.x1;bh=b.y2-b.y1
+        if max(bw,bh)<max(22,min(result.image_width,result.image_height)*.075):
+            counts['too_short']+=1;continue
+        if max(bw,bh)/max(1,min(bw,bh))<2.3:
+            counts['not_elongated']+=1;continue
+        if bw>=bh:
+            a=(b.x1,(b.y1+b.y2)/2);z=(b.x2,(b.y1+b.y2)/2)
+        else:
+            a=((b.x1+b.x2)/2,b.y1);z=((b.x1+b.x2)/2,b.y2)
+        if any(hypot(a[0]-old[0][0],a[1]-old[0][1])<7 and
+               hypot(z[0]-old[1][0],z[1]-old[1][1])<7 for old in kept):
+            counts['duplicate']+=1;continue
+        kept.append((a,z))
+    counts['accepted_wall_boxes']=len(kept)
+    return {
+       **counts,
+       'diagnostic':'Counts explain losses AFTER YOLO detection. Walls never detected by YOLO require labeled ground truth to measure recall.',
+       'pipeline':'YOLO bounding box → elongation/length filter → centerline → junction proposal → 3D'
+    }
