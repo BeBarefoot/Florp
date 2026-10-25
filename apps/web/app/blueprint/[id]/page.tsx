@@ -9,6 +9,7 @@ const Viewer=dynamic(()=>import('../../../components/Viewer3D'),{ssr:false});
 type Candidate={x1:number;y1:number;x2:number;y2:number;score:number};
 type ModelBox={category:string;confidence:number;x1:number;y1:number;x2:number;y2:number};
 type ModelDetections={provider:string;output_type:string;image_width:number;image_height:number;boxes:ModelBox[];warning:string};
+type Reconstructed={layout:Layout;detections:ModelDetections};
 type ScaleSuggestion={text:string;source:string;confidence:number;dimension_m:number;pixels:number;px_per_meter:number};
 type Evidence={automatic_scale?:{px_per_meter:number;confidence:number;evidence_count:number;supporting_labels:string[]}|null;scale_suggestions:ScaleSuggestion[];segments:(Candidate & {source:string})[];candidates:Candidate[];labels:{text:string;bbox:number[];source:string}[];vector_pdf:boolean;ocr_available:boolean};
 const dist=(a:Pt,b:Pt)=>Math.hypot(a.x-b.x,a.y-b.y);
@@ -66,11 +67,13 @@ export default function Editor(){
   });
  },[evidence,geometry,reviewScope]);
  async function runPretrained(){
+   if(geometry?.walls.some(w=>w.id.startsWith('user-'))&&!window.confirm('Generate a new model-based draft? Previously saved versions remain in the database.'))return;
    setModelBusy(true);setStatus('');
    try{
-     const result=await request<ModelDetections>(`/blueprints/${id}/pretrained-detections`,{method:'POST'});
-     setModelDetections(result);setShowModelDetections(true);
-     setStatus('Local pretrained detector found '+result.boxes.length+' object boxes. These are provisional, not wall centerlines.');
+     const result=await request<Reconstructed>(`/blueprints/${id}/pretrained-reconstruct`,{method:'POST'});
+     setModelDetections(result.detections);setShowModelDetections(false);
+     setLayout(result.layout);setGeometry(result.layout.geometry);
+     setStatus('Pretrained model generated '+result.layout.geometry.walls.length+' draft walls and '+result.layout.geometry.openings.length+' provisional openings. Both 2D and 3D now use the same draft. Room floors are not yet recovered.');
    }catch(err){setStatus(String(err))}
    finally{setModelBusy(false)}
  }
@@ -152,7 +155,7 @@ export default function Editor(){
  <button className="secondary" disabled={busy} onClick={()=>save(false)}>Save draft</button>
  <button disabled={busy} onClick={()=>save(true)}>Verify geometry</button></div>
  <p style={{opacity:.7,fontSize:12}}>Structural geometry must be reviewed. API keys remain server-side.</p></aside>
- <main><header><div><h1>Geometry studio</h1><p className="muted">The 2D outline now drives the 3D shell.</p></div>
+ <main><header><div><h1>Geometry studio</h1><p className="muted">2D and 3D display the same draft walls.</p></div>
  <div className="row"><button className={view==='2d'?'':'secondary'} onClick={()=>setView('2d')}>2D editor</button>
  <button className={view==='3d'?'':'secondary'} onClick={()=>setView('3d')}>3D shell</button></div></header>
  {status&&<p className="notice">{status}</p>}
@@ -165,7 +168,7 @@ export default function Editor(){
  </div>}
  {view==='2d'&&<div className="row" style={{marginBottom:12}}>
  <button className="secondary" disabled={modelBusy||busy} onClick={()=>void runPretrained()}>
- {modelBusy?'Running local model…':'Run pretrained model'}</button>
+ {modelBusy?'Running local model…':'Auto-build 2D + 3D'}</button>
  {modelDetections&&<label><input type="checkbox" checked={showModelDetections} onChange={e=>setShowModelDetections(e.target.checked)}/> Model boxes ({modelDetections.boxes.length})</label>}
  <label><input type="checkbox" checked={grayscale} onChange={e=>setGrayscale(e.target.checked)}/> Grayscale</label>
  <label><input type="checkbox" checked={showSuggestions} onChange={e=>setShowSuggestions(e.target.checked)}/> Auto-detected walls ({suggestions.length}/{evidence?.candidates.length??0})</label>
@@ -213,7 +216,7 @@ export default function Editor(){
   const x1=e.start.x+(e.end.x-e.start.x)*t,y1=e.start.y+(e.end.y-e.start.y)*t,x2=e.start.x+(e.end.x-e.start.x)*u,y2=e.start.y+(e.end.y-e.start.y)*u;
   return <line key={o.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke={o.kind==='door'?'#f97316':'#0284c7'} strokeDasharray={o.kind==='door'?'10 6':undefined} strokeWidth={Math.max(7,geometry.width_px/160)} pointerEvents="none"/>;
  })}
- {geometry.walls.filter(w=>w.id.startsWith('user-')).map(w=><line key={w.id} x1={w.start.x} y1={w.start.y} x2={w.end.x} y2={w.end.y} stroke="#d97706" strokeWidth={Math.max(3,geometry.width_px/260)} pointerEvents="none"/>)}
+ {geometry.walls.filter(w=>w.id.startsWith('user-')||w.id.startsWith('model-')).map(w=><line key={w.id} x1={w.start.x} y1={w.start.y} x2={w.end.x} y2={w.end.y} stroke={w.id.startsWith("model-")?"#0284c7":"#d97706"} strokeWidth={Math.max(3,geometry.width_px/260)} pointerEvents="none"/>)}
  {wallStart&&<circle cx={wallStart.x} cy={wallStart.y} r={Math.max(5,geometry.width_px/130)} fill="#d97706" pointerEvents="none"/>}
  </svg>:<Viewer geometry={geometry}/>}
  <p className="muted">{mode==='wall'?'Click two points to draw a continuous wall. Endpoints snap to nearby vertices and near-horizontal/vertical axes.':mode==='door'||mode==='window'?'Click a wall edge to place an opening. Draw continuous walls first—never leave a gap manually.':'Drag room vertices; nearby joints snap and matching walls follow.'} Detection is shown by default but is not verified geometry.</p></div>
@@ -221,6 +224,7 @@ export default function Editor(){
  <details><summary>Advanced scale override (optional)</summary><label>Pixels per meter <input type="number" min=".001" step=".1" value={geometry.px_per_meter??''}
  onChange={e=>setGeometry({...geometry,px_per_meter:e.target.value?Number(e.target.value):null,scale_source:'user_confirmed'})} placeholder="Use confirmed dimension"/></label></details>
  <span className="pill">{geometry.rooms.length} rooms · {geometry.walls.length} stored walls</span>
+ {geometry.walls.some(w=>w.id.startsWith('model-'))&&<div className="notice">Model geometry is now active. Blue wall centerlines in 2D correspond to the 3D walls. Room floors are not yet reconstructed. All wall and opening positions are provisional.</div>}
  <small>Detected {evidence?.segments.length??0} raw strokes · {evidence?.candidates.length??0} unfiltered possible walls · {suggestions.length} shown after local filtering</small>
  <small>Draw the full continuous perimeter and partitions, including across openings. Use Add door / Add window to cut into a wall. Snapping uses existing geometry, not image pixels.</small>
  <h2>Pretrained object detection</h2>
