@@ -97,6 +97,7 @@ def propose_topology(bid: str):
         if not bp:raise HTTPException(404,'Blueprint not found')
         last=session.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
         if not last:raise HTTPException(404,'No saved layout')
+        if last.verified:raise HTTPException(409,'Verified layouts are immutable; create an unverified draft before proposing changes')
         try:
             proposal=propose_connected_geometry(Geometry.model_validate(last.geometry))
         except ValueError as exc:raise HTTPException(422,str(exc))
