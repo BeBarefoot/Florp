@@ -150,6 +150,10 @@ async def extract(bid:str):
         g.px_per_meter=evidence.automatic_scale.px_per_meter
         g.scale_source='provisional_auto'
         g.warnings.append('Scale inferred from '+str(evidence.automatic_scale.evidence_count)+' OCR/line clues; requires confirmation before verification')
+    # Remote visual recognition is always a proposal; not user-confirmed.
+    for wall in g.walls:wall.inferred=True
+    for opening in g.openings:opening.inferred=True
+    g.structure_reviewed=False
     g=reconcile(g,evidence)
     with Session(engine) as s:
         last=s.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
@@ -306,10 +310,10 @@ def save_layout(bid:str,body:SaveLayout):
         if body.structure_reviewed:
             incoming.structure_reviewed=True
         issues=validate_geometry(incoming)
-        if body.verified and incoming.scale_source=='provisional_auto':
-            issues.append('Confirm the automatic scale before metric verification')
-        if body.verified and incoming.openings and any('provisional' in warning.lower() for warning in incoming.warnings):
-            issues.append('Confirm opening and scale dimensions before metric verification')
+        if body.verified and incoming.scale_source!='user_confirmed':
+            issues.append('Confirm the scale using blueprint dimension evidence before metric verification')
+        if body.verified and any(o.inferred for o in incoming.openings):
+            issues.append('Confirm each provisional door/window dimension before metric verification')
         if body.verified and issues:
             raise HTTPException(422,{'message':'Metric verification blocked; wall review may still be saved separately','issues':issues})
         version=last.version+1 if last else 1
