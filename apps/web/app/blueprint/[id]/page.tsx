@@ -178,7 +178,10 @@ export default function Editor(){
   if(kind!=='door'&&kind!=='window')return;
   const detectionId=sourceId(selectedDetection);
   if(geometry.openings.some(o=>o.source_detection_id===detectionId)){
-   setStatus('This detection has already been added. Review its opening below.');return;
+   setGeometry(current=>current?{...current,structure_reviewed:false,
+      openings:current.openings.map(o=>o.source_detection_id===detectionId?{...o,reviewed:true}:o)}:current);
+   setRejectedDetections(current=>current.filter(value=>value!==detectionId));
+   setStatus('Detection reviewed ✓. Save draft to keep the approval and your wall edits.');return;
   }
   const point={x:(selectedBox.x1+selectedBox.x2)/2,y:(selectedBox.y1+selectedBox.y2)/2};
   const ranked=edges.map(edge=>({edge,d:segmentDistance(point,edge)})).sort((a,b)=>a.d-b.d);
@@ -201,7 +204,7 @@ export default function Editor(){
     return;
   }
   const opening:Opening={
-    id:'reviewed-'+crypto.randomUUID(),source_detection_id:detectionId,
+    id:'reviewed-'+crypto.randomUUID(),source_detection_id:detectionId,reviewed:true,
     kind,wall_id:edge.id,offset_m:Number(offset.toFixed(3)),
     width_m:Number(width.toFixed(3)),height_m:kind==='door'?2.1:1.2,
     sill_m:kind==='door'?0:.9,inferred:true
@@ -230,7 +233,7 @@ export default function Editor(){
   if(geometry.openings.some(o=>o.wall_id===edge.id&&offset<o.offset_m+o.width_m&&o.offset_m<offset+width)){
     setStatus('An opening already exists here. Edit that opening in the sidebar.');return;
   }
-  const opening:Opening={id:'user-opening-'+crypto.randomUUID(),kind,wall_id:edge.id,
+  const opening:Opening={id:'user-opening-'+crypto.randomUUID(),reviewed:true,kind,wall_id:edge.id,
    offset_m:Number(offset.toFixed(3)),width_m:Number(width.toFixed(3)),
    height_m:kind==='door'?2.1:1.2,sill_m:kind==='door'?0:.9,inferred:true};
   setGeometry(old=>old?{...old,structure_reviewed:false,openings:[...old.openings,opening]}:old);
@@ -395,14 +398,15 @@ export default function Editor(){
  <button className="secondary" onClick={()=>setSelectedWall(null)}>Finish correction</button>
  </div>:<small>Click a blue model wall line to edit or remove it; drag its endpoint handles. This corrects the reconstructed geometry, not the original YOLO box.</small>}
  <small>Use Confirm wall positions after reviewing the proposed structure; physical measurements are a separate step.</small>
- <h2>Opening review ({geometry.openings.length} proposed)</h2>
+ <h2>Opening review</h2>
+ <span className="pill">{geometry.openings.filter(o=>o.source_detection_id&&o.reviewed).length} reviewed · {geometry.openings.filter(o=>o.source_detection_id&&!o.reviewed).length} awaiting review · {geometry.openings.length} total in draft</span>
  {selectedBox&&(selectedBox.category==='door'||selectedBox.category==='window')&&
  <div className="stack" style={{border:'2px solid #16a34a',borderRadius:10,padding:12}}>
  <strong>Selected {selectedBox.category} detection</strong>
- <small>{Math.round(selectedBox.confidence*100)}% model confidence · {selectedOpening?'Already in draft':selectedSourceId&&rejectedDetections.includes(selectedSourceId)?'Dismissed':'Needs review'}</small>
+ <small>{Math.round(selectedBox.confidence*100)}% model confidence · {selectedOpening?.reviewed?'Reviewed ✓':selectedOpening?'Proposed — approval needed':selectedSourceId&&rejectedDetections.includes(selectedSourceId)?'Dismissed':'Needs review'}</small>
  <div className="row">
- {!selectedOpening&&<button disabled={busy} onClick={approveDetectedOpening}>Add proposed {selectedBox.category}</button>}
- {selectedOpening&&<span className="pill">Added ✓ — review below</span>}
+ {!selectedOpening?.reviewed&&<button disabled={busy} onClick={approveDetectedOpening}>{selectedOpening?'Approve detected opening':'Add proposed '+selectedBox.category}</button>}
+ {selectedOpening?.reviewed&&<span className="pill">Reviewed ✓ — save pending edits</span>}
  <button className="secondary" onClick={rejectDetectedOpening}>Dismiss</button>
  <button className="secondary" onClick={()=>setSelectedDetection(null)}>Close</button>
  </div>
