@@ -10,7 +10,7 @@ import fitz
 from .config import settings
 from .models import Project, Blueprint, Layout, Render, WallAnnotation
 from .geometry import Geometry, fallback_geometry, validate_geometry
-from .providers import extract_geometry, ProviderUnavailable, ProviderAuthenticationError, ProviderConfigurationError
+from .providers import extract_geometry, ProviderUnavailable, ProviderAuthenticationError, ProviderConfigurationError, ProviderOutputError
 from .evidence import inspect_plan
 from .reconcile import reconcile
 from .geometry import Wall, Pt
@@ -140,6 +140,7 @@ async def extract(bid:str):
     if not bp:raise HTTPException(404,'Not found')
     data=Path(bp.preview_path).read_bytes()
     try:g=await extract_geometry(data,'image/png',bp.width,bp.height)
+    except ProviderOutputError as e:raise HTTPException(424,str(e))
     except ProviderConfigurationError as e:raise HTTPException(424,str(e))
     except ProviderAuthenticationError as e:raise HTTPException(424,str(e))
     except ProviderUnavailable as e:raise HTTPException(424,str(e))
@@ -291,20 +292,23 @@ def propose_opening(bid:str,body:ProvisionalOpeningInput):
 class SaveLayout(BaseModel):
     geometry:Geometry
     verified:bool=False
+    structure_reviewed:bool=False
 @app.post('/blueprints/{bid}/layout')
 def save_layout(bid:str,body:SaveLayout):
     with Session(engine) as s:
         if not s.get(Blueprint,bid):
             raise HTTPException(404,'Not found')
         last=s.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
-        warnings=validate_geometry(body.geometry)
-        if body.verified and body.geometry.scale_source=='provisional_auto':
+        incoming=body.geometry.model_copy(deep=True)
+        if body.structure_reviewed: incoming.structure_reviewed=True
+        warnings=validate_geometry(incoming)
+        if body.verified and incoming.scale_source=='provisional_auto':
             warnings.append('Review and confirm the inferred physical scale first')
-    if body.verified and body.geometry.openings and any('provisional' in w.lower() for w in body.geometry.warnings):
+    if body.verified and incoming.openings and any('provisional' in w.lower() for w in incoming.warnings):
             warnings.append('Confirm scale and provisional opening dimensions before verification')
     if body.verified and warnings:
         raise HTTPException(422,{'message':'Resolve validation issues before verification','issues':warnings})
-    row=Layout(blueprint_id=bid,version=(last.version+1 if last else 1),verified=body.verified,geometry=body.geometry.model_dump())
+    row=Layout(blueprint_id=bid,version=(last.version+1 if last else 1),verified=body.verified,geometry=incoming.model_dump())
     s.add(row);s.commit();s.refresh(row)
     return row
 @app.get('/blueprints/{bid}/renders',response_model=list[Render])
