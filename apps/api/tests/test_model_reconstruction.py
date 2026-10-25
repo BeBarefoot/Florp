@@ -53,3 +53,23 @@ def test_reviewed_opening_roundtrips_without_changing_structural_walls():
     assert reread.openings[0].reviewed is True
     assert reread.openings[0].source_detection_id=='model-box-1'
     assert [w.model_dump() for w in reread.walls]==before
+
+def test_supported_short_wall_extension_is_retained():
+    from app.model_reconstruction import detection_audit
+    result=DetectorResult(image_width=800,image_height=600,boxes=[
+        detected('wall',100,100,220,110),
+        detected('wall',221,100,249,110),
+    ])
+    geometry=reconstruct(result,fallback_geometry(800,600))
+    assert len(geometry.walls)==2
+    assert detection_audit(result)['accepted_wall_boxes']==2
+
+def test_isolated_short_wall_is_not_invented():
+    from app.model_reconstruction import detection_audit
+    result=DetectorResult(image_width=800,image_height=600,boxes=[
+        detected('wall',100,100,220,110),
+        detected('wall',500,400,525,410),
+    ])
+    geometry=reconstruct(result,fallback_geometry(800,600))
+    assert len(geometry.walls)==1
+    assert detection_audit(result)['too_short']==1
