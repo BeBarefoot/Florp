@@ -294,9 +294,9 @@ export default function Editor(){
  onClick={e=>{if(b.category==='door'||b.category==='window'){e.stopPropagation();setSelectedDetection(i);setMode('edit')}}}
  style={{cursor:b.category==='door'||b.category==='window'?'pointer':'default'}}>
  <rect x={b.x1} y={b.y1} width={b.x2-b.x1} height={b.y2-b.y1}
- stroke={selectedDetection===i?'#16a34a':rejectedDetections.includes(sourceId(i))?'#9ca3af':b.category.includes('wall')?'#8b5cf6':b.category.includes('door')?'#ea580c':b.category.includes('window')?'#0891b2':'#737373'}
+ stroke={geometry.openings.some(o=>o.source_detection_id===sourceId(i)&&o.reviewed)?'#16a34a':selectedDetection===i?'#22c55e':rejectedDetections.includes(sourceId(i))?'#9ca3af':b.category.includes('wall')?'#8b5cf6':b.category.includes('door')?'#ea580c':b.category.includes('window')?'#0891b2':'#737373'}
  strokeWidth={Math.max(selectedDetection===i?5:2,geometry.width_px/420)} fill={b.category==='door'||b.category==='window'?'rgba(56,189,248,.08)':'none'} strokeDasharray="8 5"/>
- <title>{b.category+' · '+(b.confidence*100).toFixed(1)+'%'}</title></g>)}
+ <title>{b.category+' · '+(b.confidence*100).toFixed(1)+'% · '+(geometry.openings.some(o=>o.source_detection_id===sourceId(i)&&o.reviewed)?'reviewed':geometry.openings.some(o=>o.source_detection_id===sourceId(i))?'proposed':'unreviewed')}</title></g>)}
  {showRaw&&evidence?.segments.map((s,i)=><line key={'raw'+i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke="#d98d26" strokeWidth={Math.max(1,geometry.width_px/700)} opacity={.3} pointerEvents="none"/>)}
  {showSuggestions&&suggestions.map((s,i)=><line key={'candidate'+i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
  stroke={reviewLabels[candidateKey(s)]==='not_wall'?'#b91c1c':reviewLabels[candidateKey(s)]==='wall'?'#16a34a':'#2563eb'} strokeWidth={Math.max(3,geometry.width_px/230)} opacity={.82} style={{cursor:'pointer'}}
