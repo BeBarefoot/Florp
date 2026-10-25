@@ -17,6 +17,7 @@ from .geometry import Wall, Pt
 from .pretrained_detector import DetectorResult, DetectorUnavailable, detect_objects
 from .model_reconstruction import reconstruct
 from .topology import audit_topology
+from .graph_reconstruction import propose_connected_geometry
 
 Path(settings.storage_path).mkdir(parents=True,exist_ok=True)
 if settings.database_url.startswith('sqlite:///'):
@@ -88,6 +89,21 @@ def topology_report(bid: str):
         if not row: raise HTTPException(404,'No layout')
         return audit_topology(Geometry.model_validate(row.geometry))
 
+@app.post('/blueprints/{bid}/topology/propose')
+def propose_topology(bid: str):
+    # Saves a new unverified layout; original correction history stays available.
+    with Session(engine) as session:
+        bp=session.get(Blueprint,bid)
+        if not bp:raise HTTPException(404,'Blueprint not found')
+        last=session.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
+        if not last:raise HTTPException(404,'No saved layout')
+        try:
+            proposal=propose_connected_geometry(Geometry.model_validate(last.geometry))
+        except ValueError as exc:raise HTTPException(422,str(exc))
+        row=Layout(blueprint_id=bid,version=last.version+1,verified=False,geometry=proposal.model_dump())
+        session.add(row);session.commit();session.refresh(row)
+        return {'layout':row,'topology':audit_topology(proposal)}
+
 @app.get('/blueprints/{bid}/evidence')
 def blueprint_evidence(bid:str):
     with Session(engine) as s:bp=s.get(Blueprint,bid)
@@ -136,6 +152,7 @@ def pretrained_reconstruct(bid:str):
         try:
             detection=detect_objects(Path(bp.preview_path),bp.width,bp.height)
             geometry=reconstruct(detection,Geometry.model_validate(previous.geometry))
+            geometry=propose_connected_geometry(geometry)
         except DetectorUnavailable as exc:raise HTTPException(424,str(exc))
         except ValueError as exc:raise HTTPException(422,str(exc))
         draft=Layout(blueprint_id=bid,version=previous.version+1,verified=False,geometry=geometry.model_dump())
