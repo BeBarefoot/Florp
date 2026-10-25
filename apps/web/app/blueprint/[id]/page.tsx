@@ -50,6 +50,8 @@ export default function Editor(){
  const [reviewScope,setReviewScope]=useState<'all'|'near'>('all');
  const [reviewLabels,setReviewLabels]=useState<Record<string,string>>({}),[selectedCandidate,setSelectedCandidate]=useState<Candidate|null>(null);
  const [selectedWall,setSelectedWall]=useState<string|null>(null);
+ const [selectedDetection,setSelectedDetection]=useState<number|null>(null);
+ const [rejectedDetections,setRejectedDetections]=useState<string[]>([]);
  const [mode,setMode]=useState<'edit'|'wall'|'door'|'window'>('edit'),[wallStart,setWallStart]=useState<Pt|null>(null);
  const [prompt,setPrompt]=useState('A sunlit Scandinavian living room with natural oak floors and green velvet furniture');
  useEffect(()=>{
@@ -76,7 +78,7 @@ export default function Editor(){
    try{
      const result=await request<Reconstructed>(`/blueprints/${id}/pretrained-reconstruct`,{method:'POST'});
      setModelDetections(result.detections);setDetectorAudit(result.detection_audit||null);setShowModelDetections(true);
-     setLayout(result.layout);setGeometry(result.layout.geometry);
+     setLayout(result.layout);setGeometry(result.layout.geometry);setSelectedDetection(null);setRejectedDetections([]);
      setStatus('Pretrained model generated '+result.layout.geometry.walls.length+' draft walls, '+result.layout.geometry.rooms.length+' proposed enclosed rooms and '+result.layout.geometry.openings.length+' provisional openings. Review all results before confirming.');
    }catch(err){setStatus(String(err))}
    finally{setModelBusy(false)}
@@ -166,31 +168,73 @@ export default function Editor(){
    setLayout(l);setGeometry(l.geometry);setStatus('Suggestion accepted as a draft wall.');
   }catch(e){setStatus(String(e))}finally{setBusy(false)}
  }
- async function useDetectedOpening(b:ModelBox){
-  if(!geometry)return;
-  const point={x:(b.x1+b.x2)/2,y:(b.y1+b.y2)/2};
+ const sourceId=(i:number)=>'model-box-'+i;
+ const selectedBox=selectedDetection===null?null:modelDetections?.boxes[selectedDetection]||null;
+ const selectedSourceId=selectedDetection===null?null:sourceId(selectedDetection);
+ const selectedOpening=selectedSourceId?geometry?.openings.find(o=>o.source_detection_id===selectedSourceId):null;
+ function approveDetectedOpening(){
+  if(!geometry||!selectedBox||selectedDetection===null)return;
+  const kind=selectedBox.category;
+  if(kind!=='door'&&kind!=='window')return;
+  const detectionId=sourceId(selectedDetection);
+  if(geometry.openings.some(o=>o.source_detection_id===detectionId)){
+   setStatus('This detection has already been added. Review its opening below.');return;
+  }
+  const point={x:(selectedBox.x1+selectedBox.x2)/2,y:(selectedBox.y1+selectedBox.y2)/2};
   const ranked=edges.map(edge=>({edge,d:segmentDistance(point,edge)})).sort((a,b)=>a.d-b.d);
   if(!ranked.length||ranked[0].d>Math.max(32,Math.min(geometry.width_px,geometry.height_px)*.1)){
-   setStatus('This detected opening has no nearby reconstructed wall. Review the missing wall first.');return;
+   setStatus('No reliable wall near this detection. Correct the wall first, then approve.');return;
   }
-  const nearestModel=ranked.find(item=>item.edge.id.startsWith('model-')&&item.d<=Math.max(20,ranked[0].d+10));
-  await addOpening((nearestModel||ranked[0]).edge,point,b.category as 'door'|'window');
+  const choice=ranked.find(item=>item.edge.id.startsWith('model-')&&item.d<=Math.max(20,ranked[0].d+10))||ranked[0];
+  const edge=choice.edge;
+  const dx=edge.end.x-edge.start.x,dy=edge.end.y-edge.start.y;
+  const lengthPx=Math.hypot(dx,dy);
+  const ppm=geometry.px_per_meter||60;
+  const wallLength=lengthPx/ppm;
+  if(wallLength<.2){setStatus('Wall is too short for an opening.');return;}
+  const fraction=Math.max(0,Math.min(1,((point.x-edge.start.x)*dx+(point.y-edge.start.y)*dy)/(lengthPx*lengthPx)));
+  const width=Math.min(kind==='door'?.9:1.2,wallLength*.6);
+  const offset=Math.max(0,Math.min(wallLength-width,fraction*wallLength-width/2));
+  const conflicting=geometry.openings.find(o=>o.wall_id===edge.id&&offset<o.offset_m+o.width_m&&o.offset_m<offset+width);
+  if(conflicting){
+    setStatus('An opening already occupies this wall span. Select and review the existing opening instead of creating a duplicate.');
+    return;
+  }
+  const opening:Opening={
+    id:'reviewed-'+crypto.randomUUID(),source_detection_id:detectionId,
+    kind,wall_id:edge.id,offset_m:Number(offset.toFixed(3)),
+    width_m:Number(width.toFixed(3)),height_m:kind==='door'?2.1:1.2,
+    sill_m:kind==='door'?0:.9,inferred:true
+  };
+  setGeometry(current=>current?{...current,structure_reviewed:false,openings:[...current.openings,opening]}:current);
+  setRejectedDetections(current=>current.filter(value=>value!==detectionId));
+  setStatus('Opening added to UNSAVED draft. Review it, then Save draft or Confirm wall positions.');
  }
- async function addOpening(edge:{id:string;start:Pt;end:Pt;thickness_m:number;height_m:number},p:Pt,kind:'door'|'window'){
-  if(!geometry)return;
+ function rejectDetectedOpening(){
+  if(!selectedSourceId)return;
+  if(selectedOpening){
+    setGeometry(current=>current?{...current,openings:current.openings.filter(o=>o.source_detection_id!==selectedSourceId)}:current);
+  }
+  setRejectedDetections(current=>current.includes(selectedSourceId)?current:[...current,selectedSourceId]);
+  setStatus('Detection dismissed from this review session. No layout version created.');
+ }
+ function addOpening(edge:{id:string;start:Pt;end:Pt;thickness_m:number;height_m:number},p:Pt,kind:'door'|'window'){
+  if(!geometry||busy)return;
   const dx=edge.end.x-edge.start.x,dy=edge.end.y-edge.start.y,len2=dx*dx+dy*dy;
   if(len2<100){setStatus('Wall segment is too short.');return;}
+  const ppm=geometry.px_per_meter||60;
+  const length=Math.sqrt(len2)/ppm;
   const fraction=Math.max(0,Math.min(1,((p.x-edge.start.x)*dx+(p.y-edge.start.y)*dy)/len2));
-  setBusy(true);
-  try{
-    // Save an explicitly provisional opening on the server when scale is unknown.
-    const l=await request<Layout>(`/blueprints/${id}/openings/propose`,{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({wall_id:edge.id,fraction,kind,geometry})
-    });
-    setLayout(l);setGeometry(l.geometry);
-    setStatus(kind+' updated on the draft wall. Review its position before confirming.');
-  }catch(e){setStatus(String(e))}finally{setBusy(false)}
+  const width=Math.min(kind==='door'?.9:1.2,length*.6);
+  const offset=Math.max(0,Math.min(length-width,fraction*length-width/2));
+  if(geometry.openings.some(o=>o.wall_id===edge.id&&offset<o.offset_m+o.width_m&&o.offset_m<offset+width)){
+    setStatus('An opening already exists here. Edit that opening in the sidebar.');return;
+  }
+  const opening:Opening={id:'user-opening-'+crypto.randomUUID(),kind,wall_id:edge.id,
+   offset_m:Number(offset.toFixed(3)),width_m:Number(width.toFixed(3)),
+   height_m:kind==='door'?2.1:1.2,sill_m:kind==='door'?0:.9,inferred:true};
+  setGeometry(old=>old?{...old,structure_reviewed:false,openings:[...old.openings,opening]}:old);
+  setStatus('Opening added to UNSAVED draft. Save to keep your edits.');
  }
  function removeOpening(id:string){if(!geometry)return;setGeometry({...geometry,openings:geometry.openings.filter(o=>o.id!==id)});}
  function changeOpening(id:string,field:'width_m'|'height_m'|'offset_m'|'sill_m',raw:string){
@@ -199,7 +243,8 @@ export default function Editor(){
  }
  function removeWall(id:string){if(!geometry)return;setSelectedWall(null);setGeometry({...geometry,structure_reviewed:false,walls:geometry.walls.filter(w=>w.id!==id),openings:geometry.openings.filter(o=>o.wall_id!==id)});setStatus('Draft wall removed. Save to persist changes.')}
  return <div className="app"><aside><h2>✦ Florp</h2><Link href="/">← Projects</Link>
- <hr style={{borderColor:'#354053',margin:'22px 0'}}/><p>Layout v{layout?.version??'–'} · {layout?.verified?'Verified':'Unverified'}</p>
+ <hr style={{borderColor:'#354053',margin:'22px 0'}}/><p>Saved layout v{layout?.version??'–'} · {layout?.verified?'Verified':'Unverified'}</p>
+ {geometry&&layout&&<p className="notice">{geometry===layout.geometry?'All changes saved':'● Unsaved edits — Save draft when ready'}</p>}
  <div className="stack"><button disabled={busy} onClick={extract}>Run real AI extraction</button>
  <button className="secondary" disabled={busy} onClick={()=>save(false)}>Save draft</button>
  <button className="secondary" disabled={busy} onClick={()=>save(false,true)}>Confirm wall positions</button>
@@ -214,7 +259,7 @@ export default function Editor(){
  {view==='2d'&&<div className="notice" style={{marginBottom:12}}>
  {mode==='door'||mode==='window'?'Click near a wall to place a provisional opening. No manual scale entry required.':
  mode==='wall'?'Click two points to draw a wall; snapping is enabled.':
- 'Click a blue reconstructed wall to correct it. Dashed orange/cyan detected openings can be clicked to attach or update an opening.'}
+ 'Select an orange/cyan detection to review it, then choose Add opening or Dismiss. Your wall edits remain untouched.'}
  </div>}
  {view==='2d'&&<div className="row" style={{marginBottom:12}}>
  <button className="secondary" disabled={modelBusy||busy} onClick={()=>void runPretrained()}>
@@ -243,11 +288,11 @@ export default function Editor(){
  style={{filter:grayscale?'grayscale(1) contrast(1.12) brightness(1.08)':'none'}}/>
  {showModelDetections&&modelDetections?.boxes.map((b,i)=>
  <g key={'model-'+i} pointerEvents={b.category==='door'||b.category==='window'?'all':'none'}
- onClick={e=>{if(b.category==='door'||b.category==='window'){e.stopPropagation();void useDetectedOpening(b)}}}
+ onClick={e=>{if(b.category==='door'||b.category==='window'){e.stopPropagation();setSelectedDetection(i);setMode('edit')}}}
  style={{cursor:b.category==='door'||b.category==='window'?'pointer':'default'}}>
  <rect x={b.x1} y={b.y1} width={b.x2-b.x1} height={b.y2-b.y1}
- stroke={b.category.includes('wall')?'#8b5cf6':b.category.includes('door')?'#ea580c':b.category.includes('window')?'#0891b2':'#737373'}
- strokeWidth={Math.max(2,geometry.width_px/420)} fill={b.category==='door'||b.category==='window'?'rgba(56,189,248,.08)':'none'} strokeDasharray="8 5"/>
+ stroke={selectedDetection===i?'#16a34a':rejectedDetections.includes(sourceId(i))?'#9ca3af':b.category.includes('wall')?'#8b5cf6':b.category.includes('door')?'#ea580c':b.category.includes('window')?'#0891b2':'#737373'}
+ strokeWidth={Math.max(selectedDetection===i?5:2,geometry.width_px/420)} fill={b.category==='door'||b.category==='window'?'rgba(56,189,248,.08)':'none'} strokeDasharray="8 5"/>
  <title>{b.category+' · '+(b.confidence*100).toFixed(1)+'%'}</title></g>)}
  {showRaw&&evidence?.segments.map((s,i)=><line key={'raw'+i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke="#d98d26" strokeWidth={Math.max(1,geometry.width_px/700)} opacity={.3} pointerEvents="none"/>)}
  {showSuggestions&&suggestions.map((s,i)=><line key={'candidate'+i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
@@ -351,6 +396,19 @@ export default function Editor(){
  </div>:<small>Click a blue model wall line to edit or remove it; drag its endpoint handles. This corrects the reconstructed geometry, not the original YOLO box.</small>}
  <small>Use Confirm wall positions after reviewing the proposed structure; physical measurements are a separate step.</small>
  <h2>Opening review ({geometry.openings.length} proposed)</h2>
+ {selectedBox&&(selectedBox.category==='door'||selectedBox.category==='window')&&
+ <div className="stack" style={{border:'2px solid #16a34a',borderRadius:10,padding:12}}>
+ <strong>Selected {selectedBox.category} detection</strong>
+ <small>{Math.round(selectedBox.confidence*100)}% model confidence · {selectedOpening?'Already in draft':selectedSourceId&&rejectedDetections.includes(selectedSourceId)?'Dismissed':'Needs review'}</small>
+ <div className="row">
+ {!selectedOpening&&<button disabled={busy} onClick={approveDetectedOpening}>Add proposed {selectedBox.category}</button>}
+ {selectedOpening&&<span className="pill">Added ✓ — review below</span>}
+ <button className="secondary" onClick={rejectDetectedOpening}>Dismiss</button>
+ <button className="secondary" onClick={()=>setSelectedDetection(null)}>Close</button>
+ </div>
+ <small>Clicks only select. Approving changes the local draft; no new layout version until you save.</small>
+ </div>}
+
  {modelDetections&&<small>Model found {modelDetections.boxes.filter(b=>b.category==='door').length} door boxes and {modelDetections.boxes.filter(b=>b.category==='window').length} window boxes. Toggle Model boxes to see orange/cyan detections and click one to propose or update the nearest wall opening. Not every detection can be safely attached.</small>}
  {geometry.openings.map(o=><div className="stack" key={o.id} style={{padding:10,border:'1px solid #dce2e8',borderRadius:8}}>
  <div className="row"><strong>{o.kind} · {o.wall_id.slice(0,25)}</strong><button className="secondary" onClick={()=>removeOpening(o.id)}>Remove</button></div>
