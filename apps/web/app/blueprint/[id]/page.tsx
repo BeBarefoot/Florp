@@ -169,6 +169,23 @@ export default function Editor(){
   }catch(e){setStatus(String(e))}finally{setBusy(false)}
  }
  const sourceId=(i:number)=>'model-box-'+i;
+ const openingQueue=modelDetections?.boxes.map((box,index)=>({box,index})).filter(item=>item.box.category==='door'||item.box.category==='window')||[];
+ const pendingQueue=openingQueue.filter(({index})=>!rejectedDetections.includes(sourceId(index))&&
+   !geometry?.openings.some(o=>o.source_detection_id===sourceId(index)&&o.reviewed));
+ const currentQueueIndex=openingQueue.findIndex(item=>item.index===selectedDetection);
+ function nextOpening(direction=1){
+   if(!openingQueue.length)return;
+   const current=currentQueueIndex<0?(direction>0?-1:0):currentQueueIndex;
+   const next=(current+direction+openingQueue.length)%openingQueue.length;
+   setSelectedDetection(openingQueue[next].index);
+   setSelectedWall(null);setMode('edit');
+ }
+ function nextPending(){
+   const after=pendingQueue.find(item=>item.index>(selectedDetection??-1));
+   const next=after||pendingQueue[0];
+   setSelectedDetection(next?next.index:null);
+   setSelectedWall(null);
+ }
  const selectedBox=selectedDetection===null?null:modelDetections?.boxes[selectedDetection]||null;
  const selectedSourceId=selectedDetection===null?null:sourceId(selectedDetection);
  const selectedOpening=selectedSourceId?geometry?.openings.find(o=>o.source_detection_id===selectedSourceId):null;
@@ -181,7 +198,7 @@ export default function Editor(){
    setGeometry(current=>current?{...current,structure_reviewed:false,
       openings:current.openings.map(o=>o.source_detection_id===detectionId?{...o,reviewed:true}:o)}:current);
    setRejectedDetections(current=>current.filter(value=>value!==detectionId));
-   setStatus('Detection reviewed ✓. Save draft to keep the approval and your wall edits.');return;
+   setStatus('Opening approved. Continue with Next item; save all edits together.');return;
   }
   const point={x:(selectedBox.x1+selectedBox.x2)/2,y:(selectedBox.y1+selectedBox.y2)/2};
   const ranked=edges.map(edge=>({edge,d:segmentDistance(point,edge)})).sort((a,b)=>a.d-b.d);
@@ -211,7 +228,7 @@ export default function Editor(){
   };
   setGeometry(current=>current?{...current,structure_reviewed:false,openings:[...current.openings,opening]}:current);
   setRejectedDetections(current=>current.filter(value=>value!==detectionId));
-  setStatus('Opening added to UNSAVED draft. Review it, then Save draft or Confirm wall positions.');
+  setStatus('Opening added to draft. Continue with Next item; save when finished.');
  }
  function rejectDetectedOpening(){
   if(!selectedSourceId)return;
@@ -259,6 +276,32 @@ export default function Editor(){
  {status&&<p className="notice">{status}</p>}
  {geometry&&<div className="grid" style={{gridTemplateColumns:'minmax(0,2fr) minmax(290px,1fr)'}}>
  <div className="panel"><h2>{view==='2d'?'Floor-plan overlay':'3D shell · same outline'}</h2>
+ {view==='2d'&&modelDetections&&<div style={{border:'1px solid #9fc7d5',borderRadius:12,padding:12,marginBottom:12,background:'#f1f9fa',color:'#18364a'}}>
+ <div className="row" style={{justifyContent:'space-between',alignItems:'center'}}>
+ <strong>Review detected openings · {openingQueue.length-pendingQueue.length}/{openingQueue.length} resolved</strong>
+ <button className="secondary" disabled={!pendingQueue.length} onClick={nextPending}>Next item →</button>
+ </div>
+ {selectedBox&&(selectedBox.category==='door'||selectedBox.category==='window')?
+ <div className="stack">
+ <small>Item {currentQueueIndex+1} of {openingQueue.length} · {selectedBox.category} · {Math.round(selectedBox.confidence*100)}% model score
+  · {selectedOpening?.reviewed?'Approved':selectedOpening?'Proposed':'Needs review'}</small>
+ <div className="row">
+ <button className="secondary" onClick={()=>nextOpening(-1)}>← Previous</button>
+ {!selectedOpening?.reviewed&&<button onClick={()=>{approveDetectedOpening()}}>Approve opening</button>}
+ <button className="secondary" onClick={()=>{rejectDetectedOpening()}}>Reject detection</button>
+ <button className="secondary" onClick={()=>nextOpening(1)}>Next →</button>
+ </div>
+ </div>:<small>Choose Next item to inspect the first unresolved door/window. Each selected box is highlighted on the plan.</small>}
+ <small>Corrections stay in your current draft. Click Save draft when done.</small>
+ </div>}
+ {view==='2d'&&selectedWall&&<div style={{border:'2px solid #16a34a',borderRadius:10,padding:12,marginBottom:12,background:'#f0fdf4',color:'#14532d'}}>
+ <strong>Selected wall: {selectedWall}</strong>
+ <div className="row">
+ <button onClick={()=>removeWall(selectedWall)}>Reject false wall</button>
+ <button className="secondary" onClick={()=>setSelectedWall(null)}>Keep / deselect</button>
+ </div>
+ <small>Reject removes this wall from 2D and 3D, along with its attached provisional openings. Save to persist.</small>
+ </div>}
  {view==='2d'&&<div className="notice" style={{marginBottom:12}}>
  {mode==='door'||mode==='window'?'Click near a wall to place a provisional opening. No manual scale entry required.':
  mode==='wall'?'Click two points to draw a wall; snapping is enabled.':
