@@ -185,3 +185,42 @@ The legacy OpenCV candidate overlay and label UI are now hidden under **Advanced
 Projects can now be deleted from the home page with a confirmation. Deleting removes the project's local blueprint files and dependent database records. It cannot be undone.
 
 **Known limitations:** YOLO boxes cannot guarantee exact wall or opening geometry. The model may detect an object without a nearby reconstructed wall; those cases require review. No automatic retraining or background learning happens when a correction is saved. Benchmark results and actual production readiness remain unverified.
+
+
+## Phase 3 experimental wall-mask segmentation
+
+A **separate segmentation checkpoint** (trained to output a pixel mask for class
+`wall` / `walls`) can now be evaluated alongside the existing pretrained
+bounding-box detector. This does NOT magically turn the existing
+`sanatladkat/floor-plan-object-detection/best.pt` into a segmentation model.
+
+1. Obtain and review a trusted segmentation checkpoint; inspect its license,
+   training domain, class mapping and compatibility with Ultralytics.
+2. Store it outside version control; set
+   `WALL_SEGMENTATION_WEIGHTS=./models/wall-segmentation.pt` in `apps/api/.env`.
+3. `cd apps/api && uv sync --extra pretrained-yolo`. Restart the API.
+4. In the 2D blueprint editor, expand **Experimental wall segmentation** and
+   select **Try wall-mask reconstruction**. The API runs locally; it requires
+   mask tensors and refuses to substitute ordinary object bounding boxes.
+5. Examine proposed mask-derived centerlines and topology. These are rough
+   Hough-derived lines supported by local pixels, *not* calibrated CAD walls.
+
+The new endpoint `POST /blueprints/{id}/segmentation/propose` writes a new
+unverified draft version. It refuses to replace metric-verified layouts,
+structurally approved layouts or layouts containing user-drawn walls. It clears
+old wall IDs/openings when forming a separate segmentation proposal, since
+carrying their anchors to different centerlines would corrupt the model.
+Previous saved layouts remain available in the database, but the app does
+not yet include a general version-restoration UI. **Do not run this experiment
+on unsaved edits.** If the checkpoint is absent or returns bounding boxes
+without masks, the API responds with a clear 424 and does not modify the draft.
+
+`app/wall_segmentation.py` contains the local mask interface, class filtering,
+resolution normalization, conservative mask-supported straight-line extraction
+and unverified proposal conversion. `tests/test_wall_segmentation.py` covers
+synthetic masks. It is not a benchmark of real wall segmentation accuracy.
+Next research step: compare a trusted real segmentation checkpoint against the
+existing YOLO boxes on a held-out, annotated set of Florp scans (wall pixels,
+junction completeness, opening preservation and human correction time).
+
+Existing YOLO **Auto-build 2D + 3D** and review workflows are unchanged.
