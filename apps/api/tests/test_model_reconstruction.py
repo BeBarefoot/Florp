@@ -19,6 +19,8 @@ def test_model_replaces_starter_polygon_and_creates_wall_opening():
     assert len(draft.openings)==1
     assert draft.openings[0].wall_id==draft.walls[0].id
     assert draft.openings[0].inferred
+    assert draft.openings[0].source_detection_id=='model-box-2'
+    assert draft.openings[0].reviewed is False
 
 def test_no_wall_boxes_does_not_invent_geometry():
     result=DetectorResult(image_width=800,image_height=600,boxes=[
@@ -39,3 +41,15 @@ def test_filter_audit_counts_short_and_nonelongated_boxes():
     assert data['too_short']==1
     assert data['not_elongated']==1
     assert data['window_boxes']==1
+
+def test_reviewed_opening_roundtrips_without_changing_structural_walls():
+    from app.geometry import Geometry
+    result=DetectorResult(image_width=800,image_height=600,boxes=[
+        detected('wall',100,100,600,110),detected('door',230,95,265,125)])
+    draft=reconstruct(result,fallback_geometry(800,600))
+    before=[w.model_dump() for w in draft.walls]
+    draft.openings[0].reviewed=True
+    reread=Geometry.model_validate_json(draft.model_dump_json())
+    assert reread.openings[0].reviewed is True
+    assert reread.openings[0].source_detection_id=='model-box-1'
+    assert [w.model_dump() for w in reread.walls]==before
