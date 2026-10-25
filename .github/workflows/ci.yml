@@ -1,0 +1,30 @@
+name: Florp CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Test FastAPI and geometry
+        working-directory: apps/api
+        run: |
+          uv sync
+          uv run python -m compileall -q app scripts tests
+          uv run pytest -q
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies and typecheck
+        working-directory: apps/web
+        run: |
+          npm install --no-audit --no-fund
+          npx tsc --noEmit
+          npm run build
