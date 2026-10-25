@@ -186,10 +186,10 @@ export default function Editor(){
     // Save an explicitly provisional opening on the server when scale is unknown.
     const l=await request<Layout>(`/blueprints/${id}/openings/propose`,{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({wall_id:edge.id,fraction,kind})
+      body:JSON.stringify({wall_id:edge.id,fraction,kind,geometry})
     });
     setLayout(l);setGeometry(l.geometry);
-    setStatus(kind+' proposal placed or updated. Dimensions are provisional until verified.');
+    setStatus(kind+' updated on the draft wall. Review its position before confirming.');
   }catch(e){setStatus(String(e))}finally{setBusy(false)}
  }
  function removeOpening(id:string){if(!geometry)return;setGeometry({...geometry,openings:geometry.openings.filter(o=>o.id!==id)});}
