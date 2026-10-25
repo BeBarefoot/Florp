@@ -19,6 +19,7 @@ class Wall(BaseModel):
 class Opening(BaseModel):
     id: str
     source_detection_id: str | None = None
+    reviewed: bool = False
     kind: Literal['door', 'window']
     wall_id: str
     offset_m: float = Field(ge=0)
