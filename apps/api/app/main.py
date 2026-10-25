@@ -15,7 +15,7 @@ from .evidence import inspect_plan
 from .reconcile import reconcile
 from .geometry import Wall, Pt
 from .pretrained_detector import DetectorResult, DetectorUnavailable, detect_objects
-from .model_reconstruction import reconstruct
+from .model_reconstruction import reconstruct, detection_audit
 from .topology import audit_topology
 from .graph_reconstruction import propose_connected_geometry
 
@@ -158,7 +158,7 @@ def pretrained_reconstruct(bid:str):
         except ValueError as exc:raise HTTPException(422,str(exc))
         draft=Layout(blueprint_id=bid,version=previous.version+1,verified=False,geometry=geometry.model_dump())
         session.add(draft);session.commit();session.refresh(draft)
-        return {'layout':draft,'detections':detection}
+        return {'layout':draft,'detections':detection,'detection_audit':detection_audit(detection),'topology':audit_topology(geometry)}
 
 @app.post('/blueprints/{bid}/extract')
 async def extract(bid:str):
