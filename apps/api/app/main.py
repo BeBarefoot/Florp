@@ -16,6 +16,7 @@ from .reconcile import reconcile
 from .geometry import Wall, Pt
 from .pretrained_detector import DetectorResult, DetectorUnavailable, detect_objects
 from .model_reconstruction import reconstruct
+from .topology import audit_topology
 
 Path(settings.storage_path).mkdir(parents=True,exist_ok=True)
 if settings.database_url.startswith('sqlite:///'):
@@ -80,6 +81,13 @@ def get_layout(bid:str):
         row=s.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
         if not row:raise HTTPException(404,'No layout')
         return row
+@app.get('/blueprints/{bid}/topology')
+def topology_report(bid: str):
+    with Session(engine) as session:
+        row=session.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
+        if not row: raise HTTPException(404,'No layout')
+        return audit_topology(Geometry.model_validate(row.geometry))
+
 @app.get('/blueprints/{bid}/evidence')
 def blueprint_evidence(bid:str):
     with Session(engine) as s:bp=s.get(Blueprint,bid)
