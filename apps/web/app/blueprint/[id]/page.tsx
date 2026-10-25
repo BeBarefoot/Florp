@@ -75,9 +75,21 @@ export default function Editor(){
      const result=await request<Reconstructed>(`/blueprints/${id}/pretrained-reconstruct`,{method:'POST'});
      setModelDetections(result.detections);setShowModelDetections(false);
      setLayout(result.layout);setGeometry(result.layout.geometry);
-     setStatus('Pretrained model generated '+result.layout.geometry.walls.length+' draft walls and '+result.layout.geometry.openings.length+' provisional openings. Both 2D and 3D now use the same draft. Room floors are not yet recovered.');
+     setStatus('Pretrained model generated '+result.layout.geometry.walls.length+' draft walls, '+result.layout.geometry.rooms.length+' proposed enclosed rooms and '+result.layout.geometry.openings.length+' provisional openings. Review all results before confirming.');
    }catch(err){setStatus(String(err))}
    finally{setModelBusy(false)}
+ }
+ async function proposeRooms(){
+   if(!window.confirm('Create a new unverified connected-wall/room proposal from the last saved draft? Existing versions will be preserved.'))return;
+   setBusy(true);setStatus('');
+   try{
+     const result=await request<{layout:Layout;topology:{notes:string[]}}>(`/blueprints/${id}/topology/propose`,{method:'POST'});
+     setLayout(result.layout);setGeometry(result.layout.geometry);
+     setSelectedWall(null);
+     setStatus('Graph solver proposed '+result.layout.geometry.rooms.length+
+       ' enclosed room(s). Open boundaries remain without floors. Review corners and walls before confirming.');
+   }catch(error){setStatus(String(error))}
+   finally{setBusy(false)}
  }
  async function inspectTopology(){
    try{
@@ -301,6 +313,7 @@ export default function Editor(){
    setGeometry({...geometry,px_per_meter:s.px_per_meter,scale_source:'user_confirmed',warnings:geometry.warnings.filter(w=>!w.toLowerCase().includes('provisional'))});
    setStatus('Scale hypothesis selected. Confirm that '+s.text+' is centimeters and refers to the highlighted plan dimension.');}}>Use estimate</button></div>)}
  <h2>Wall graph health</h2>
+ <button className="secondary" disabled={busy} onClick={()=>void proposeRooms()}>Propose connected rooms</button>
  <button className="secondary" onClick={()=>void inspectTopology()}>Inspect saved wall connections</button>
  {topology&&<div className="stack">
  <small>{topology.wall_count} walls · {topology.junction_count} joined endpoints · {topology.disconnected_components} groups · {topology.dangling_endpoints} loose ends · {topology.crossing_pairs.length} crossings</small>
