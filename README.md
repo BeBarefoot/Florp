@@ -120,3 +120,12 @@ Florp can run the actual pretrained `best.pt` from [sanatladkat/floor-plan-objec
 5. In the 2D editor click **Run pretrained model**. A local POST to `/blueprints/{id}/pretrained-detections` returns class-labelled bounding boxes and confidence, and draws dashed outlines (purple wall / orange door / cyan window). This does not contact OpenAI, Groq, or another API.
 
 **Do not mistake boxes for geometrically aligned wall centerlines or cut actual openings automatically.** This is a baseline for comparing class detection to the existing line heuristic. Check the real model classes and quality on your scanned plans. Weights are never redistributed by Florp.
+
+
+## Pretrained model geometry preview (new)
+
+Click **Auto-build 2D + 3D** in the blueprint editor. Florp runs the optional local YOLO model, converts elongated `wall` object boxes into *approximate wall centerlines*, associates nearby `door` and `window` boxes to those centerlines, and persists a new **unverified layout**. The default placeholder room polygon is removed in the generated draft, so the 2D model walls and 3D wall extrusions refer to the **same stored geometry**. The old layout remains a historical version in SQLite.
+
+This is NOT exact wall reconstruction: a box detector does not output room topology, robust corners, wall materials, usable floor polygons, or exact openings. There is intentionally no invented floor mesh for the model draft. Scale falls back to an illustrative 60 px/m for the 3D preview if no dimension was verified; real architectural fidelity needs further validation. Detection overlays can still be toggled independently from editable geometry. The action requires the local pretrained checkpoint; it does not use a paid LLM API.
+
+OpenCV Hough line extraction now reshapes both standard `(N,1,4)` and `(N,4)` arrays into proper 4-coordinate segments. Tests for this regression and the model geometry adapter are in `apps/api/tests/`.
