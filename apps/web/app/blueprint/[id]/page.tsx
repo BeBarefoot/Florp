@@ -9,7 +9,8 @@ const Viewer=dynamic(()=>import('../../../components/Viewer3D'),{ssr:false});
 type Candidate={x1:number;y1:number;x2:number;y2:number;score:number};
 type ModelBox={category:string;confidence:number;x1:number;y1:number;x2:number;y2:number};
 type ModelDetections={provider:string;output_type:string;image_width:number;image_height:number;boxes:ModelBox[];warning:string};
-type Reconstructed={layout:Layout;detections:ModelDetections};
+type DetectorAudit={wall_boxes:number;accepted_wall_boxes:number;below_confidence:number;too_short:number;not_elongated:number;duplicate:number;door_boxes:number;window_boxes:number;diagnostic:string};
+type Reconstructed={layout:Layout;detections:ModelDetections;detection_audit?:DetectorAudit};
 type ScaleSuggestion={text:string;source:string;confidence:number;dimension_m:number;pixels:number;px_per_meter:number};
 type Evidence={automatic_scale?:{px_per_meter:number;confidence:number;evidence_count:number;supporting_labels:string[]}|null;scale_suggestions:ScaleSuggestion[];segments:(Candidate & {source:string})[];candidates:Candidate[];labels:{text:string;bbox:number[];source:string}[];vector_pdf:boolean;ocr_available:boolean};
 const dist=(a:Pt,b:Pt)=>Math.hypot(a.x-b.x,a.y-b.y);
@@ -42,6 +43,7 @@ export default function Editor(){
  const [status,setStatus]=useState(''),[busy,setBusy]=useState(false);
  const [view,setView]=useState<'2d'|'3d'>('2d');
  const [modelDetections,setModelDetections]=useState<ModelDetections|null>(null);
+ const [detectorAudit,setDetectorAudit]=useState<DetectorAudit|null>(null);
  const [topology,setTopology]=useState<{wall_count:number;junction_count:number;disconnected_components:number;dangling_endpoints:number;crossing_pairs:[string,string][];notes:string[]}|null>(null);
  const [showModelDetections,setShowModelDetections]=useState(true),[modelBusy,setModelBusy]=useState(false);
  const [grayscale,setGrayscale]=useState(true),[showRaw,setShowRaw]=useState(false),[showSuggestions,setShowSuggestions]=useState(true);
@@ -73,7 +75,7 @@ export default function Editor(){
    setModelBusy(true);setStatus('');
    try{
      const result=await request<Reconstructed>(`/blueprints/${id}/pretrained-reconstruct`,{method:'POST'});
-     setModelDetections(result.detections);setShowModelDetections(false);
+     setModelDetections(result.detections);setDetectorAudit(result.detection_audit||null);setShowModelDetections(false);
      setLayout(result.layout);setGeometry(result.layout.geometry);
      setStatus('Pretrained model generated '+result.layout.geometry.walls.length+' draft walls, '+result.layout.geometry.rooms.length+' proposed enclosed rooms and '+result.layout.geometry.openings.length+' provisional openings. Review all results before confirming.');
    }catch(err){setStatus(String(err))}
@@ -292,6 +294,11 @@ export default function Editor(){
  {Object.entries(modelDetections.boxes.reduce<Record<string,number>>((count,b)=>({...count,[b.category]:(count[b.category]||0)+1}),{})).map(([name,count])=><small key={name}>{name}: {count}</small>)}
  <small>{modelDetections.warning}</small></div>:
  <small>Click Run pretrained model above after installing the optional local checkpoint. No API token required.</small>}
+ {detectorAudit&&<div className="stack"><h2>Where detected walls were lost</h2>
+ <small>YOLO wall boxes: {detectorAudit.wall_boxes} · used for 3D: {detectorAudit.accepted_wall_boxes}</small>
+ <small>Rejected: short {detectorAudit.too_short}, non-elongated {detectorAudit.not_elongated}, low-confidence {detectorAudit.below_confidence}, duplicates {detectorAudit.duplicate}</small>
+ <small>YOLO door boxes: {detectorAudit.door_boxes}; window boxes: {detectorAudit.window_boxes}. These may not attach to a wall.</small>
+ <small>{detectorAudit.diagnostic}</small></div>}
  <h2>Wall detection review</h2>
  <small>Blue: unreviewed · green: wall · red: not wall. All candidates are heuristic, not a trained segmentation model.</small>
  {selectedCandidate&&<div className="stack" style={{border:'1px solid #ccd5e0',padding:9,borderRadius:8}}>
