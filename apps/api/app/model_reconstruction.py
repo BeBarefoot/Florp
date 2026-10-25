@@ -44,7 +44,7 @@ def reconstruct(result:DetectorResult, base:Geometry)->Geometry:
         offset=max(0,min(length-width,t*length-width/2))
         if any(o.wall_id==w.id and offset<o.offset_m+o.width_m and o.offset_m<offset+width for o in openings):
             continue
-        openings.append(Opening(id='model-opening-'+str(i),kind=box.category,wall_id=w.id,
+        openings.append(Opening(id='model-opening-'+str(i),source_detection_id='model-box-'+str(i),kind=box.category,wall_id=w.id,
             offset_m=round(offset,3),width_m=round(width,3),
             height_m=2.1 if box.category=='door' else 1.2,
             sill_m=0 if box.category=='door' else .9,inferred=True))
