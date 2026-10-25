@@ -328,24 +328,34 @@ def propose_opening(bid:str,body:ProvisionalOpeningInput):
         width=min(.9 if body.kind=='door' else 1.2,length_m*.6)
         if width<.12:raise HTTPException(422,'Wall too short')
         offset=max(0,min(length_m-width,body.fraction*length_m-width/2))
-        # Correct an existing inferred model opening instead of returning 409.
-        for existing in g.openings:
-            if existing.wall_id!=body.wall_id:continue
-            if not (offset < existing.offset_m+existing.width_m and existing.offset_m < offset+width):continue
+        same_wall=[o for o in g.openings if o.wall_id==body.wall_id]
+        overlaps=lambda opening: (offset < opening.offset_m+opening.width_m
+                                   and opening.offset_m < offset+width)
+        matching=[o for o in same_wall if overlaps(o)]
+        if matching:
+            # Select the most relevant inferred proposal. Do not move it across
+            # a different opening or mutate confirmed annotations.
+            existing=min(matching,key=lambda o:abs(
+                (o.offset_m+o.width_m/2)-(offset+width/2)))
             if not existing.inferred:
-                raise HTTPException(409,'A confirmed opening occupies this location. Edit it instead.')
+                raise HTTPException(409,'This opening is already confirmed; edit its dimensions in the review panel.')
+            collides=any(o.id!=existing.id and
+                offset < o.offset_m+o.width_m and o.offset_m < offset+width
+                for o in same_wall)
             existing.kind=body.kind
-            existing.offset_m=round(offset,3)
-            existing.width_m=round(width,3)
+            # Preserve its previous span rather than introducing a second
+            # overlap when two predictions share one wall.
+            if not collides:
+                existing.offset_m=round(offset,3)
+                existing.width_m=round(width,3)
             existing.height_m=2.1 if body.kind=='door' else 1.2
             existing.sill_m=0 if body.kind=='door' else .9
-            row=Layout(blueprint_id=bid,version=current.version+1,verified=False,geometry=g.model_dump())
-            s.add(row);s.commit();s.refresh(row)
-            return row
-        opening=Opening(id='opening-'+uuid4().hex[:12],kind=body.kind,wall_id=body.wall_id,
-          offset_m=round(offset,3),width_m=round(width,3),height_m=2.1 if body.kind=='door' else 1.2,
-          sill_m=0 if body.kind=='door' else .9,inferred=True)
-        g.openings.append(opening)
+        else:
+            opening=Opening(id='opening-'+uuid4().hex[:12],kind=body.kind,wall_id=body.wall_id,
+              offset_m=round(offset,3),width_m=round(width,3),height_m=2.1 if body.kind=='door' else 1.2,
+              sill_m=0 if body.kind=='door' else .9,inferred=True)
+            g.openings.append(opening)
+        g.structure_reviewed=False
         if not g.px_per_meter:
             g.warnings=list(dict.fromkeys(g.warnings+['Opening metrics are provisional; scale must be confirmed before verification']))
         row=Layout(blueprint_id=bid,version=current.version+1,verified=False,geometry=g.model_dump())
