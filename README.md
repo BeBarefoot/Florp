@@ -169,3 +169,19 @@ this as successful floor-plan extraction without benchmark evaluation.
 Tests: `uv run pytest -q tests/test_graph_reconstruction.py` covers rectangles,
 small/large gaps, T-partitions, and open lines. Full backend/frontend CI also
 needs to pass.
+
+
+## Unified model review (October 2026)
+
+The main workflow is now:
+1. Upload a blueprint and select **Auto-build 2D + 3D** (optional local YOLO model).
+2. Review **cyan model walls**. Click a wall to move its green endpoint handles or reject it. Use **Confirm wall positions** to save reviewed structure without physical scale.
+3. Review **orange door / cyan window detection boxes** by enabling **Model boxes**. Click one to propose an opening on the nearest reconstructed wall. If an inferred opening already occupies that span, the click updates its type/location instead of failing with an overlapping-opening 409. A confirmed opening will not be overwritten automatically. Detected boxes that are too far from walls require wall correction first.
+4. Export annotations from the advanced legacy detector review as needed. Model wall adjustments are recorded when structural review is confirmed. These are **training data collection**, not live model training.
+5. Verify measurements separately after resolving dimension evidence.
+
+The legacy OpenCV candidate overlay and label UI are now hidden under **Advanced detection layers** and **Advanced: experimental line-candidate labeling**. This avoids confusing those heuristic suggestions with YOLO model geometry.
+
+Projects can now be deleted from the home page with a confirmation. Deleting removes the project's local blueprint files and dependent database records. It cannot be undone.
+
+**Known limitations:** YOLO boxes cannot guarantee exact wall or opening geometry. The model may detect an object without a nearby reconstructed wall; those cases require review. No automatic retraining or background learning happens when a correction is saved. Benchmark results and actual production readiness remain unverified.
