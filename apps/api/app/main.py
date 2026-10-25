@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from PIL import Image
 import fitz
 from .config import settings
-from .models import Project, Blueprint, Layout, Render, WallAnnotation
+from .models import Project, Blueprint, Layout, Render, WallAnnotation, ModelWallCorrection
 from .geometry import Geometry, fallback_geometry, validate_geometry
 from .providers import extract_geometry, ProviderUnavailable, ProviderAuthenticationError, ProviderConfigurationError, ProviderOutputError
 from .evidence import inspect_plan
@@ -205,10 +205,13 @@ def training_export(bid:str):
         if not bp:raise HTTPException(404,'Blueprint not found')
         annotations=list(s.exec(select(WallAnnotation).where(WallAnnotation.blueprint_id==bid)).all())
         layout=s.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
+        model_reviews=list(s.exec(select(ModelWallCorrection).where(ModelWallCorrection.blueprint_id==bid)).all())
         walls=[w for w in Geometry.model_validate(layout.geometry).model_dump()['walls'] if w['id'].startswith('user-')] if layout else []
     return {'schema_version':1,'blueprint_id':bid,'image_width':bp.width,'image_height':bp.height,
       'annotations':[{'label':a.label,**a.coordinates} for a in annotations],
-      'manually_drawn_walls':walls,'note':'Review labels before training; this is not a trained detector.'}
+      'manually_drawn_walls':walls,
+      'model_wall_corrections':[{'model_wall_id':r.model_wall_id,'action':r.action,'original':r.original,'corrected':r.corrected,'layout_version':r.layout_version} for r in model_reviews],
+      'note':'Review labels before training; this is not a trained detector.'}
 
 class AcceptCandidate(BaseModel):
     x1: float
@@ -295,22 +298,38 @@ class SaveLayout(BaseModel):
     structure_reviewed:bool=False
 @app.post('/blueprints/{bid}/layout')
 def save_layout(bid:str,body:SaveLayout):
-    with Session(engine) as s:
-        if not s.get(Blueprint,bid):
-            raise HTTPException(404,'Not found')
-        last=s.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
+    with Session(engine) as session:
+        if not session.get(Blueprint,bid):
+            raise HTTPException(404,'Blueprint not found')
+        last=session.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
         incoming=body.geometry.model_copy(deep=True)
-        if body.structure_reviewed: incoming.structure_reviewed=True
-        warnings=validate_geometry(incoming)
+        if body.structure_reviewed:
+            incoming.structure_reviewed=True
+        issues=validate_geometry(incoming)
         if body.verified and incoming.scale_source=='provisional_auto':
-            warnings.append('Review and confirm the inferred physical scale first')
-    if body.verified and incoming.openings and any('provisional' in w.lower() for w in incoming.warnings):
-            warnings.append('Confirm scale and provisional opening dimensions before verification')
-    if body.verified and warnings:
-        raise HTTPException(422,{'message':'Resolve validation issues before verification','issues':warnings})
-    row=Layout(blueprint_id=bid,version=(last.version+1 if last else 1),verified=body.verified,geometry=incoming.model_dump())
-    s.add(row);s.commit();s.refresh(row)
-    return row
+            issues.append('Confirm the automatic scale before metric verification')
+        if body.verified and incoming.openings and any('provisional' in warning.lower() for warning in incoming.warnings):
+            issues.append('Confirm opening and scale dimensions before metric verification')
+        if body.verified and issues:
+            raise HTTPException(422,{'message':'Metric verification blocked; wall review may still be saved separately','issues':issues})
+        version=last.version+1 if last else 1
+        row=Layout(blueprint_id=bid,version=version,verified=body.verified,geometry=incoming.model_dump())
+        session.add(row)
+        if body.structure_reviewed and last:
+            old=Geometry.model_validate(last.geometry)
+            before={w.id:w.model_dump() for w in old.walls if w.id.startswith('model-')}
+            after={w.id:w.model_dump() for w in incoming.walls if w.id.startswith('model-')}
+            for wall_id,original in before.items():
+                corrected=after.get(wall_id)
+                action='rejected' if corrected is None else (
+                    'adjusted' if original['start']!=corrected['start'] or original['end']!=corrected['end'] else 'confirmed'
+                )
+                session.add(ModelWallCorrection(blueprint_id=bid,model_wall_id=wall_id,
+                    action=action,original=original,corrected=corrected or {},layout_version=version))
+        session.commit()
+        session.refresh(row)
+        return row
+
 @app.get('/blueprints/{bid}/renders',response_model=list[Render])
 def renders(bid:str):
     with Session(engine) as s:return list(s.exec(select(Render).where(Render.blueprint_id==bid).order_by(Render.created_at.desc())).all())
