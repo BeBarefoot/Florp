@@ -54,11 +54,6 @@ class Geometry(BaseModel):
                 if o.offset_m+o.width_m>length+0.001:
                     raise ValueError(f'Opening {o.id} exceeds wall length')
             by_wall.setdefault(o.wall_id,[]).append(o)
-        for wall_id,items in by_wall.items():
-            items=sorted(items,key=lambda x:x.offset_m)
-            for left,right in zip(items,items[1:]):
-                if left.offset_m+left.width_m>right.offset_m+0.001:
-                    raise ValueError(f'Overlapping openings on {wall_id}')
         return self
 
 def _segments_cross(a,b,c,d):
@@ -89,6 +84,16 @@ def validate_geometry(g:Geometry)->list[str]:
         for p in (wall.start,wall.end):
             if not (0<=p.x<=g.width_px and 0<=p.y<=g.height_px):
                 errors.append(f'Wall {wall.id} exceeds image')
+    # Overlapping inferred openings are a review issue, not a parsing error.
+    # The model can propose inconsistent spans; allow drafts to load and be fixed.
+    by_wall={}
+    for opening in g.openings:
+        by_wall.setdefault(opening.wall_id,[]).append(opening)
+    for wall_id,items in by_wall.items():
+        ordered=sorted(items,key=lambda item:item.offset_m)
+        for left,right in zip(ordered,ordered[1:]):
+            if left.offset_m+left.width_m>right.offset_m+0.001:
+                errors.append(f'Overlapping openings on {wall_id}: {left.id}, {right.id}')
     if g.openings and not g.px_per_meter: errors.append('Openings require calibrated scale')
     if not g.px_per_meter: errors.append('Metric scale could not be inferred from blueprint; verify a dimension')
     elif g.scale_source=='provisional_auto': errors.append('Automatic scale is provisional; confirm a shown dimension before verification')
