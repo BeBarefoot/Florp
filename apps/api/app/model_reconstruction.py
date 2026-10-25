@@ -9,24 +9,61 @@ def _projection(x,y,w):
     t=max(0,min(1,((x-w.start.x)*dx+(y-w.start.y)*dy)/length)) if length else 0
     return hypot(x-w.start.x-dx*t,y-w.start.y-dy*t),t
 
-def reconstruct(result:DetectorResult, base:Geometry)->Geometry:
-    if (result.image_width,result.image_height)!=(base.width_px,base.height_px):
-        raise ValueError('Image dimensions mismatch')
-    walls=[]
+def _model_wall_candidates(result:DetectorResult):
+    """Two-pass box conversion: strong elongated walls first, short continuations second.
+
+    Weak candidates must be nearly collinear AND touch a strong wall endpoint.
+    A standalone short stroke is not evidence of an architectural wall.
+    """
+    strong=[]
+    weak=[]
+    dropped={'below_confidence':0,'too_short':0,'not_elongated':0,'duplicate':0}
+    threshold=max(22,min(result.image_width,result.image_height)*.075)
     for i,box in enumerate(result.boxes):
-        if box.category!='wall' or box.confidence<.35:continue
+        if box.category!='wall':continue
+        if box.confidence<.35:
+            dropped['below_confidence']+=1;continue
         bw=box.x2-box.x1;bh=box.y2-box.y1
-        if max(bw,bh)<max(22,min(base.width_px,base.height_px)*.075):continue
-        if max(bw,bh)/max(1,min(bw,bh))<2.3:continue
+        length=max(bw,bh)
+        if length/max(1,min(bw,bh))<2.3:
+            dropped['not_elongated']+=1;continue
+        if length<max(12,threshold*.35):
+            dropped['too_short']+=1;continue
         if bw>=bh:
             y=(box.y1+box.y2)/2
             a=Pt(x=box.x1,y=y);b=Pt(x=box.x2,y=y)
         else:
             x=(box.x1+box.x2)/2
             a=Pt(x=x,y=box.y1);b=Pt(x=x,y=box.y2)
-        if any(hypot(a.x-w.start.x,a.y-w.start.y)<7 and hypot(b.x-w.end.x,b.y-w.end.y)<7 for w in walls):
-            continue
-        walls.append(Wall(id='model-'+str(i),start=a,end=b,inferred=True))
+        entry=(i,a,b)
+        (strong if length>=threshold else weak).append(entry)
+    result_walls=list(strong)
+    for i,a,b in weak:
+        direction='horizontal' if abs(b.x-a.x)>=abs(b.y-a.y) else 'vertical'
+        # Max 14 pixels gap to a trusted collinear end; no free-floating scraps.
+        def connected(item):
+            _,c,d=item
+            same=(abs(d.y-c.y)<1 if direction=='horizontal' else abs(d.x-c.x)<1)
+            offset=abs(a.y-c.y) if direction=='horizontal' else abs(a.x-c.x)
+            if not same or offset>max(6,min(result.image_width,result.image_height)*.018):return False
+            return min(hypot(a.x-q.x,a.y-q.y) for q in (c,d))<=14 or min(
+                hypot(b.x-q.x,b.y-q.y) for q in (c,d))<=14
+        if any(connected(w) for w in strong):
+            result_walls.append((i,a,b))
+        else:dropped['too_short']+=1
+    unique=[]
+    for item in result_walls:
+        _,a,b=item
+        if any(hypot(a.x-c.x,a.y-c.y)<7 and hypot(b.x-d.x,b.y-d.y)<7 for _,c,d in unique):
+            dropped['duplicate']+=1;continue
+        unique.append(item)
+    return unique,dropped
+
+def reconstruct(result:DetectorResult, base:Geometry)->Geometry:
+    if (result.image_width,result.image_height)!=(base.width_px,base.height_px):
+        raise ValueError('Image dimensions mismatch')
+    candidates,_=_model_wall_candidates(result)
+    walls=[Wall(id='model-'+str(i),start=a,end=b,inferred=True) for i,a,b in candidates]
     if not walls:raise ValueError('Pretrained detector returned no suitable elongated wall boxes')
     scale=base.px_per_meter or 60.
     openings=[]
@@ -61,27 +98,11 @@ def detection_audit(result:DetectorResult)->dict:
     counts={'wall_boxes':0,'accepted_wall_boxes':0,'below_confidence':0,
             'too_short':0,'not_elongated':0,'duplicate':0,
             'door_boxes':0,'window_boxes':0}
-    kept=[]
-    for i,b in enumerate(result.boxes):
-        if b.category in ('door','window'):
-            counts[b.category+'_boxes']+=1
-        if b.category!='wall':continue
-        counts['wall_boxes']+=1
-        if b.confidence<.35:
-            counts['below_confidence']+=1;continue
-        bw=b.x2-b.x1;bh=b.y2-b.y1
-        if max(bw,bh)<max(22,min(result.image_width,result.image_height)*.075):
-            counts['too_short']+=1;continue
-        if max(bw,bh)/max(1,min(bw,bh))<2.3:
-            counts['not_elongated']+=1;continue
-        if bw>=bh:
-            a=(b.x1,(b.y1+b.y2)/2);z=(b.x2,(b.y1+b.y2)/2)
-        else:
-            a=((b.x1+b.x2)/2,b.y1);z=((b.x1+b.x2)/2,b.y2)
-        if any(hypot(a[0]-old[0][0],a[1]-old[0][1])<7 and
-               hypot(z[0]-old[1][0],z[1]-old[1][1])<7 for old in kept):
-            counts['duplicate']+=1;continue
-        kept.append((a,z))
+    kept,dropped=_model_wall_candidates(result)
+    counts.update(dropped)
+    counts['wall_boxes']=sum(b.category=='wall' for b in result.boxes)
+    counts['door_boxes']=sum(b.category=='door' for b in result.boxes)
+    counts['window_boxes']=sum(b.category=='window' for b in result.boxes)
     counts['accepted_wall_boxes']=len(kept)
     return {
        **counts,
