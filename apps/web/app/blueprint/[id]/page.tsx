@@ -45,8 +45,8 @@ export default function Editor(){
  const [modelDetections,setModelDetections]=useState<ModelDetections|null>(null);
  const [detectorAudit,setDetectorAudit]=useState<DetectorAudit|null>(null);
  const [topology,setTopology]=useState<{wall_count:number;junction_count:number;disconnected_components:number;dangling_endpoints:number;crossing_pairs:[string,string][];notes:string[]}|null>(null);
- const [showModelDetections,setShowModelDetections]=useState(true),[modelBusy,setModelBusy]=useState(false);
- const [grayscale,setGrayscale]=useState(true),[showRaw,setShowRaw]=useState(false),[showSuggestions,setShowSuggestions]=useState(true);
+ const [showModelDetections,setShowModelDetections]=useState(false),[modelBusy,setModelBusy]=useState(false);
+ const [grayscale,setGrayscale]=useState(true),[showRaw,setShowRaw]=useState(false),[showSuggestions,setShowSuggestions]=useState(false);
  const [reviewScope,setReviewScope]=useState<'all'|'near'>('all');
  const [reviewLabels,setReviewLabels]=useState<Record<string,string>>({}),[selectedCandidate,setSelectedCandidate]=useState<Candidate|null>(null);
  const [selectedWall,setSelectedWall]=useState<string|null>(null);
@@ -75,7 +75,7 @@ export default function Editor(){
    setModelBusy(true);setStatus('');
    try{
      const result=await request<Reconstructed>(`/blueprints/${id}/pretrained-reconstruct`,{method:'POST'});
-     setModelDetections(result.detections);setDetectorAudit(result.detection_audit||null);setShowModelDetections(false);
+     setModelDetections(result.detections);setDetectorAudit(result.detection_audit||null);setShowModelDetections(true);
      setLayout(result.layout);setGeometry(result.layout.geometry);
      setStatus('Pretrained model generated '+result.layout.geometry.walls.length+' draft walls, '+result.layout.geometry.rooms.length+' proposed enclosed rooms and '+result.layout.geometry.openings.length+' provisional openings. Review all results before confirming.');
    }catch(err){setStatus(String(err))}
@@ -166,6 +166,15 @@ export default function Editor(){
    setLayout(l);setGeometry(l.geometry);setStatus('Suggestion accepted as a draft wall.');
   }catch(e){setStatus(String(e))}finally{setBusy(false)}
  }
+ async function useDetectedOpening(b:ModelBox){
+  if(!geometry)return;
+  const point={x:(b.x1+b.x2)/2,y:(b.y1+b.y2)/2};
+  const ranked=edges.map(edge=>({edge,d:segmentDistance(point,edge)})).sort((a,b)=>a.d-b.d);
+  if(!ranked.length||ranked[0].d>Math.max(32,Math.min(geometry.width_px,geometry.height_px)*.1)){
+   setStatus('This detected opening has no nearby reconstructed wall. Review the missing wall first.');return;
+  }
+  await addOpening(ranked[0].edge,point,b.category as 'door'|'window');
+ }
  async function addOpening(edge:{id:string;start:Pt;end:Pt;thickness_m:number;height_m:number},p:Pt,kind:'door'|'window'){
   if(!geometry)return;
   const dx=edge.end.x-edge.start.x,dy=edge.end.y-edge.start.y,len2=dx*dx+dy*dy;
@@ -179,7 +188,7 @@ export default function Editor(){
       body:JSON.stringify({wall_id:edge.id,fraction,kind})
     });
     setLayout(l);setGeometry(l.geometry);
-    setStatus(kind+' inserted. Dimensions are provisional until verified against plan measurements.');
+    setStatus(kind+' proposal placed or updated. Dimensions are provisional until verified.');
   }catch(e){setStatus(String(e))}finally{setBusy(false)}
  }
  function removeOpening(id:string){if(!geometry)return;setGeometry({...geometry,openings:geometry.openings.filter(o=>o.id!==id)});}
@@ -204,14 +213,14 @@ export default function Editor(){
  {view==='2d'&&<div className="notice" style={{marginBottom:12}}>
  {mode==='door'||mode==='window'?'Click near a wall to place a provisional opening. No manual scale entry required.':
  mode==='wall'?'Click two points to draw a wall; snapping is enabled.':
- 'Auto-detected wall candidates are shown in blue. Select a candidate to label it or accept it.'}
+ 'Click a blue reconstructed wall to correct it. Dashed orange/cyan detected openings can be clicked to attach or update an opening.'}
  </div>}
  {view==='2d'&&<div className="row" style={{marginBottom:12}}>
  <button className="secondary" disabled={modelBusy||busy} onClick={()=>void runPretrained()}>
  {modelBusy?'Running local model…':'Auto-build 2D + 3D'}</button>
  {modelDetections&&<label><input type="checkbox" checked={showModelDetections} onChange={e=>setShowModelDetections(e.target.checked)}/> Model boxes ({modelDetections.boxes.length})</label>}
  <label><input type="checkbox" checked={grayscale} onChange={e=>setGrayscale(e.target.checked)}/> Grayscale</label>
- <label><input type="checkbox" checked={showSuggestions} onChange={e=>setShowSuggestions(e.target.checked)}/> Auto-detected walls ({suggestions.length}/{evidence?.candidates.length??0})</label>
+ <label title="Legacy OpenCV research candidates. Use model wall review above for training."><input type="checkbox" checked={showSuggestions} onChange={e=>setShowSuggestions(e.target.checked)}/> Auto-detected walls ({suggestions.length}/{evidence?.candidates.length??0})</label>
  <select value={reviewScope} onChange={e=>setReviewScope(e.target.value as 'all'|'near')} aria-label="Candidate filter">
  <option value="all">All detections</option><option value="near">Near current outline</option></select>
  <label><input type="checkbox" checked={showRaw} onChange={e=>setShowRaw(e.target.checked)}/> Raw lines ({evidence?.segments.length??0})</label>
@@ -231,9 +240,12 @@ export default function Editor(){
  <image href={`${API}/blueprints/${id}/preview`} width={geometry.width_px} height={geometry.height_px}
  style={{filter:grayscale?'grayscale(1) contrast(1.12) brightness(1.08)':'none'}}/>
  {showModelDetections&&modelDetections?.boxes.map((b,i)=>
- <g key={'model-'+i} pointerEvents="none"><rect x={b.x1} y={b.y1} width={b.x2-b.x1} height={b.y2-b.y1}
+ <g key={'model-'+i} pointerEvents={b.category==='door'||b.category==='window'?'all':'none'}
+ onClick={e=>{if(b.category==='door'||b.category==='window'){e.stopPropagation();void useDetectedOpening(b)}}}
+ style={{cursor:b.category==='door'||b.category==='window'?'pointer':'default'}}>
+ <rect x={b.x1} y={b.y1} width={b.x2-b.x1} height={b.y2-b.y1}
  stroke={b.category.includes('wall')?'#8b5cf6':b.category.includes('door')?'#ea580c':b.category.includes('window')?'#0891b2':'#737373'}
- strokeWidth={Math.max(2,geometry.width_px/420)} fill="none" strokeDasharray="8 5"/>
+ strokeWidth={Math.max(2,geometry.width_px/420)} fill={b.category==='door'||b.category==='window'?'rgba(56,189,248,.08)':'none'} strokeDasharray="8 5"/>
  <title>{b.category+' · '+(b.confidence*100).toFixed(1)+'%'}</title></g>)}
  {showRaw&&evidence?.segments.map((s,i)=><line key={'raw'+i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke="#d98d26" strokeWidth={Math.max(1,geometry.width_px/700)} opacity={.3} pointerEvents="none"/>)}
  {showSuggestions&&suggestions.map((s,i)=><line key={'candidate'+i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
@@ -286,8 +298,8 @@ export default function Editor(){
  <span className="pill">{geometry.rooms.length} rooms · {geometry.walls.length} stored walls</span>
  {geometry.walls.some(w=>w.id.startsWith('model-'))&&<div className="notice">Model geometry is active. Blue centerlines in 2D correspond to 3D walls. Any enclosed rooms/floors are unverified geometry proposals; wall and opening positions remain provisional.</div>}
  <small>Detected {evidence?.segments.length??0} raw strokes · {evidence?.candidates.length??0} unfiltered possible walls · {suggestions.length} shown after local filtering</small>
- <small>Draw the full continuous perimeter and partitions, including across openings. Use Add door / Add window to cut into a wall. Snapping uses existing geometry, not image pixels.</small>
- <h2>Pretrained object detection</h2>
+ <small>Review automatically reconstructed walls. Click a cyan/orange detection box to propose or update a window/door; drag wall endpoints only where necessary.</small>
+ <details><summary>Detection details</summary><h2>Pretrained object detection</h2>
  <small>Purple dashed boxes: walls. Orange: doors. Cyan: windows. Gray: other classes. Boxes do NOT provide exact wall endpoints or opening locations.</small>
  {modelDetections?<div className="stack">
  <strong>{modelDetections.provider}: {modelDetections.boxes.length} detected objects</strong>
@@ -299,7 +311,9 @@ export default function Editor(){
  <small>Rejected: short {detectorAudit.too_short}, non-elongated {detectorAudit.not_elongated}, low-confidence {detectorAudit.below_confidence}, duplicates {detectorAudit.duplicate}</small>
  <small>YOLO door boxes: {detectorAudit.door_boxes}; window boxes: {detectorAudit.window_boxes}. These may not attach to a wall.</small>
  <small>{detectorAudit.diagnostic}</small></div>}
- <h2>Wall detection review</h2>
+ </details>
+ <details><summary>Advanced: experimental line-candidate labeling</summary>
+ <h2>Legacy OpenCV line review</h2>
  <small>Blue: unreviewed · green: wall · red: not wall. All candidates are heuristic, not a trained segmentation model.</small>
  {selectedCandidate&&<div className="stack" style={{border:'1px solid #ccd5e0',padding:9,borderRadius:8}}>
  <strong>Selected detected segment</strong><small>score {selectedCandidate.score.toFixed(2)} (not calibrated)</small>
@@ -309,6 +323,7 @@ export default function Editor(){
  <button className="secondary" onClick={()=>void acceptSuggestion(selectedCandidate)}>Accept as draft</button></div>
  </div>}
  <button className="secondary" onClick={()=>void exportLabels()}>Export training annotations (JSON)</button>
+ </details>
  <h2>Dimension evidence</h2>
  {geometry.px_per_meter?<p><small>Scale set: {geometry.px_per_meter.toFixed(2)} px/m — confirm against plan dimensioning.</small></p>:
  <p className="notice">No confirmed scale yet. Openings can be drafted, but their physical widths need confirmation.</p>}
@@ -332,7 +347,7 @@ export default function Editor(){
  <button className="secondary" onClick={()=>removeWall(selectedWall)}>Reject / delete selected wall</button>
  <button className="secondary" onClick={()=>setSelectedWall(null)}>Finish correction</button>
  </div>:<small>Click a blue model wall line to edit or remove it; drag its endpoint handles. This corrects the reconstructed geometry, not the original YOLO box.</small>}
- <small>After correction, select Confirm wall positions. You can do this before identifying the drawing scale.</small>
+ <small>Use Confirm wall positions after reviewing the proposed structure; physical measurements are a separate step.</small>
  <h2>Openings ({geometry.openings.length})</h2>
  {geometry.openings.map(o=><div className="stack" key={o.id} style={{padding:10,border:'1px solid #dce2e8',borderRadius:8}}>
  <div className="row"><strong>{o.kind} · {o.wall_id.slice(0,25)}</strong><button className="secondary" onClick={()=>removeOpening(o.id)}>Remove</button></div>
