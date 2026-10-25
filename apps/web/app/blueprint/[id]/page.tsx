@@ -46,6 +46,7 @@ export default function Editor(){
  const [grayscale,setGrayscale]=useState(true),[showRaw,setShowRaw]=useState(false),[showSuggestions,setShowSuggestions]=useState(true);
  const [reviewScope,setReviewScope]=useState<'all'|'near'>('all');
  const [reviewLabels,setReviewLabels]=useState<Record<string,string>>({}),[selectedCandidate,setSelectedCandidate]=useState<Candidate|null>(null);
+ const [selectedWall,setSelectedWall]=useState<string|null>(null);
  const [mode,setMode]=useState<'edit'|'wall'|'door'|'window'>('edit'),[wallStart,setWallStart]=useState<Pt|null>(null);
  const [prompt,setPrompt]=useState('A sunlit Scandinavian living room with natural oak floors and green velvet furniture');
  useEffect(()=>{
@@ -81,9 +82,9 @@ export default function Editor(){
   const l=await request<Layout>(`/blueprints/${id}/extract`,{method:'POST'});
   setLayout(l);setGeometry(l.geometry);setStatus('AI proposal loaded. Review and calibrate all geometry before verifying.');
  }catch(e){setStatus(String(e))}finally{setBusy(false)}}
- async function save(verified=false){if(!geometry)return;setBusy(true);try{
-  const l=await request<Layout>(`/blueprints/${id}/layout`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({geometry,verified})});
-  setLayout(l);setGeometry(l.geometry);setStatus(verified?'Layout verified and saved.':'Draft layout saved.');
+ async function save(verified=false,structureReviewed=false){if(!geometry)return;setBusy(true);try{
+  const l=await request<Layout>(`/blueprints/${id}/layout`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({geometry,verified,structure_reviewed:structureReviewed})});
+  setLayout(l);setGeometry(l.geometry);setStatus(verified?'Metric geometry verified.':structureReviewed?'Wall positions reviewed and saved; measurements are still provisional.':'Draft saved.');
  }catch(e){setStatus(String(e))}finally{setBusy(false)}}
  function updatePoint(ri:number,pi:number,p:Pt){
   setGeometry(old=>{
@@ -94,6 +95,22 @@ export default function Editor(){
    const move=(q:Pt)=>dist(q,source)<2?target:q;
    return {...old,rooms:old.rooms.map(r=>({...r,points:r.points.map(move)})),
     walls:old.walls.map(w=>({...w,start:move(w.start),end:move(w.end)}))};
+  });
+ }
+ function moveWallEndpoint(wallId:string,which:'start'|'end',point:Pt){
+  setGeometry(current=>{
+    if(!current)return current;
+    const wall=current.walls.find(w=>w.id===wallId);
+    if(!wall)return current;
+    const other=which==='start'?wall.end:wall.start;
+    const dx=point.x-other.x,dy=point.y-other.y;
+    let snapped=snapPoint(point,current,other,9);
+    // When nearly horizontal/vertical, preserve axis and existing wall length direction.
+    if(Math.abs(dy)<Math.abs(dx)*.12)snapped={...snapped,y:other.y};
+    else if(Math.abs(dx)<Math.abs(dy)*.12)snapped={...snapped,x:other.x};
+    if(dist(other,snapped)<4)return current;
+    return {...current,structure_reviewed:false,
+      walls:current.walls.map(w=>w.id===wallId?{...w,[which]:snapped}:w)};
   });
  }
  function addWall(raw:Pt){
@@ -148,13 +165,14 @@ export default function Editor(){
   if(!geometry)return;const value=Number(raw);if(!Number.isFinite(value)||value<0)return;
   setGeometry({...geometry,openings:geometry.openings.map(o=>o.id===id?{...o,[field]:value}:o)});
  }
- function removeWall(id:string){if(!geometry)return;setGeometry({...geometry,walls:geometry.walls.filter(w=>w.id!==id),openings:geometry.openings.filter(o=>o.wall_id!==id)});setStatus('Draft wall removed. Save to persist changes.')}
+ function removeWall(id:string){if(!geometry)return;setSelectedWall(null);setGeometry({...geometry,structure_reviewed:false,walls:geometry.walls.filter(w=>w.id!==id),openings:geometry.openings.filter(o=>o.wall_id!==id)});setStatus('Draft wall removed. Save to persist changes.')}
  return <div className="app"><aside><h2>✦ Florp</h2><Link href="/">← Projects</Link>
  <hr style={{borderColor:'#354053',margin:'22px 0'}}/><p>Layout v{layout?.version??'–'} · {layout?.verified?'Verified':'Unverified'}</p>
  <div className="stack"><button disabled={busy} onClick={extract}>Run real AI extraction</button>
  <button className="secondary" disabled={busy} onClick={()=>save(false)}>Save draft</button>
- <button disabled={busy} onClick={()=>save(true)}>Verify geometry</button></div>
- <p style={{opacity:.7,fontSize:12}}>Structural geometry must be reviewed. API keys remain server-side.</p></aside>
+ <button className="secondary" disabled={busy} onClick={()=>save(false,true)}>Confirm wall positions</button>
+ <button disabled={busy} onClick={()=>save(true)}>Verify physical dimensions</button></div>
+ <p style={{opacity:.7,fontSize:12}}>Confirm wall positions without scale; physical verification requires reliable dimensions. API keys remain server-side.</p></aside>
  <main><header><div><h1>Geometry studio</h1><p className="muted">2D and 3D display the same draft walls.</p></div>
  <div className="row"><button className={view==='2d'?'':'secondary'} onClick={()=>setView('2d')}>2D editor</button>
  <button className={view==='3d'?'':'secondary'} onClick={()=>setView('3d')}>3D shell</button></div></header>
@@ -216,7 +234,27 @@ export default function Editor(){
   const x1=e.start.x+(e.end.x-e.start.x)*t,y1=e.start.y+(e.end.y-e.start.y)*t,x2=e.start.x+(e.end.x-e.start.x)*u,y2=e.start.y+(e.end.y-e.start.y)*u;
   return <line key={o.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke={o.kind==='door'?'#f97316':'#0284c7'} strokeDasharray={o.kind==='door'?'10 6':undefined} strokeWidth={Math.max(7,geometry.width_px/160)} pointerEvents="none"/>;
  })}
- {geometry.walls.filter(w=>w.id.startsWith('user-')||w.id.startsWith('model-')).map(w=><line key={w.id} x1={w.start.x} y1={w.start.y} x2={w.end.x} y2={w.end.y} stroke={w.id.startsWith("model-")?"#0284c7":"#d97706"} strokeWidth={Math.max(3,geometry.width_px/260)} pointerEvents="none"/>)}
+ {geometry.walls.filter(w=>w.id.startsWith('user-')||w.id.startsWith('model-')).map(w=><line key={w.id} x1={w.start.x} y1={w.start.y} x2={w.end.x} y2={w.end.y} stroke={selectedWall===w.id?"#16a34a":w.id.startsWith("model-")?"#0284c7":"#d97706"}
+ strokeWidth={Math.max(selectedWall===w.id?5:3,geometry.width_px/220)}
+ pointerEvents={mode==='edit'?'stroke':'none'} style={{cursor:mode==='edit'?'pointer':'default'}}
+ onClick={e=>{if(mode==='edit'){e.stopPropagation();setSelectedWall(w.id)}}}/>)}
+ {mode==='edit'&&geometry.walls.filter(w=>w.id===selectedWall).flatMap(w=>(
+  (['start','end'] as const).map(which=>{
+   const p=w[which];
+   return <circle key={w.id+which} cx={p.x} cy={p.y} r={Math.max(7,geometry.width_px/130)}
+    fill="white" stroke="#16a34a" strokeWidth={3} style={{cursor:'grab',touchAction:'none'}}
+    onPointerDown={e=>{e.stopPropagation();e.currentTarget.setPointerCapture(e.pointerId)}}
+    onPointerMove={e=>{
+      if(!e.currentTarget.hasPointerCapture(e.pointerId))return;
+      const svg=e.currentTarget.ownerSVGElement;
+      if(!svg)return;
+      const point=localPoint(svg,e.clientX,e.clientY);
+      if(point)moveWallEndpoint(w.id,which,point);
+    }}
+    onPointerUp={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId)}}
+    onClick={e=>e.stopPropagation()}/>;
+  })
+ ))}
  {wallStart&&<circle cx={wallStart.x} cy={wallStart.y} r={Math.max(5,geometry.width_px/130)} fill="#d97706" pointerEvents="none"/>}
  </svg>:<Viewer geometry={geometry}/>}
  <p className="muted">{mode==='wall'?'Click two points to draw a continuous wall. Endpoints snap to nearby vertices and near-horizontal/vertical axes.':mode==='door'||mode==='window'?'Click a wall edge to place an opening. Draw continuous walls first—never leave a gap manually.':'Drag room vertices; nearby joints snap and matching walls follow.'} Detection is shown by default but is not verified geometry.</p></div>
@@ -254,13 +292,20 @@ export default function Editor(){
  <button className="secondary" onClick={()=>{if(!geometry)return;
    setGeometry({...geometry,px_per_meter:s.px_per_meter,scale_source:'user_confirmed',warnings:geometry.warnings.filter(w=>!w.toLowerCase().includes('provisional'))});
    setStatus('Scale hypothesis selected. Confirm that '+s.text+' is centimeters and refers to the highlighted plan dimension.');}}>Use estimate</button></div>)}
+ <h2>Wall corrections</h2>
+ {selectedWall?<div className="stack">
+ <small>Selected {selectedWall}: drag the green endpoint handles in the plan. Changes appear in 3D.</small>
+ <button className="secondary" onClick={()=>removeWall(selectedWall)}>Reject / delete selected wall</button>
+ <button className="secondary" onClick={()=>setSelectedWall(null)}>Finish correction</button>
+ </div>:<small>Click a blue model wall line to edit or remove it; drag its endpoint handles. This corrects the reconstructed geometry, not the original YOLO box.</small>}
+ <small>After correction, select Confirm wall positions. You can do this before identifying the drawing scale.</small>
  <h2>Openings ({geometry.openings.length})</h2>
  {geometry.openings.map(o=><div className="stack" key={o.id} style={{padding:10,border:'1px solid #dce2e8',borderRadius:8}}>
  <div className="row"><strong>{o.kind} · {o.wall_id.slice(0,25)}</strong><button className="secondary" onClick={()=>removeOpening(o.id)}>Remove</button></div>
  {(['offset_m','width_m','height_m','sill_m'] as const).map(k=><label key={k}>{k.replace('_m','')} (m) <input type="number" min="0" step=".05" value={o[k]} onChange={e=>changeOpening(o.id,k,e.target.value)}/></label>)}
  <small>Dimensions are assumptions until confirmed from a plan/elevation.</small>
  </div>)}
- {geometry.walls.filter(w=>w.id.startsWith('user-')).map(w=><div className="row" key={w.id}><small>{w.id.slice(0,18)}</small><button className="secondary" onClick={()=>removeWall(w.id)}>Remove</button></div>)}
+ {geometry.walls.filter(w=>w.id.startsWith('user-')||w.id.startsWith('model-')).map(w=><div className="row" key={w.id}><small>{w.id.slice(0,18)}</small><button className="secondary" onClick={()=>removeWall(w.id)}>Remove</button></div>)}
  {geometry.warnings.map((w,i)=><div className="notice" key={i}>{w}</div>)}
  </div><div className="panel stack"><h2>Design assistant · upcoming</h2>
  <textarea rows={4} value={prompt} onChange={e=>setPrompt(e.target.value)}/>
