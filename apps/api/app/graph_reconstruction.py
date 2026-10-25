@@ -30,20 +30,19 @@ def propose_connected_geometry(g: Geometry, tolerance_px: float = 8.0,
         points=[]
         for endpoint in (wall.start,wall.end):
             candidate=Point(endpoint.x,endpoint.y)
-            closest=(float('inf'),endpoint.x,endpoint.y)
-            # Prefer exact endpoint-to-endpoint clusters, then T-junction on
-            # an existing wall segment; do not snap along unrelated distant lines.
-            for j,other in enumerate(original):
-                if i==j: continue
+            # Stable node representative: all endpoints in the same local cluster
+            # choose the lexicographically smallest point instead of swapping.
+            nearby=[(endpoint.x,endpoint.y)]
+            for other in original:
                 for q in (other.start,other.end):
-                    d=_dist(endpoint,q)
-                    if d<closest[0]: closest=(d,q.x,q.y)
-            if closest[0]<=tolerance_px:
-                x,y=closest[1:]
+                    if _dist(endpoint,q)<=tolerance_px:
+                        nearby.append((q.x,q.y))
+            if len(nearby)>1:
+                x,y=min(nearby)
             else:
                 best=(float('inf'),endpoint.x,endpoint.y)
                 for j,line in enumerate(linework):
-                    if i==j: continue
+                    if i==j:continue
                     _,q=nearest_points(candidate,line)
                     d=candidate.distance(q)
                     if d<best[0]:best=(d,q.x,q.y)
