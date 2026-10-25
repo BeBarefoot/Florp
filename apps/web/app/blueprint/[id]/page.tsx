@@ -83,6 +83,19 @@ export default function Editor(){
    }catch(err){setStatus(String(err))}
    finally{setModelBusy(false)}
  }
+ async function trySegmentation(){
+   if(!window.confirm('Run experimental local wall segmentation? This creates a new draft and may replace all unreviewed wall proposals. Existing saved versions remain available.'))return;
+   setModelBusy(true);setStatus('');
+   try{
+     const result=await request<{layout:Layout;report:{checkpoint:string;line_count:number;coverage_fraction:number}}>(
+       `/blueprints/${id}/segmentation/propose`,{method:'POST'});
+     setLayout(result.layout);setGeometry(result.layout.geometry);
+     setModelDetections(null);setDetectorAudit(null);setSelectedDetection(null);setSelectedWall(null);
+     setStatus('Segmentation experiment: '+result.report.line_count+' mask-supported line candidates from '+result.report.checkpoint+
+       '. Check all walls and missing openings; this is not a verified floor plan.');
+   }catch(err){setStatus(String(err))}
+   finally{setModelBusy(false)}
+ }
  async function proposeRooms(){
    if(!window.confirm('Create a new unverified connected-wall/room proposal from the last saved draft? Existing versions will be preserved.'))return;
    setBusy(true);setStatus('');
@@ -310,6 +323,10 @@ export default function Editor(){
  {view==='2d'&&<div className="row" style={{marginBottom:12}}>
  <button className="secondary" disabled={modelBusy||busy} onClick={()=>void runPretrained()}>
  {modelBusy?'Running local model…':'Auto-build 2D + 3D'}</button>
+ <details><summary>Experimental wall segmentation</summary>
+ <p className="muted">Requires a separate locally configured segmentation model with a wall mask class. Current box-only YOLO weights will not work.</p>
+ <button className="secondary" disabled={modelBusy||busy} onClick={()=>void trySegmentation()}>Try wall-mask reconstruction</button>
+ </details>
  {modelDetections&&<label><input type="checkbox" checked={showModelDetections} onChange={e=>setShowModelDetections(e.target.checked)}/> Model boxes ({modelDetections.boxes.length})</label>}
  <label><input type="checkbox" checked={grayscale} onChange={e=>setGrayscale(e.target.checked)}/> Grayscale</label>
  <details><summary>Advanced detection layers</summary>
