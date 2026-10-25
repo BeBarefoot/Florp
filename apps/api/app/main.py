@@ -298,6 +298,7 @@ class ProvisionalOpeningInput(BaseModel):
     kind: str
     wall_id: str
     fraction: float
+    geometry: Geometry | None = None
 
 @app.post('/blueprints/{bid}/openings/propose')
 def propose_opening(bid:str,body:ProvisionalOpeningInput):
@@ -313,7 +314,9 @@ def propose_opening(bid:str,body:ProvisionalOpeningInput):
         if not bp:raise HTTPException(404,'Blueprint not found')
         current=s.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
         if not current:raise HTTPException(404,'Layout not found')
-        g=Geometry.model_validate(current.geometry).model_copy(deep=True)
+        # Respect in-progress edits sent by the editor. Otherwise an opening
+        # click could reload an older saved layout and discard drawn walls.
+        g=(body.geometry or Geometry.model_validate(current.geometry)).model_copy(deep=True)
         edges={w.id:(w.start,w.end) for w in g.walls}
         for room in g.rooms:
             for i,p in enumerate(room.points):
