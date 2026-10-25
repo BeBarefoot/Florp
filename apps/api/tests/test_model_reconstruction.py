@@ -24,3 +24,18 @@ def test_no_wall_boxes_does_not_invent_geometry():
     result=DetectorResult(image_width=800,image_height=600,boxes=[
         detected('wall',100,100,150,149)])
     with pytest.raises(ValueError):reconstruct(result,fallback_geometry(800,600))
+
+def test_filter_audit_counts_short_and_nonelongated_boxes():
+    from app.model_reconstruction import detection_audit
+    boxes=[
+        DetectionBox(category='wall',confidence=.9,x1=10,y1=10,x2=200,y2=20),
+        DetectionBox(category='wall',confidence=.9,x1=10,y1=10,x2=25,y2=20),
+        DetectionBox(category='wall',confidence=.9,x1=50,y1=50,x2=100,y2=94),
+        DetectionBox(category='window',confidence=.9,x1=100,y1=100,x2=140,y2=120),
+    ]
+    data=detection_audit(DetectorResult(image_width=800,image_height=600,boxes=boxes))
+    assert data['wall_boxes']==3
+    assert data['accepted_wall_boxes']==1
+    assert data['too_short']==1
+    assert data['not_elongated']==1
+    assert data['window_boxes']==1
