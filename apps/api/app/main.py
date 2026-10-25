@@ -38,6 +38,26 @@ def create_project(body:CreateProject):
 @app.get('/projects',response_model=list[Project])
 def projects():
     with Session(engine) as s:return list(s.exec(select(Project).order_by(Project.created_at.desc())).all())
+@app.delete('/projects/{pid}')
+def delete_project(pid:str):
+    with Session(engine) as s:
+        project=s.get(Project,pid)
+        if not project:raise HTTPException(404,'Project not found')
+        plans=list(s.exec(select(Blueprint).where(Blueprint.project_id==pid)).all())
+        ids=[bp.id for bp in plans]
+        for bid in ids:
+            for table in (Render,ModelWallCorrection,WallAnnotation,Layout):
+                for row in s.exec(select(table).where(table.blueprint_id==bid)).all():
+                    s.delete(row)
+        for bp in plans:s.delete(bp)
+        s.delete(project)
+        s.commit()
+    root=Path(settings.storage_path).resolve()
+    for bid in ids:
+        folder=(root/bid).resolve()
+        if folder.parent==root and folder.is_dir():shutil.rmtree(folder)
+    return {'deleted':True,'blueprints_deleted':len(ids)}
+
 @app.get('/projects/{pid}/blueprints',response_model=list[Blueprint])
 def blueprints(pid:str):
     with Session(engine) as s:return list(s.exec(select(Blueprint).where(Blueprint.project_id==pid)).all())
@@ -308,10 +328,20 @@ def propose_opening(bid:str,body:ProvisionalOpeningInput):
         width=min(.9 if body.kind=='door' else 1.2,length_m*.6)
         if width<.12:raise HTTPException(422,'Wall too short')
         offset=max(0,min(length_m-width,body.fraction*length_m-width/2))
-        # Fail safely if the tentative span collides with an existing opening.
+        # Correct an existing inferred model opening instead of returning 409.
         for existing in g.openings:
-            if existing.wall_id==body.wall_id and offset < existing.offset_m+existing.width_m and existing.offset_m < offset+width:
-                raise HTTPException(409,'Opening overlaps an existing opening')
+            if existing.wall_id!=body.wall_id:continue
+            if not (offset < existing.offset_m+existing.width_m and existing.offset_m < offset+width):continue
+            if not existing.inferred:
+                raise HTTPException(409,'A confirmed opening occupies this location. Edit it instead.')
+            existing.kind=body.kind
+            existing.offset_m=round(offset,3)
+            existing.width_m=round(width,3)
+            existing.height_m=2.1 if body.kind=='door' else 1.2
+            existing.sill_m=0 if body.kind=='door' else .9
+            row=Layout(blueprint_id=bid,version=current.version+1,verified=False,geometry=g.model_dump())
+            s.add(row);s.commit();s.refresh(row)
+            return row
         opening=Opening(id='opening-'+uuid4().hex[:12],kind=body.kind,wall_id=body.wall_id,
           offset_m=round(offset,3),width_m=round(width,3),height_m=2.1 if body.kind=='door' else 1.2,
           sill_m=0 if body.kind=='door' else .9,inferred=True)
