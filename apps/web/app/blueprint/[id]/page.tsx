@@ -173,7 +173,8 @@ export default function Editor(){
   if(!ranked.length||ranked[0].d>Math.max(32,Math.min(geometry.width_px,geometry.height_px)*.1)){
    setStatus('This detected opening has no nearby reconstructed wall. Review the missing wall first.');return;
   }
-  await addOpening(ranked[0].edge,point,b.category as 'door'|'window');
+  const nearestModel=ranked.find(item=>item.edge.id.startsWith('model-')&&item.d<=Math.max(20,ranked[0].d+10));
+  await addOpening((nearestModel||ranked[0]).edge,point,b.category as 'door'|'window');
  }
  async function addOpening(edge:{id:string;start:Pt;end:Pt;thickness_m:number;height_m:number},p:Pt,kind:'door'|'window'){
   if(!geometry)return;
@@ -220,10 +221,11 @@ export default function Editor(){
  {modelBusy?'Running local model…':'Auto-build 2D + 3D'}</button>
  {modelDetections&&<label><input type="checkbox" checked={showModelDetections} onChange={e=>setShowModelDetections(e.target.checked)}/> Model boxes ({modelDetections.boxes.length})</label>}
  <label><input type="checkbox" checked={grayscale} onChange={e=>setGrayscale(e.target.checked)}/> Grayscale</label>
+ <details><summary>Advanced detection layers</summary>
  <label title="Legacy OpenCV research candidates. Use model wall review above for training."><input type="checkbox" checked={showSuggestions} onChange={e=>setShowSuggestions(e.target.checked)}/> Auto-detected walls ({suggestions.length}/{evidence?.candidates.length??0})</label>
  <select value={reviewScope} onChange={e=>setReviewScope(e.target.value as 'all'|'near')} aria-label="Candidate filter">
  <option value="all">All detections</option><option value="near">Near current outline</option></select>
- <label><input type="checkbox" checked={showRaw} onChange={e=>setShowRaw(e.target.checked)}/> Raw lines ({evidence?.segments.length??0})</label>
+ <label><input type="checkbox" checked={showRaw} onChange={e=>setShowRaw(e.target.checked)}/> Raw lines ({evidence?.segments.length??0})</label></details>
  {(['wall','door','window'] as const).map(tool=><button key={tool} className={mode===tool?'':'secondary'} onClick={()=>{setMode(mode===tool?'edit':tool);setWallStart(null)}}>{tool==='wall'?'Draw wall':tool==='door'?'Add door':'Add window'}</button>)}
  </div>}
  {view==='2d'?<svg className="canvas" viewBox={`0 0 ${geometry.width_px} ${geometry.height_px}`}
@@ -232,7 +234,7 @@ export default function Editor(){
  if(mode==='wall'){addWall({x:Math.max(0,Math.min(geometry.width_px,Math.round(p.x))),y:Math.max(0,Math.min(geometry.height_px,Math.round(p.y)))});return;}
  if(mode==='door'||mode==='window'){
   const ranked=edges.map(edge=>({edge,d:segmentDistance(p,edge)})).sort((a,b)=>a.d-b.d);
-  const closest=ranked[0];
+  const closest=ranked.find(item=>item.edge.id.startsWith('model-')&&item.d<=Math.max(20,ranked[0]?.d+10))||ranked[0];
   if(!closest||closest.d>Math.max(25,Math.min(geometry.width_px,geometry.height_px)*.05)){setStatus('No nearby wall found. Click closer to a wall centerline.');return;}
   addOpening(closest.edge,p,mode);
  }
@@ -291,7 +293,7 @@ export default function Editor(){
  ))}
  {wallStart&&<circle cx={wallStart.x} cy={wallStart.y} r={Math.max(5,geometry.width_px/130)} fill="#d97706" pointerEvents="none"/>}
  </svg>:<Viewer geometry={geometry}/>}
- <p className="muted">{mode==='wall'?'Click two points to draw a continuous wall. Endpoints snap to nearby vertices and near-horizontal/vertical axes.':mode==='door'||mode==='window'?'Click a wall edge to place an opening. Draw continuous walls first—never leave a gap manually.':'Drag room vertices; nearby joints snap and matching walls follow.'} Detection is shown by default but is not verified geometry.</p></div>
+ <p className="muted">{mode==='wall'?'Click two points to add a missing wall.':mode==='door'||mode==='window'?'Click near a wall or on a detected opening box to add or correct it.':'Review model walls and detected openings; tap a wall to adjust or reject it.'}</p></div>
  <div className="stack"><div className="panel stack"><h2>Geometry</h2>
  <details><summary>Advanced scale override (optional)</summary><label>Pixels per meter <input type="number" min=".001" step=".1" value={geometry.px_per_meter??''}
  onChange={e=>setGeometry({...geometry,px_per_meter:e.target.value?Number(e.target.value):null,scale_source:'user_confirmed'})} placeholder="Use confirmed dimension"/></label></details>
@@ -348,7 +350,8 @@ export default function Editor(){
  <button className="secondary" onClick={()=>setSelectedWall(null)}>Finish correction</button>
  </div>:<small>Click a blue model wall line to edit or remove it; drag its endpoint handles. This corrects the reconstructed geometry, not the original YOLO box.</small>}
  <small>Use Confirm wall positions after reviewing the proposed structure; physical measurements are a separate step.</small>
- <h2>Openings ({geometry.openings.length})</h2>
+ <h2>Opening review ({geometry.openings.length} proposed)</h2>
+ {modelDetections&&<small>Model found {modelDetections.boxes.filter(b=>b.category==='door').length} door boxes and {modelDetections.boxes.filter(b=>b.category==='window').length} window boxes. Toggle Model boxes to see orange/cyan detections and click one to propose or update the nearest wall opening. Not every detection can be safely attached.</small>}
  {geometry.openings.map(o=><div className="stack" key={o.id} style={{padding:10,border:'1px solid #dce2e8',borderRadius:8}}>
  <div className="row"><strong>{o.kind} · {o.wall_id.slice(0,25)}</strong><button className="secondary" onClick={()=>removeOpening(o.id)}>Remove</button></div>
  {(['offset_m','width_m','height_m','sill_m'] as const).map(k=><label key={k}>{k.replace('_m','')} (m) <input type="number" min="0" step=".05" value={o[k]} onChange={e=>changeOpening(o.id,k,e.target.value)}/></label>)}
