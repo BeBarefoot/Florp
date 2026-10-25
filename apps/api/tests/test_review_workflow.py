@@ -56,3 +56,60 @@ def test_delete_project_cleans_dependent_layouts_and_storage(tmp_path,monkeypatc
         assert s.get(Project,project_id) is None
         assert s.get(Blueprint,plan_id) is None
         assert not list(s.exec(select(Layout).where(Layout.blueprint_id==plan_id)).all())
+
+def test_overlapping_model_openings_can_be_reviewed_without_metric_verification(monkeypatch):
+    engine=create_engine('sqlite://',connect_args={'check_same_thread':False},
+                         poolclass=StaticPool)
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(main,'engine',engine)
+    with Session(engine) as session:
+        project=Project(title='overlap');session.add(project);session.flush()
+        blueprint=Blueprint(project_id=project.id,filename='test.png',
+             local_path='',preview_path='',width=992,height=440)
+        session.add(blueprint);session.flush()
+        geometry=Geometry(width_px=992,height_px=440,walls=[
+            Wall(id='model-7',start=Pt(x=100,y=100),end=Pt(x=600,y=100))],
+            openings=[
+                Opening(id='model-door-a',kind='door',wall_id='model-7',
+                         offset_m=.65,width_m=.9,height_m=2.1,sill_m=0,inferred=True),
+                Opening(id='model-door-b',kind='door',wall_id='model-7',
+                         offset_m=1.05,width_m=.9,height_m=2.1,sill_m=0,inferred=True)])
+        session.add(Layout(blueprint_id=blueprint.id,geometry=geometry.model_dump()))
+        session.commit();bid=blueprint.id
+    parsed=Geometry.model_validate(geometry.model_dump())
+    from app.geometry import validate_geometry
+    assert any('Overlapping openings' in message for message in validate_geometry(parsed))
+    saved=main.save_layout(bid,main.SaveLayout(geometry=parsed,structure_reviewed=True))
+    assert saved.geometry['structure_reviewed'] is True
+    assert not saved.verified
+    from fastapi import HTTPException
+    try:main.save_layout(bid,main.SaveLayout(geometry=parsed,verified=True))
+    except HTTPException as exc:
+        assert exc.status_code==422
+        assert any('Overlapping openings' in issue for issue in exc.detail['issues'])
+    else:raise AssertionError('Metric verification must reject overlap')
+
+def test_click_near_multiple_predicted_openings_does_not_create_third(monkeypatch):
+    engine=create_engine('sqlite://',connect_args={'check_same_thread':False},
+                         poolclass=StaticPool)
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(main,'engine',engine)
+    with Session(engine) as session:
+        project=Project(title='overlap');session.add(project);session.flush()
+        blueprint=Blueprint(project_id=project.id,filename='test.png',local_path='',
+             preview_path='',width=992,height=440)
+        session.add(blueprint);session.flush()
+        geometry=Geometry(width_px=992,height_px=440,walls=[
+            Wall(id='model-7',start=Pt(x=100,y=100),end=Pt(x=600,y=100))],
+            openings=[
+                Opening(id='a',kind='window',wall_id='model-7',offset_m=.65,
+                        width_m=.9,height_m=1.2,sill_m=.9,inferred=True),
+                Opening(id='b',kind='window',wall_id='model-7',offset_m=1.05,
+                        width_m=.9,height_m=1.2,sill_m=.9,inferred=True)])
+        session.add(Layout(blueprint_id=blueprint.id,geometry=geometry.model_dump()))
+        session.commit();bid=blueprint.id
+    result=main.propose_opening(bid,main.ProvisionalOpeningInput(kind='door',
+                                           wall_id='model-7',fraction=.34))
+    parsed=Geometry.model_validate(result.geometry)
+    assert len(parsed.openings)==2
+    assert any(opening.kind=='door' for opening in parsed.openings)
