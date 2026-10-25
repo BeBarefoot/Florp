@@ -138,3 +138,34 @@ Model-generated 2D cyan wall centerlines can be selected in **Edit** mode. Drag 
 Vision-model JSON may be incomplete or truncated. Florp sends a shorter extraction prompt, requests `LLM_MAX_COMPLETION_TOKENS` (default 8192), retries once on invalid or truncated output, and gives an actionable 424 rather than leaking a long Pydantic 502 traceback. API model output quality remains model-dependent. Set an output token count supported by your configured provider and account.
 
 See [roadmap and acceptance gates](docs/ROADMAP_AND_GATES.md). CI checks Python compilation and tests and Next.js type/build on push; check GitHub Actions for actual job results.
+
+
+## Connected wall topology and room proposal (phase 2)
+
+Florp now has an experimental deterministic reconstruction stage using Shapely.
+**Auto-build 2D + 3D** runs the local pretrained detector, produces approximate
+wall centerlines, and then attempts to snap nearby endpoints/T-junctions and
+find closed room contours. Existing users can **Save draft**, then select
+**Propose connected rooms** in the Wall graph health section. The operation
+creates a new unverified layout version; it never rewrites the original uploaded
+plan or a prior layout version. A read-only wall audit remains available at
+`GET /blueprints/{id}/topology`.
+
+Backend API: `POST /blueprints/{id}/topology/propose`, returning the new
+layout and topology audit. The solver lives in `app/graph_reconstruction.py`
+and uses `shapely>=2` installed by `uv sync` (or
+`uv sync --extra pretrained-yolo` for local model inference).
+
+**Safety/limitations:** The algorithm can close narrow gaps, merge nearby
+endpoint coordinates, and polygonize enclosed wall segments. Its tolerance is
+a heuristic in image pixels, not a validated metric value. It cannot determine
+whether walls detected by YOLO are real, and a false-positive closed loop can
+still appear as a proposed room. Rooms default to confidence 0 and remain
+unverified. Open contours do not produce floors. Wall height, thickness,
+material, physical scale and exact opening geometry remain provisional.
+Review outputs before selecting **Confirm wall positions**, and do not treat
+this as successful floor-plan extraction without benchmark evaluation.
+
+Tests: `uv run pytest -q tests/test_graph_reconstruction.py` covers rectangles,
+small/large gaps, T-partitions, and open lines. Full backend/frontend CI also
+needs to pass.
