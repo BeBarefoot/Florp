@@ -127,7 +127,7 @@ export default function Editor(){
    try{
      const result=await request<{layout_version:number;suggestions:GapProposal[];warning:string}>(`/blueprints/${id}/missing-wall-suggestions`);
      setMissingGaps(result.suggestions);setDismissedGaps([]);setGapVersion(result.layout_version);
-     setGapMessage(result.suggestions.length+' source-supported gap suggestions; none are added automatically.');
+     setGapMessage(result.suggestions.length+' source-supported wall candidates; none are added automatically.');
    }catch(error){setGapMessage(String(error))}
    finally{setBusy(false)}
  }
@@ -344,18 +344,18 @@ export default function Editor(){
  </div>}
  {view==='2d'&&<div style={{border:'1px solid #d5dee7',borderRadius:10,padding:12,marginBottom:12}}>
  <div className="row">
- <strong>Missing-wall suggestions</strong>
- <button className="secondary" disabled={busy} onClick={()=>void findMissingWalls()}>Find supported gaps</button>
+ <strong>Missing-wall recovery</strong>
+ <button className="secondary" disabled={busy} onClick={()=>void findMissingWalls()}>Recover missing wall candidates</button>
  </div>
  {gapMessage&&<small>{gapMessage}</small>}
  {gapVersion!==null&&layout&&gapVersion!==layout.version&&<small>Suggestions are outdated; scan again.</small>}
  {missingGaps.filter(g=>!dismissedGaps.includes(g.id)).slice(0,8).map(g=>
  <div key={g.id} className="row" style={{justifyContent:'space-between',padding:'6px 0'}}>
- <small>{g.axis} gap · {Math.round(g.image_support*100)}% local ink support</small>
+ <small>{g.id.startsWith('bottom-')?'Lower exterior run':'Endpoint gap'} · {Math.round(g.image_support*100)}% source-pixel support</small>
  <button className="secondary" onClick={()=>acceptGap(g)}>Add wall</button>
  <button className="secondary" onClick={()=>setDismissedGaps(prev=>[...prev,g.id])}>Dismiss</button>
  </div>)}
- <small>These are uncertain source-image connections, not proof of structural walls.</small>
+ <small>Includes connected gaps and bottom exterior-run proposals. All require visual review before being added to the 3D model.</small>
  </div>}
   {view==='2d'&&selectedWall&&<div style={{border:'2px solid #16a34a',borderRadius:10,padding:12,marginBottom:12,background:'#f0fdf4',color:'#14532d'}}>
  <strong>Selected wall: {selectedWall}</strong>
@@ -380,8 +380,8 @@ export default function Editor(){
  </details>
  {modelDetections&&<label><input type="checkbox" checked={showModelDetections} onChange={e=>setShowModelDetections(e.target.checked)}/> Model boxes ({modelDetections.boxes.length})</label>}
  <label><input type="checkbox" checked={grayscale} onChange={e=>setGrayscale(e.target.checked)}/> Grayscale</label>
- <details><summary>Advanced detection layers</summary>
- <label title="Legacy OpenCV research candidates. Use model wall review above for training."><input type="checkbox" checked={showSuggestions} onChange={e=>setShowSuggestions(e.target.checked)}/> Auto-detected walls ({suggestions.length}/{evidence?.candidates.length??0})</label>
+ <details><summary>Advanced: diagnostic lines (not used in 3D)</summary>
+ <label title="Legacy OpenCV research candidates. Use model wall review above for training."><input type="checkbox" checked={showSuggestions} onChange={e=>setShowSuggestions(e.target.checked)}/> Legacy line hints ({suggestions.length}/{evidence?.candidates.length??0})</label>
  <select value={reviewScope} onChange={e=>setReviewScope(e.target.value as 'all'|'near')} aria-label="Candidate filter">
  <option value="all">All detections</option><option value="near">Near current outline</option></select>
  <label><input type="checkbox" checked={showRaw} onChange={e=>setShowRaw(e.target.checked)}/> Raw lines ({evidence?.segments.length??0})</label></details>
