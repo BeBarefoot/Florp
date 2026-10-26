@@ -34,3 +34,20 @@ def test_no_vertical_structural_anchor_means_no_bottom_proposal(tmp_path):
     g=Geometry(width_px=500,height_px=220,walls=[
         wall('top',(80,45),(430,45))])
     assert suggest_bottom_runs(g,path,min_length_fraction=.25)==[]
+
+def test_hough_fragment_extends_only_along_connected_wall_pixels():
+    from app.exterior_recovery import _extend_on_supported_ink
+    image=np.zeros((80,400),dtype=np.uint8)
+    image[38:43,40:320]=255
+    a,b=_extend_on_supported_ink(image,40,190,315)
+    assert a<=41
+    assert b>=318
+
+def test_exterior_fragment_does_not_bridge_door_sized_gap():
+    from app.exterior_recovery import _extend_on_supported_ink
+    image=np.zeros((80,400),dtype=np.uint8)
+    image[38:43,40:155]=255
+    image[38:43,220:330]=255
+    a,b=_extend_on_supported_ink(image,40,230,320)
+    assert a>=219
+    assert b<=331
