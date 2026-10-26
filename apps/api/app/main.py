@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from PIL import Image
 import fitz
 from .config import settings
-from .models import Project, Blueprint, Layout, Render, WallAnnotation, ModelWallCorrection
+from .models import Project, Blueprint, Layout, Render, WallAnnotation, ModelWallCorrection, FusionCandidateReview
 from .geometry import Geometry, fallback_geometry, validate_geometry
 from .providers import extract_geometry, ProviderUnavailable, ProviderAuthenticationError, ProviderConfigurationError, ProviderOutputError
 from .evidence import inspect_plan
@@ -75,7 +75,7 @@ def delete_project(pid:str):
         plans=list(s.exec(select(Blueprint).where(Blueprint.project_id==pid)).all())
         ids=[bp.id for bp in plans]
         for bid in ids:
-            for table in (Render,ModelWallCorrection,WallAnnotation,Layout):
+            for table in (Render,ModelWallCorrection,WallAnnotation,FusionCandidateReview,Layout):
                 for row in s.exec(select(table).where(table.blueprint_id==bid)).all():
                     s.delete(row)
         for bp in plans:s.delete(bp)
@@ -225,6 +225,51 @@ def pretrained_reconstruct(bid:str):
         draft=Layout(blueprint_id=bid,version=previous.version+1,verified=False,geometry=geometry.model_dump())
         session.add(draft);session.commit();session.refresh(draft)
         return {'layout':draft,'detections':detection,'detection_audit':detection_audit(detection),'topology':audit_topology(geometry)}
+
+class FusionReviewBody(BaseModel):
+    preview_sha256: str
+    candidate: dict
+    decision: str
+
+@app.post('/blueprints/{bid}/fusion-reviews')
+def review_fusion_candidate(bid:str, body:FusionReviewBody):
+    import hashlib
+    from .evidence_fusion import FusedCandidate
+    if body.decision not in ('accept','reject','unsure'):
+        raise HTTPException(422,'Decision must be accept, reject, or unsure')
+    try:candidate=FusedCandidate.model_validate(body.candidate)
+    except ValueError as exc:raise HTTPException(422,'Invalid fusion candidate') from exc
+    with Session(engine) as session:
+        bp=session.get(Blueprint,bid)
+        if not bp:raise HTTPException(404,'Blueprint not found')
+        preview_hash=hashlib.sha256(Path(bp.preview_path).read_bytes()).hexdigest()
+        if body.preview_sha256!=preview_hash:
+            raise HTTPException(409,'Blueprint preview changed; run comparison again')
+        # The inference result must be anchored in the current review session.
+        # This endpoint validates coordinates and provenance but does not rerun
+        # expensive AI inference. Review events are untrusted until adjudicated.
+        points=(candidate.start,candidate.end)
+        if any(not (0<=p.x<=bp.width and 0<=p.y<=bp.height) for p in points):
+            raise HTTPException(422,'Candidate outside blueprint')
+        if candidate.start==candidate.end or not candidate.sources:
+            raise HTTPException(422,'Candidate missing valid geometry or provenance')
+        event=FusionCandidateReview(blueprint_id=bid,preview_sha256=preview_hash,
+            candidate_id=candidate.id,category=candidate.category,
+            decision=body.decision,candidate=candidate.model_dump())
+        session.add(event);session.commit();session.refresh(event)
+        return {'review_id':event.id,'candidate_id':candidate.id,
+                'decision':event.decision,'saved':True}
+
+@app.get('/blueprints/{bid}/fusion-reviews')
+def get_fusion_reviews(bid:str):
+    with Session(engine) as session:
+        if not session.get(Blueprint,bid):raise HTTPException(404,'Blueprint not found')
+        events=list(session.exec(select(FusionCandidateReview).where(
+            FusionCandidateReview.blueprint_id==bid).order_by(
+                FusionCandidateReview.created_at)).all())
+        return [{'preview_sha256':e.preview_sha256,'candidate_id':e.candidate_id,
+                 'decision':e.decision,'candidate':e.candidate,
+                 'created_at':e.created_at.isoformat()} for e in events]
 
 @app.post('/blueprints/{bid}/compare-extraction')
 def compare_extraction(bid:str):
@@ -409,10 +454,12 @@ def training_export(bid:str):
         annotations=list(s.exec(select(WallAnnotation).where(WallAnnotation.blueprint_id==bid)).all())
         layout=s.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
         model_reviews=list(s.exec(select(ModelWallCorrection).where(ModelWallCorrection.blueprint_id==bid)).all())
+        fusion_reviews=list(s.exec(select(FusionCandidateReview).where(FusionCandidateReview.blueprint_id==bid)).all())
         walls=[w for w in Geometry.model_validate(layout.geometry).model_dump()['walls'] if w['id'].startswith('user-')] if layout else []
     return {'schema_version':1,'blueprint_id':bid,'image_width':bp.width,'image_height':bp.height,
       'annotations':[{'label':a.label,**a.coordinates} for a in annotations],
       'manually_drawn_walls':walls,
+      'fusion_candidate_reviews':[{'candidate_id':r.candidate_id,'category':r.category,'decision':r.decision,'preview_sha256':r.preview_sha256,'candidate':r.candidate,'created_at':r.created_at.isoformat()} for r in fusion_reviews],
       'model_wall_corrections':[{'model_wall_id':r.model_wall_id,'action':r.action,'original':r.original,'corrected':r.corrected,'layout_version':r.layout_version} for r in model_reviews],
       'note':'Review labels before training; this is not a trained detector.'}
 
