@@ -67,8 +67,26 @@ def detect_objects(preview_path:Path, width:int, height:int, confidence:float=.3
     # Image is not uploaded anywhere; only local CPU/GPU inference.
     model=_load_model(str(weights))
     try:
-        results=model.predict(source=str(preview_path),conf=confidence,verbose=False,device='cpu')
+        import numpy as np
+        from PIL import Image,ImageOps
+        with Image.open(preview_path) as image:
+            rgb=np.asarray(ImageOps.exif_transpose(image).convert('RGB'),dtype=np.uint8)
+        if rgb.shape[:2]!=(height,width):
+            raise ValueError('Preview dimensions do not match blueprint')
+        frame=None
+        if settings.inference_border_enabled:
+            rgb,frame=add_inference_border(rgb,
+                settings.inference_border_fraction,settings.inference_border_min_px)
+        results=model.predict(source=rgb,conf=confidence,verbose=False,device='cpu')
     except Exception as exc:
         raise DetectorUnavailable('Local YOLO inference failed ('+type(exc).__name__+'). Confirm checkpoint compatibility with the installed Ultralytics version.') from exc
-    return DetectorResult(image_width=width,image_height=height,
-                          boxes=normalize_yolo_boxes(results,width,height,confidence))
+    padded_height,padded_width=rgb.shape[:2]
+    boxes=normalize_yolo_boxes(results,padded_width,padded_height,confidence)
+    if frame:
+        projected=[]
+        for box in boxes:
+            x1,y1,x2,y2=translate_box((box.x1,box.y1,box.x2,box.y2),frame)
+            if x2>x1 and y2>y1:
+                projected.append(box.model_copy(update=dict(x1=x1,y1=y1,x2=x2,y2=y2)))
+        boxes=projected
+    return DetectorResult(image_width=width,image_height=height,boxes=boxes)
