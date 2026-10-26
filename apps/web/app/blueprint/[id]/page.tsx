@@ -568,7 +568,8 @@ export default function Editor(){
  <details><summary>Saved evaluations ({evaluations.length})</summary>
  {evaluations.map(r=><div key={r.id} style={{padding:'6px 0',borderBottom:'1px solid #475569'}}>
  <small>{r.provider} · {r.status} · {r.id.slice(0,8)}</small>
- {r.metrics&&<small> Wall precision {Math.round(r.metrics.walls.precision*100)}% · recall {Math.round(r.metrics.walls.recall*100)}% · F1 {Math.round(r.metrics.walls.f1*100)}% · {(r.correction_seconds??0)/60} min</small>}
+ {r.status==='completed'&&r.metrics?.walls&&<small> Wall precision {Math.round(r.metrics.walls.precision*100)}% · recall {Math.round(r.metrics.walls.recall*100)}% · F1 {Math.round(r.metrics.walls.f1*100)}% · {(r.correction_seconds??0)/60} min</small>}
+ {r.status==='baseline'&&<small>Not scored yet — correct and review this drawing.</small>}
  {r.status==='baseline'&&<button className="secondary" onClick={()=>setActiveEvaluation(r.id)}>Resume</button>}
  <button className="secondary" onClick={()=>void downloadEvaluation(r.id)}>Export JSON</button>
  </div>)}
