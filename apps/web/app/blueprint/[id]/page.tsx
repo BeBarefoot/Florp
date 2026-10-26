@@ -77,6 +77,7 @@ export default function Editor(){
  edges:{id:string;source_wall_id:string;start_node_id:string;end_node_id:string}[];
  disconnected_components:number;dangling_nodes:number;intersections:number;warnings:string[]}}|null>(null);
  const [showModelDetections,setShowModelDetections]=useState(false),[modelBusy,setModelBusy]=useState(false);
+ const [showLegacyRoomOutline,setShowLegacyRoomOutline]=useState(false);
  const [grayscale,setGrayscale]=useState(true),[showRaw,setShowRaw]=useState(false),[showSuggestions,setShowSuggestions]=useState(false);
  const [reviewScope,setReviewScope]=useState<'all'|'near'>('all');
  const [reviewLabels,setReviewLabels]=useState<Record<string,string>>({}),[selectedCandidate,setSelectedCandidate]=useState<Candidate|null>(null);
@@ -592,6 +593,8 @@ export default function Editor(){
  {modelDetections&&<label><input type="checkbox" checked={showModelDetections} onChange={e=>setShowModelDetections(e.target.checked)}/> Model boxes ({modelDetections.boxes.length})</label>}
  <label><input type="checkbox" checked={grayscale} onChange={e=>setGrayscale(e.target.checked)}/> Grayscale</label>
  <details><summary>Advanced: diagnostic lines (not used in 3D)</summary>
+ <label><input type="checkbox" checked={showLegacyRoomOutline}
+ onChange={e=>setShowLegacyRoomOutline(e.target.checked)}/> Show/edit legacy room outline</label>
  <label title="Legacy OpenCV research candidates. Use model wall review above for training."><input type="checkbox" checked={showSuggestions} onChange={e=>setShowSuggestions(e.target.checked)}/> Legacy line hints ({suggestions.length}/{evidence?.candidates.length??0})</label>
  <select value={reviewScope} onChange={e=>setReviewScope(e.target.value as 'all'|'near')} aria-label="Candidate filter">
  <option value="all">All detections</option><option value="near">Near current outline</option></select>
@@ -654,7 +657,7 @@ export default function Editor(){
  stroke={reviewLabels[candidateKey(s)]==='not_wall'?'#b91c1c':reviewLabels[candidateKey(s)]==='wall'?'#16a34a':'#2563eb'} strokeWidth={Math.max(3,geometry.width_px/230)} opacity={.82} style={{cursor:'pointer'}}
  pointerEvents={mode==='edit'?'stroke':'none'}
  onClick={e=>{e.stopPropagation();setSelectedCandidate(s)}}/>)}
- {geometry.rooms.map((r,ri)=><g key={r.id}>
+ {showLegacyRoomOutline&&geometry.rooms.map((r,ri)=><g key={r.id}>
  <polygon points={r.points.map(p=>`${p.x},${p.y}`).join(' ')} fill="#46b494" fillOpacity={.08} stroke="#008a70" strokeWidth={Math.max(2,geometry.width_px/400)} pointerEvents="none"/>
  {mode==='edit'&&r.points.map((p,pi)=><circle key={pi} cx={p.x} cy={p.y} r={Math.max(5,geometry.width_px/140)} fill="white" stroke="#008a70"
  strokeWidth={Math.max(2,geometry.width_px/650)} style={{cursor:'grab'}} onPointerDown={e=>{e.stopPropagation();e.currentTarget.setPointerCapture(e.pointerId)}}
