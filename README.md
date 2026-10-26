@@ -352,3 +352,51 @@ candidate is a structural or concrete wall, and is not general wall
 segmentation. Long dimension lines near the building can cause false
 suggestions. Missing walls elsewhere or a completely absent facade still
 require reviewed segmentation/other evidence.
+
+
+## Main wall path: multi-scale masks and connected-region axes (October 2026)
+
+The experimental segmentation action now runs **Yytsi wall softmax on a whole
+image and overlapping local 448 px source-image tiles**. Each tile is
+letterboxed to the checkpoint's network input using the existing inference
+adapter, predicted at its own resolution, mapped back to the original source
+pixels, and combined with the global prediction using feathered tile weights.
+The default fuse weight for global context is 0.65; tile overlap is 30%.
+The original PNG/PDF-preview coordinates are preserved, and only the source
+wall probability is thresholded. The tiled result is displayed as the teal
+**wall-pixel mask**. Predictions can differ from prior releases even using the
+same checkpoint.
+
+The new `app/mask_topology.py` uses **directional morphology + connected
+components** to propose horizontal and vertical axes from wall-mask regions,
+instead of relying exclusively on Hough edges. Existing graph reconstruction
+then snaps possible junctions and polygonizes closed contours; it remains a
+proposal and does not implement a full persistent half-edge wall graph yet.
+
+Set optional values in `apps/api/.env`:
+
+```dotenv
+SEGMENTATION_MULTISCALE=true
+SEGMENTATION_TILE_SIZE=448
+SEGMENTATION_TILE_OVERLAP=0.30
+SEGMENTATION_MAX_TILES=64
+SEGMENTATION_WALL_THRESHOLD=0.46
+```
+
+Do not increase tile count arbitrarily on a Mac CPU. A 992×440 image needs
+several network passes and may run noticeably more slowly than global-only.
+If the image requires over `SEGMENTATION_MAX_TILES` the API returns an
+actionable error instead of allocating unbounded work. Tiling helps thin
+walls **only when the model recognizes their pixels**; it is not a substitute
+for dataset-matched fine-tuning or topology validation.
+
+To compare with the previous baseline, set
+`SEGMENTATION_MULTISCALE=false`. Use separate unreviewed blueprint copies;
+the segmentation endpoint does not overwrite approved/manual geometry, and
+the app currently lacks a version-restoration UI.
+
+Tests: `uv run pytest -q tests/test_multiscale_topology.py`. Before
+claiming higher accuracy, inspect the teal mask for missed interior walls and
+measure connected components, false positives and correction time using
+held-out reviewed plans. CI and local checkpoint runtime validation are
+required before promoting this pipeline to the default homeowner workflow.
