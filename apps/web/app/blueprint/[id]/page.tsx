@@ -56,6 +56,15 @@ export default function Editor(){
    yolo_error:string|null;mask_overlay_png_base64:string;saved:boolean;
  };
  const [unified,setUnified]=useState<UnifiedComparison|null>(null);
+ type EvaluationRecord={id:string;provider:string;status:string;metrics?:{walls:{precision:number;recall:number;f1:number};openings:{f1:number};room_area_iou:number|null;relative_scale_error:number|null};correction_seconds:number|null;notes:string;created_at:string};
+ const [evaluations,setEvaluations]=useState<EvaluationRecord[]>([]);
+ const [activeEvaluation,setActiveEvaluation]=useState<string|null>(null);
+ const [evaluationBusy,setEvaluationBusy]=useState(false);
+ const [correctionMinutes,setCorrectionMinutes]=useState('3');
+ const [evaluationNotes,setEvaluationNotes]=useState('');
+ const [reviewAttested,setReviewAttested]=useState(false);
+ const [evaluationError,setEvaluationError]=useState('');
+
  type Raster2SeqResult={saved:false;image_sha256:string;base_layout_version:number;width_px:number;height_px:number;rooms:{category_id:number;points:[number,number][]}[];opening_symbols:{kind:'door'|'window';points:[number,number][]}[];metadata:{provider:string;checkpoint:string;predicted_rooms:number};note:string};
  const [r2s,setR2s]=useState<Raster2SeqResult|null>(null);
  const [r2sVisible,setR2sVisible]=useState(true);
@@ -96,6 +105,10 @@ export default function Editor(){
   request<Layout>(`/blueprints/${id}/layout`).then(l=>{setLayout(l);setGeometry(l.geometry)}).catch(e=>setStatus(String(e)));
   request<Evidence>(`/blueprints/${id}/evidence`).then(setEvidence).catch(e=>setStatus('Evidence unavailable: '+String(e)));
   request<{candidate_key:string;label:string}[]>(`/blueprints/${id}/wall-annotations`).then(a=>setReviewLabels(Object.fromEntries(a.map(x=>[x.candidate_key,x.label])))).catch(()=>{});
+  request<EvaluationRecord[]>(`/blueprints/${id}/evaluations`).then(rows=>{
+    setEvaluations(rows);
+    setActiveEvaluation(rows.find(r=>r.status==='baseline')?.id||null);
+  }).catch(()=>{});
  },[id]);
  const edges=useMemo(()=>geometry?editableEdges(geometry):[],[geometry]);
  const suggestions=useMemo(()=>{
@@ -120,6 +133,46 @@ export default function Editor(){
      setStatus('Pretrained model generated '+result.layout.geometry.walls.length+' draft walls, '+result.layout.geometry.rooms.length+' proposed enclosed rooms and '+result.layout.geometry.openings.length+' provisional openings. Review all results before confirming.');
    }catch(err){setStatus(String(err))}
    finally{setModelBusy(false)}
+ }
+
+ async function captureBaseline(){
+   if(!unified||!layout||!geometry)return;
+   if(geometry!==layout.geometry){
+     setEvaluationError('Save or discard draft edits before capturing the model baseline.');
+     return;
+   }
+   setEvaluationBusy(true);setEvaluationError('');
+   try{
+     const result=await request<{id:string;status:string}>(`/blueprints/${id}/evaluations`,{
+       method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+       provider:'florp-fusion',image_sha256:unified.input_manifest.source_preview_sha256,
+       base_layout_version:unified.base_layout_version,geometry:unified.proposal})});
+     setActiveEvaluation(result.id);
+     const rows=await request<EvaluationRecord[]>(`/blueprints/${id}/evaluations`);
+     setEvaluations(rows);
+     setStatus('Model baseline saved independently. Correct walls and openings; then measure accuracy.');
+   }catch(err){setEvaluationError(String(err))}
+   finally{setEvaluationBusy(false)}
+ }
+ async function finishEvaluation(){
+   if(!geometry||!activeEvaluation)return;
+   if(!reviewAttested){setEvaluationError('Review all walls and openings before attesting reference accuracy.');return}
+   const minutes=Number(correctionMinutes);
+   if(!Number.isFinite(minutes)||minutes<0||minutes>1440){
+     setEvaluationError('Enter actual correction minutes (0 to 1440).');return;
+   }
+   setEvaluationBusy(true);setEvaluationError('');
+   try{
+     const result=await request<{status:string;metrics:EvaluationRecord['metrics']}>(`/blueprints/${id}/evaluations/${activeEvaluation}/finish`,{
+       method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+       geometry,correction_seconds:Math.round(minutes*60),notes:evaluationNotes,
+       human_reviewed:true})});
+     const rows=await request<EvaluationRecord[]>(`/blueprints/${id}/evaluations`);
+     setEvaluations(rows);setActiveEvaluation(null);
+     setReviewAttested(false);
+     setStatus('Evaluation stored. Wall recall: '+Math.round((result.metrics?.walls.recall??0)*100)+'%.');
+   }catch(err){setEvaluationError(String(err))}
+   finally{setEvaluationBusy(false)}
  }
  async function compareRaster2Seq(){
    setR2sBusy(true);setR2sStatus('');setR2s(null);
@@ -476,11 +529,40 @@ export default function Editor(){
  return <div className="app"><aside><h2>✦ Florp</h2><Link href="/">← Projects</Link>
  <hr style={{borderColor:'#354053',margin:'22px 0'}}/><p>Saved layout v{layout?.version??'–'} · {layout?.verified?'Verified':'Unverified'}</p>
  {geometry&&layout&&<p className="notice">{geometry===layout.geometry?'All changes saved':'● Unsaved edits — Save draft when ready'}</p>}
- <div className="stack"><button disabled={busy} onClick={extract}>Run real AI extraction</button>
- <button className="secondary" disabled={busy} onClick={()=>save(false)}>Save draft</button>
- <button className="secondary" disabled={busy} onClick={()=>save(false,true)}>Confirm wall positions</button>
- <button disabled={busy} onClick={()=>save(true)}>Verify physical dimensions</button></div>
- <p style={{opacity:.7,fontSize:12}}>Confirm wall positions without scale; physical verification requires reliable dimensions. API keys remain server-side.</p></aside>
+ <div className="stack">
+ <button disabled={modelBusy||busy} onClick={()=>void compareUnified()}>1 · Extract and compare</button>
+ <button className="secondary" disabled={busy} onClick={()=>save(false)}>2 · Save corrected draft</button>
+ <button className="secondary" disabled={busy} onClick={()=>save(false,true)}>Confirm reviewed walls</button>
+ </div>
+ <details style={{marginTop:12}}><summary>Advanced geometry actions</summary>
+ <div className="stack">
+ <button className="secondary" disabled={busy} onClick={extract}>LLM geometry extraction</button>
+ <button className="secondary" disabled={busy} onClick={()=>save(true)}>Verify calibrated physical dimensions</button>
+ </div><small>Metric verification requires a confirmed reference dimension.</small>
+ </details>
+ <div className="stack" style={{marginTop:16,borderTop:'1px solid #475569',paddingTop:12}}>
+ <strong>3 · Measure extraction quality</strong>
+ <small>Keep a model snapshot, correct the drawing, then score it against your reviewed geometry.</small>
+ <button className="secondary" disabled={!unified||evaluationBusy} onClick={()=>void captureBaseline()}>
+ Save uncorrected model baseline</button>
+ {activeEvaluation&&<><small>Active evaluation: {activeEvaluation.slice(0,8)} · baseline stored</small>
+ <label>Correction time (minutes)<input type="number" min="0" max="1440" step=".5"
+ value={correctionMinutes} onChange={e=>setCorrectionMinutes(e.target.value)}/></label>
+ <label>Missed walls / opening notes<textarea rows={2} value={evaluationNotes}
+ onChange={e=>setEvaluationNotes(e.target.value)}/></label>
+ <label><input type="checkbox" checked={reviewAttested} onChange={e=>setReviewAttested(e.target.checked)}/>
+ I independently checked every wall and opening against the original plan</label>
+ <button disabled={!reviewAttested||evaluationBusy} onClick={()=>void finishEvaluation()}>
+ Score reviewed geometry</button></>}
+ {evaluationError&&<small role="alert">{evaluationError}</small>}
+ <details><summary>Saved evaluations ({evaluations.length})</summary>
+ {evaluations.map(r=><div key={r.id} style={{padding:'6px 0',borderBottom:'1px solid #475569'}}>
+ <small>{r.provider} · {r.status} · {r.id.slice(0,8)}</small>
+ {r.metrics&&<small> Wall precision {Math.round(r.metrics.walls.precision*100)}% · recall {Math.round(r.metrics.walls.recall*100)}% · F1 {Math.round(r.metrics.walls.f1*100)}% · {(r.correction_seconds??0)/60} min</small>}
+ {r.status==='baseline'&&<button className="secondary" onClick={()=>setActiveEvaluation(r.id)}>Resume</button>}
+ </div>)}
+ </details>
+ </div></aside>
  <main><header><div><h1>Geometry studio</h1><p className="muted">2D and 3D display the same draft walls.</p></div>
  <div className="row"><button className={view==='2d'?'':'secondary'} onClick={()=>setView('2d')}>2D editor</button>
  <button className={view==='3d'?'':'secondary'} onClick={()=>setView('3d')}>3D shell</button></div></header>
@@ -600,7 +682,8 @@ export default function Editor(){
  mode==='wall'?'Click two points to draw a wall; snapping is enabled.':
  'Select an orange/cyan detection to review it, then choose Add opening or Dismiss. Your wall edits remain untouched.'}
  </div>}
- {view==='2d'&&<div className="row" style={{marginBottom:12}}>
+ {view==='2d'&&<details style={{marginBottom:12}}><summary>Research tools and model diagnostics (optional)</summary>
+ <div className="row" style={{flexWrap:'wrap',marginTop:8}}>
  <button className="secondary" disabled={r2sBusy||busy} onClick={()=>void compareRaster2Seq()}>
  {r2sBusy?'Running Raster2Seq…':'Compare Raster2Seq rooms (experimental)'}</button>
  {r2s&&<label><input type="checkbox" checked={r2sVisible}
@@ -626,7 +709,9 @@ export default function Editor(){
  <select value={reviewScope} onChange={e=>setReviewScope(e.target.value as 'all'|'near')} aria-label="Candidate filter">
  <option value="all">All detections</option><option value="near">Near current outline</option></select>
  <label><input type="checkbox" checked={showRaw} onChange={e=>setShowRaw(e.target.checked)}/> Raw lines ({evidence?.segments.length??0})</label></details>
- {(['wall','door','window'] as const).map(tool=><button key={tool} className={mode===tool?'':'secondary'} onClick={()=>{setMode(mode===tool?'edit':tool);setWallStart(null)}}>{tool==='wall'?'Draw wall':tool==='door'?'Add door':'Add window'}</button>)}
+ </div></details>
+ {view==='2d'&&<div className="row" style={{marginBottom:12}}>
+ {(['wall','door','window'] as const).map(tool=><button key={tool} className={mode===tool?'':'secondary'} onClick={()=>{setMode(mode===tool?'edit':tool);setWallStart(null)}}>{tool==='wall'?'Draw missing wall':tool==='door'?'Add door':'Add window'}</button>)}
  </div>}
  {view==='2d'?<svg className="canvas" viewBox={`0 0 ${geometry.width_px} ${geometry.height_px}`}
  style={{aspectRatio:geometry.width_px/geometry.height_px,touchAction:'none',cursor:mode!=='edit'?'crosshair':'default'}}
