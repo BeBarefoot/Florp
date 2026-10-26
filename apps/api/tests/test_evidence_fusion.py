@@ -23,6 +23,7 @@ def test_same_wall_supported_by_yolo_is_not_duplicated():
     proposal,candidates,summary=fuse_evidence(original,mask,report,yolo(wall(30,97,340,104)))
     assert len(candidates)==1
     assert 'yytsi_mask' in candidates[0].sources
+    assert candidates[0].id=='yolo-wall-0'
     assert 'yolo_box:0' in candidates[0].sources
     assert summary.accepted_yolo_candidates==1
     assert original.walls==[]
@@ -38,7 +39,7 @@ def test_yolo_box_without_mask_support_remains_reviewable_not_auto_added():
     assert summary.rejected_yolo_candidates==1
     assert summary.yolo_only_candidates==1
     assert any(item.category=='yolo_only' for item in items)
-    assert len(proposed.walls)==1
+    assert len(proposed.walls)==2  # YOLO is primary, even when Yytsi misses it
 
 def test_mismatched_model_dimensions_refuse_fusion():
     incorrect=DetectorResult(image_width=399,image_height=200,boxes=[])
@@ -66,7 +67,7 @@ def test_yolo_only_does_not_depend_on_mask_for_review():
     assert summary.yytsi_only_candidates==0
     assert candidates[0].category=='yolo_only'
     assert candidates[0].yolo_confidence==.95
-    assert proposal.walls==[]
+    assert len(proposal.walls)==1
 
 def test_agreement_has_higher_priority_than_isolated_yolo():
     mask=np.zeros((200,400),dtype='uint8')
@@ -79,4 +80,15 @@ def test_agreement_has_higher_priority_than_isolated_yolo():
     assert summary.yolo_only_candidates==1
     assert candidates[0].category=='agreed'
     assert candidates[0].review_priority>candidates[1].review_priority
+    assert len(proposal.walls)==1
+
+def test_two_predictions_of_same_wall_are_one_review_item():
+    mask=np.zeros((200,400),dtype='uint8')
+    mask[97:103,30:340]=255
+    report=WallMaskReport(coverage_fraction=.02,line_count=2,
+         lines=[line(30,100,340,100),line(36,103,330,103)])
+    proposal,items,_=fuse_evidence(base(),mask,report,
+         yolo(wall(30,97,340,103)))
+    assert len(items)==1
+    assert items[0].id=='yolo-wall-0'
     assert len(proposal.walls)==1
