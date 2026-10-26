@@ -94,3 +94,9 @@ def test_florp_geometry_adapter(tmp_path):
     assert len(result.walls)==1
     assert len(result.rooms)==1
     assert result.px_per_meter is None
+
+def test_empty_room_sets_are_unscored_not_perfect(tmp_path):
+    img=image(tmp_path)
+    result=compare(prediction(img),prediction(img,'model'))
+    assert result['room_area_iou'] is None
+    assert result['room_count']=={'predicted':0,'ground_truth':0}
