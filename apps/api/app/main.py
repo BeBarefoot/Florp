@@ -502,6 +502,8 @@ def compare_extraction(bid:str):
                 detector=None
                 detection_error=str(err)
             proposed,candidates,comparison=fuse_evidence(existing,mask,report,detector)
+            from .geometry_review_agent import review_geometry
+            agent_suggestions=review_geometry(proposed,candidates,mask)
             opening_hints=[]
             if detector is not None:
                 from .opening_review import OpeningHint,associate_opening
@@ -536,6 +538,9 @@ def compare_extraction(bid:str):
             'proposal':proposed.model_dump(),
             'candidates':[c.model_dump() for c in candidates],
             'opening_hints':opening_hints,
+            'geometry_review':{'suggestions':[p.model_dump() for p in agent_suggestions],
+                'explanation':'Heuristic source-backed review priorities; no wall is approved automatically',
+                'auto_applied':False},
             'comparison':comparison.model_dump(),
             'detections':detector.model_dump() if detector else None,
             'yolo_error':detection_error,
