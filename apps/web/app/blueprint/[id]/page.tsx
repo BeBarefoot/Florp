@@ -374,9 +374,9 @@ export default function Editor(){
  <button className="secondary" disabled={modelBusy||busy} onClick={()=>void runPretrained()}>
  {modelBusy?'Running local model…':'Auto-build 2D + 3D'}</button>
  <details><summary>Experimental wall segmentation</summary>
- <p className="muted">Yytsi reads PNG/JPG directly, and PDF via Florp's PNG preview. No SVG conversion. Requires pretrained Yytsi weights configured in the backend.</p>
+ <p className="muted">Multi-scale Yytsi: global plan + overlapping image tiles, then connected wall-mask regions. PNG/JPG directly; PDF uses its raster preview. Predictions remain unverified.</p>
  {segmentationOverlay&&<label><input type="checkbox" checked={showSegmentationOverlay} onChange={e=>setShowSegmentationOverlay(e.target.checked)}/> Show actual wall pixels</label>}
- <button className="secondary" disabled={modelBusy||busy} onClick={()=>void trySegmentation()}>Try wall-mask reconstruction</button>
+ <button className="secondary" disabled={modelBusy||busy} onClick={()=>void trySegmentation()}>Run multi-scale wall reconstruction</button>
  </details>
  {modelDetections&&<label><input type="checkbox" checked={showModelDetections} onChange={e=>setShowModelDetections(e.target.checked)}/> Model boxes ({modelDetections.boxes.length})</label>}
  <label><input type="checkbox" checked={grayscale} onChange={e=>setGrayscale(e.target.checked)}/> Grayscale</label>
