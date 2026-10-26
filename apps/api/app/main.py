@@ -179,7 +179,8 @@ def list_extraction_evaluations(bid:str):
             ExtractionEvaluation.created_at.desc())).all()
         return [{'id':r.id,'provider':r.provider,'status':r.status,
                  'base_layout_version':r.base_layout_version,
-                 'image_sha256':r.image_sha256,'metrics':r.metrics,
+                 'image_sha256':r.image_sha256,
+                 'metrics':r.metrics if r.status=='completed' else None,
                  'correction_seconds':r.correction_seconds,
                  'notes':r.notes,'created_at':r.created_at} for r in rows]
 
