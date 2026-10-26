@@ -790,7 +790,7 @@ export default function Editor(){
  <g key={'review-wall-'+item.id}>
  <line x1={item.start.x} y1={item.start.y} x2={item.end.x} y2={item.end.y}
  stroke="transparent" strokeWidth={Math.max(18,geometry.width_px/95)}
- style={{cursor:'pointer'}} onClick={e=>{e.stopPropagation();setFusionIndex(i);setReviewType('wall');setReviewFocus(true)}}/>
+ style={{cursor:'pointer'}} pointerEvents={mode==='edit'?'stroke':'none'} onClick={e=>{e.stopPropagation();setFusionIndex(i);setReviewType('wall');setReviewFocus(true)}}/>
  </g>)}
  {unified&&showUnifiedWalls&&unified.candidates.map((item,i)=>
  <line key={'fused-'+item.id} x1={item.start.x} y1={item.start.y}
@@ -808,7 +808,7 @@ export default function Editor(){
  {unified&&unified.opening_hints.map((hint,i)=>
  <rect key={'opening-hint-'+hint.candidate_id} x={hint.x1} y={hint.y1}
  width={hint.x2-hint.x1} height={hint.y2-hint.y1}
- onClick={e=>{e.stopPropagation();setOpeningIndex(i);setReviewType('opening');setReviewFocus(true)}}
+ pointerEvents={mode==='edit'?'all':'none'} onClick={e=>{e.stopPropagation();setOpeningIndex(i);setReviewType('opening');setReviewFocus(true)}}
  stroke={openingDecisions[hint.candidate_id]==='reject'?'#9ca3af':
  openingDecisions[hint.candidate_id]==='accept'?'#16a34a':
  hint.kind==='door'?'#ea580c':'#0891b2'}
@@ -816,6 +816,25 @@ export default function Editor(){
  strokeDasharray={reviewType==='opening'&&i===openingIndex?'none':'6 4'}
  opacity={reviewType==='opening'&&i===openingIndex?1:.5}
  fill="transparent" style={{cursor:'pointer'}}><title>{hint.kind}: {hint.reason}</title></rect>)}
+  {unified&&reviewType==='wall'&&reviewCandidate&&<g pointerEvents="none">
+   <line x1={reviewCandidate.start.x} y1={reviewCandidate.start.y}
+         x2={reviewCandidate.end.x} y2={reviewCandidate.end.y}
+         stroke="#fff" strokeWidth={Math.max(15,geometry.width_px/140)} strokeLinecap="round"/>
+   <line x1={reviewCandidate.start.x} y1={reviewCandidate.start.y}
+         x2={reviewCandidate.end.x} y2={reviewCandidate.end.y}
+         stroke="#f97316" strokeWidth={Math.max(8,geometry.width_px/250)}
+         strokeLinecap="round"/>
+   <circle cx={reviewCandidate.start.x} cy={reviewCandidate.start.y}
+           r={Math.max(6,geometry.width_px/190)} fill="#fff" stroke="#ea580c" strokeWidth="3"/>
+   <circle cx={reviewCandidate.end.x} cy={reviewCandidate.end.y}
+           r={Math.max(6,geometry.width_px/190)} fill="#fff" stroke="#ea580c" strokeWidth="3"/>
+  </g>}
+  {unified&&reviewType==='opening'&&currentOpening&&<rect
+    x={currentOpening.x1} y={currentOpening.y1}
+    width={currentOpening.x2-currentOpening.x1}
+    height={currentOpening.y2-currentOpening.y1}
+    fill="#f97316" fillOpacity={.12} stroke="#f97316"
+    strokeWidth={Math.max(6,geometry.width_px/220)} pointerEvents="none"/>}
   {unified&&showComparisonBoxes&&unified.detections?.boxes.filter(b=>b.category==='wall').map((b,i)=>
  <rect key={'compare-box-'+i} x={b.x1} y={b.y1} width={b.x2-b.x1} height={b.y2-b.y1}
  fill="none" stroke="#a855f7" strokeWidth="2" strokeDasharray="7 4" pointerEvents="none"/>)}
