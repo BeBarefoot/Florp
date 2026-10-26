@@ -400,3 +400,43 @@ claiming higher accuracy, inspect the teal mask for missed interior walls and
 measure connected components, false positives and correction time using
 held-out reviewed plans. CI and local checkpoint runtime validation are
 required before promoting this pipeline to the default homeowner workflow.
+
+
+## Unified extraction baseline: YOLO + Yytsi (read-only comparison)
+
+The primary next evaluation action is now **Compare YOLO + Yytsi (recommended)**
+in the blueprint editor. Both models consume the exact same preserved PNG
+preview (PDF uploads have already been rasterized at upload time). The response
+records the preview SHA-256, image size, model/provider identifiers and
+segmentation configuration so crop/padding changes can be identified instead
+of mistaken for improvements in model accuracy.
+
+`POST /blueprints/{id}/compare-extraction` runs Yytsi mask inference and
+tries local YOLO object detection. If YOLO is unavailable, the response
+explicitly reports the problem and continues with mask-only evidence. The
+same-image coordinate dimensions are checked before combining predictions.
+Connected mask-derived runs form the primary wall proposal; only YOLO
+centerlines supported by the semantic mask are included, and overlapping
+YOLO boxes annotate existing candidates rather than generating a duplicate.
+Openings are **not** silently attached to fused walls: bounding boxes
+provide hints, not verified exact geometry.
+
+The endpoint creates NO new layout version, edits NO walls and writes NO
+training labels. The UI toggles the original Yytsi pixels, YOLO wall boxes,
+and proposed fused centerlines independently. **Use fused proposal in draft**
+loads the result into the local editor only, after checking the original
+layout version and asking for confirmation. Review walls and click **Save
+draft** explicitly to persist the result. Comparisons are not benchmark scores.
+
+Backend modules: `app/evidence_fusion.py`; regressions:
+`tests/test_evidence_fusion.py` and `tests/test_compare_extraction.py`.
+Existing `/blueprints/{id}/training-export` exposes manual annotations and
+some structural correction data. IMPORTANT: it does not yet preserve full
+per-model proposal lineage for rejected fused candidates; do not fine-tune
+from this export without inspecting and reconciling labels.
+
+Success criteria for this milestone are consistency of image framing, clear
+provenance, repeatable comparisons and non-destructive review. A measured
+improvement in wall completeness, rooms or time-to-correction still requires
+human-labeled ground truth on held-out complete plans. Do not crop away
+outer walls or dimension evidence as a preprocessing shortcut.
