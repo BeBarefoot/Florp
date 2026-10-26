@@ -183,6 +183,23 @@ def list_extraction_evaluations(bid:str):
                  'correction_seconds':r.correction_seconds,
                  'notes':r.notes,'created_at':r.created_at} for r in rows]
 
+@app.get('/blueprints/{bid}/evaluations/{evaluation_id}')
+def get_extraction_evaluation(bid:str,evaluation_id:str):
+    """Portable export with baseline and human reference in original image pixels."""
+    with Session(engine) as session:
+        row=session.get(ExtractionEvaluation,evaluation_id)
+        if not row or row.blueprint_id!=bid:
+            raise HTTPException(404,'Evaluation not found')
+        return {'schema_version':1,'id':row.id,'blueprint_id':row.blueprint_id,
+                'image_sha256':row.image_sha256,'provider':row.provider,
+                'base_layout_version':row.base_layout_version,
+                'status':row.status,'baseline':row.baseline,
+                'reference':row.reference if row.status=='completed' else None,
+                'metrics':row.metrics if row.status=='completed' else None,
+                'correction_seconds':row.correction_seconds,
+                'notes':row.notes,'created_at':row.created_at,
+                'completed_at':row.completed_at}
+
 @app.post('/blueprints/{bid}/evaluations/{evaluation_id}/finish')
 def finish_extraction_evaluation(bid:str,evaluation_id:str,body:EvaluationFinishBody):
     """Commit attested human reference; comparisons never overwrite layouts."""
