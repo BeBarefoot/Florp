@@ -112,3 +112,36 @@ def test_yolo_available_with_no_wall_boxes_does_not_silently_promote_mask_only()
     assert items[0].category=='yytsi_only'
     assert proposed.walls==[]
     assert summary.yytsi_only_candidates==1
+
+def test_mask_extension_survives_partial_yolo_overlap():
+    mask=np.zeros((200,400),dtype='uint8')
+    mask[97:104,30:340]=255
+    report=WallMaskReport(coverage_fraction=.03,line_count=1,
+        lines=[line(30,100,340,100)])
+    proposed,items,summary=fuse_evidence(base(),mask,report,
+        yolo(wall(30,97,100,104)))
+    gaps=[c for c in items if c.category=='yytsi_only']
+    assert len(gaps)==1
+    assert gaps[0].start.x>=99
+    assert gaps[0].end.x>=339
+    assert summary.yytsi_only_candidates==1
+    assert len(proposed.walls)==1  # Missing extension requires approval
+
+def test_mask_fully_covered_by_yolo_has_no_extra_candidate():
+    mask=np.zeros((200,400),dtype='uint8')
+    mask[97:104,30:340]=255
+    report=WallMaskReport(coverage_fraction=.03,line_count=1,
+        lines=[line(30,100,340,100)])
+    _,items,_=fuse_evidence(base(),mask,report,
+        yolo(wall(30,97,340,104)))
+    assert len(items)==1
+
+def test_partial_coverage_preserves_disconnected_mask_spans():
+    from app.evidence_fusion import _uncovered_mask_spans
+    result=_uncovered_mask_spans(Pt(x=20,y=90),Pt(x=300,y=90),
+        [(Pt(x=110,y=90),Pt(x=170,y=90))])
+    assert len(result)==2
+    assert result[0][0].x==20
+    assert result[0][1].x==110
+    assert result[1][0].x==170
+    assert result[1][1].x==300
