@@ -56,7 +56,7 @@ export default function Editor(){
  };
  const [unified,setUnified]=useState<UnifiedComparison|null>(null);
  const [fusionIndex,setFusionIndex]=useState(0);
- const [fusionDecisions,setFusionDecisions]=useState<Record<string,'accept'|'reject'|'unsure'>>({});
+ const [fusionDecisions,setFusionDecisions]=useState<Record<string,'accept'|'reject'|'unsure'|'door'|'window'>>({});
  const [fusionSaving,setFusionSaving]=useState(false);
  const [showUnifiedWalls,setShowUnifiedWalls]=useState(true);
  const [showComparisonBoxes,setShowComparisonBoxes]=useState(false);
@@ -121,9 +121,9 @@ export default function Editor(){
    try{
      const result=await request<UnifiedComparison>(`/blueprints/${id}/compare-extraction`,{method:'POST'});
      const previous=await request<Array<{
-       preview_sha256:string;candidate_id:string;decision:'accept'|'reject'|'unsure';
+       preview_sha256:string;candidate_id:string;decision:'accept'|'reject'|'unsure'|'door'|'window';
        candidate:EvidenceCandidate;input_manifest?:Record<string,unknown>}>>(`/blueprints/${id}/fusion-reviews`);
-     const matches:Record<string,'accept'|'reject'|'unsure'>={};
+     const matches:Record<string,'accept'|'reject'|'unsure'|'door'|'window'>={};
      for(const event of previous){
        const current=result.candidates.find(c=>c.id===event.candidate_id);
        if(event.preview_sha256!==result.input_manifest.source_preview_sha256||!current)continue;
@@ -146,7 +146,7 @@ export default function Editor(){
  }
  const reviewCandidate=unified?.candidates[fusionIndex]||null;
  const fusionResolved=unified?.candidates.filter(c=>fusionDecisions[c.id]&&fusionDecisions[c.id]!=='unsure').length||0;
- async function decideFusion(decision:'accept'|'reject'|'unsure'){
+ async function decideFusion(decision:'accept'|'reject'|'unsure'|'door'|'window'){
    if(!unified||!reviewCandidate||fusionSaving)return;
    setFusionSaving(true);
    try{
@@ -442,13 +442,15 @@ export default function Editor(){
  · mask support {Math.round(reviewCandidate.mask_support*100)}%</p>
  <div className="row" style={{flexWrap:'wrap'}}>
  <button className="secondary" onClick={()=>setFusionIndex(i=>Math.max(0,i-1))}>Previous</button>
- <button disabled={fusionSaving} onClick={()=>void decideFusion('accept')}>Accept wall</button>
+ <button disabled={fusionSaving} onClick={()=>void decideFusion('accept')}>Wall</button>
+ <button disabled={fusionSaving} className="secondary" onClick={()=>void decideFusion('door')}>Door</button>
+ <button disabled={fusionSaving} className="secondary" onClick={()=>void decideFusion('window')}>Window</button>
  <button disabled={fusionSaving} className="secondary" onClick={()=>void decideFusion('reject')}>Not wall</button>
  <button disabled={fusionSaving} className="secondary" onClick={()=>void decideFusion('unsure')}>Unsure</button>
  <button className="secondary" onClick={()=>setFusionIndex(i=>Math.min(unified.candidates.length-1,i+1))}>Skip →</button>
  </div>
  <small>{fusionDecisions[reviewCandidate.id]?'Last decision: '+fusionDecisions[reviewCandidate.id]: 'Not reviewed'}.
- Review priority is a heuristic, not calibrated confidence. Decisions are stored for later adjudication.</small>
+ Door/window classifications are saved as labels for review; they do not cut an opening into 3D until attached to a verified wall.</small>
  </>}
  </div>
  <div className="row" style={{flexWrap:'wrap',marginTop:8}}>
