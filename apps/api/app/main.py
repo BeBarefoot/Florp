@@ -233,7 +233,7 @@ def compare_extraction(bid:str):
     Both models consume the identical stored full-resolution PNG preview.
     A missing YOLO dependency yields an explicitly labeled mask-only result.
     """
-    import base64
+    import base64, hashlib
     import numpy as np
     with Session(engine) as session:
         bp=session.get(Blueprint,bid)
@@ -266,6 +266,16 @@ def compare_extraction(bid:str):
         image=io.BytesIO()
         Image.fromarray(overlay,'RGBA').save(image,format='PNG')
         return {
+            'input_manifest':{
+                'source_preview_sha256':hashlib.sha256(preview_path.read_bytes()).hexdigest(),
+                'width_px':bp.width,'height_px':bp.height,
+                'segmentation_provider':metadata.get('provider'),
+                'segmentation_checkpoint':metadata.get('checkpoint'),
+                'segmentation_multiscale':metadata.get('multiscale'),
+                'segmentation_wall_threshold':metadata.get('wall_threshold'),
+                'yolo_provider':detector.provider if detector else None,
+                'same_original_preview_for_both_models':True,
+            },
             'base_layout_version':current.version,
             'proposal':proposed.model_dump(),
             'candidates':[c.model_dump() for c in candidates],
