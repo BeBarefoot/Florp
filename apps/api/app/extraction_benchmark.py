@@ -137,7 +137,7 @@ def compare(truth:PlanPrediction,pred:PlanPrediction,tolerance_px:float=8.)->dic
     return {'provider':pred.provider,'source_sha256':truth.image_sha256,
             'walls':_prf(walls,len(pred.walls),len(truth.walls)),
             'openings':_prf(openings,len(pred.openings),len(truth.openings)),
-            'room_area_iou':round(iou,4),
+            'room_area_iou':round(iou,4) if iou is not None else None,
             'room_count':{'predicted':len(pred.rooms),'ground_truth':len(truth.rooms)},
             'relative_scale_error':round(scale_error,4) if scale_error is not None else None,
             'limitations':['Wall F1 matches segments, not exact pixel masks or connected topology.',
