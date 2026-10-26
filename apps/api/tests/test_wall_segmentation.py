@@ -31,3 +31,21 @@ def test_mask_proposal_does_not_preserve_incorrect_old_wall_ids():
     assert [wall.id for wall in draft.walls]==['mask-0']
     assert original.walls[0].id=='model-8'
     assert draft.structure_reviewed is False
+
+def test_mask_run_recovers_interior_wall_when_hough_returns_none(monkeypatch):
+    from app import wall_segmentation
+    monkeypatch.setattr(wall_segmentation.cv2,'HoughLinesP',lambda *args,**kwargs:None)
+    mask=np.zeros((160,320),dtype=np.uint8)
+    mask[30:33,50:260]=255  # three-pixel wall, missed by Hough
+    result=mask_centerlines(mask,min_length=50)
+    assert any(abs(line.y2-line.y1)<=1 and abs(line.x2-line.x1)>=190
+               for line in result.lines)
+    assert result.coverage_fraction>0
+
+def test_unsupported_short_mask_does_not_invent_wall(monkeypatch):
+    from app import wall_segmentation
+    monkeypatch.setattr(wall_segmentation.cv2,'HoughLinesP',lambda *args,**kwargs:None)
+    mask=np.zeros((160,320),dtype=np.uint8)
+    mask[40:43,50:67]=255
+    result=mask_centerlines(mask,min_length=50)
+    assert result.line_count==0
