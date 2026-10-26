@@ -131,7 +131,7 @@ def compare(truth:PlanPrediction,pred:PlanPrediction,tolerance_px:float=8.)->dic
     pa=unary_union(ppolys) if ppolys else Polygon()
     ta=unary_union(tpolys) if tpolys else Polygon()
     union=pa.union(ta).area
-    iou=pa.intersection(ta).area/union if union else 1.
+    iou=pa.intersection(ta).area/union if union else None
     scale_error=(abs(pred.px_per_meter-truth.px_per_meter)/truth.px_per_meter
         if pred.px_per_meter is not None and truth.px_per_meter is not None else None)
     return {'provider':pred.provider,'source_sha256':truth.image_sha256,
