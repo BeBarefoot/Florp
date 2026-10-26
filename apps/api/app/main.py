@@ -18,6 +18,7 @@ from .pretrained_detector import DetectorResult, DetectorUnavailable, detect_obj
 from .model_reconstruction import reconstruct, detection_audit
 from .topology import audit_topology
 from .missing_wall_evidence import gap_suggestions
+from .exterior_recovery import suggest_bottom_runs
 from .graph_reconstruction import propose_connected_geometry
 from .wall_segmentation import infer_wall_mask, mask_centerlines, propose_mask_walls
 from .yytsi_raster import predict_yytsi_raster
@@ -159,10 +160,13 @@ def missing_wall_suggestions(bid:str):
         row=session.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
         if not row:raise HTTPException(404,'No layout')
         try:
-            proposals=gap_suggestions(Geometry.model_validate(row.geometry),Path(blueprint.preview_path))
+            current=Geometry.model_validate(row.geometry)
+            proposals=gap_suggestions(current,Path(blueprint.preview_path))
+            perimeter=suggest_bottom_runs(current,Path(blueprint.preview_path))
         except ValueError as exc:raise HTTPException(422,str(exc))
-        return {'layout_version':row.version,'suggestions':[p.model_dump() for p in proposals],
-                'warning':'Gap proposals are heuristic pixel evidence, not architectural wall detection. Reject dimension lines and furniture.'}
+        suggestions=[p.model_dump() for p in proposals]+[p.model_dump() for p in perimeter]
+        return {'layout_version':row.version,'suggestions':suggestions,
+                'warning':'Evidence-based proposals, not verified structural walls. Check source drawing before acceptance.'}
 
 @app.get('/blueprints/{bid}/evidence')
 def blueprint_evidence(bid:str):
