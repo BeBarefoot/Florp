@@ -6,8 +6,8 @@ import * as THREE from 'three';
 import type {Geometry, Pt, Opening} from '../lib/api';
 import {editableEdges} from '../lib/geometryEditing';
 
-// The editable 2D room outlines are authoritative for the displayed 3D shell.
-// Legacy w0-w3 starter walls are deliberately not rendered as a second rectangle.
+// Structural wall segments drive the 3D shell whenever any real walls exist.
+// Starter room outlines are not evidence of actual building geometry.
 type Edge = {a:Pt;b:Pt;id:string;thickness:number;height:number};
 function validPolygon(points:Pt[]):boolean {
   if(points.length<3)return false;
@@ -67,9 +67,11 @@ export default function Viewer3D({geometry}:{geometry:Geometry}){
   const data=useMemo(()=>{
     // Detector-derived walls are the authoritative solids; proposed room polygons
     // may add floors, but must NEVER replace, mask, or duplicate detected walls.
-    const hasModelWalls=geometry.walls.some(w=>w.id.startsWith('model-')||w.id.startsWith('mask-'));
-    const edges=hasModelWalls?[]:shellEdges(geometry);
-    const floors=geometry.rooms.filter(r=>validPolygon(r.points)).map(r=>{
+    const hasModelWalls=geometry.walls.some(w=>!/^w[0-3]$/.test(w.id));
+    const hasPlaceholderRoom=geometry.rooms.some(r=>r.id==='room-1' &&
+      geometry.warnings.some(w=>w.includes('Starter geometry')));
+    const edges=hasModelWalls||hasPlaceholderRoom?[]:shellEdges(geometry);
+    const floors=geometry.rooms.filter(r=>!hasPlaceholderRoom&&validPolygon(r.points)).map(r=>{
       const shape=new THREE.Shape();
       // Shape's Y maps to positive world Z after the -90deg X rotation.
       r.points.forEach((p,i)=>{const x=p.x/scale,y=-p.y/scale;if(i===0)shape.moveTo(x,y);else shape.lineTo(x,y);});
@@ -79,7 +81,7 @@ export default function Viewer3D({geometry}:{geometry:Geometry}){
     // AI/proposed and manually placed walls not already represented as room boundary.
     // Avoid double-rendering legacy starter rectangle and coincident edges.
     const independent=geometry.walls.filter(w=>{
-      if(hasModelWalls)return true;
+      if(hasModelWalls)return !(/^w[0-3]$/.test(w.id)&&hasPlaceholderRoom);
       if(/^w[0-3]$/.test(w.id)&&geometry.rooms.length===1)return false;
       const m={x:(w.start.x+w.end.x)/2,y:(w.start.y+w.end.y)/2};
       return !edges.some(e=>{
@@ -89,7 +91,7 @@ export default function Viewer3D({geometry}:{geometry:Geometry}){
         return Math.hypot(m.x-(e.a.x+t*(e.b.x-e.a.x)),m.y-(e.a.y+t*(e.b.y-e.a.y)))<3;
       });
     });
-    return {edges,floors,independent,hasModelWalls};
+    return {edges,floors,independent,hasModelWalls,hasPlaceholderRoom};
   },[geometry,scale]);
   const target:[number,number,number]=[geometry.width_px/(2*scale),0,geometry.height_px/(2*scale)];
   return <div style={{height:440,width:'100%',background:'#f0f3f7',borderRadius:12}}>
@@ -102,7 +104,7 @@ export default function Viewer3D({geometry}:{geometry:Geometry}){
       {data.independent.map(w=><WallMesh key={w.id} edge={{a:w.start,b:w.end,id:w.id,thickness:w.thickness_m,height:w.height_m}} scale={scale} openings={geometry.openings} color="#5b8aab"/>)}
       <OrbitControls makeDefault target={target}/>
     </Canvas>
-    {data.hasModelWalls&&geometry.rooms.length>0&&<p className="notice">Floors are unverified closed-region proposals. Visible wall solids come only from stored model/user walls; missing walls remain missing.</p>}
+    <p className="notice">3D displays {data.independent.length+data.edges.length} stored wall segments, not the colored detection overlay. {data.hasPlaceholderRoom?'The original starter rectangle and its floor are hidden. ':''}Missing interior walls must be accepted or drawn in the 2D draft before they appear here.</p>
     {geometry.rooms.some(r=>!validPolygon(r.points))&&<p className="notice">A room polygon is invalid or self-intersecting; its 3D floor and boundary were skipped. Correct it in 2D.</p>}
   </div>;
 }
