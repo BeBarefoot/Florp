@@ -25,8 +25,9 @@ def normalize_florp_geometry(image:Path, geometry:dict,
         wall=next((wall for wall in g.walls if wall.id==o.wall_id),None)
         if wall is None:continue
         px_per_meter=g.px_per_meter
-        if px_per_meter is None:
-            # Provisional metric offsets are not valid benchmark geometry.
+        if px_per_meter is None or g.scale_source!='user_confirmed':
+            # A provisional/unknown metric scale cannot provide reliable
+            # source-pixel opening spans for accuracy scoring.
             continue
         dx=wall.end.x-wall.start.x
         dy=wall.end.y-wall.start.y
