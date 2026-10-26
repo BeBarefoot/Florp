@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     image_model: str = 'fal-ai/flux-control-lora-depth'
     fal_api_base: str = 'https://queue.fal.run'
     pretrained_yolo_weights: str = ''
+    inference_border_enabled: bool = True
+    inference_border_fraction: float = 0.12
+    inference_border_min_px: int = 32
     wall_segmentation_weights: str = ''
     wall_segmentation_provider: str = 'yytsi'
     yytsi_run_dir: str = './models/yytsi'
