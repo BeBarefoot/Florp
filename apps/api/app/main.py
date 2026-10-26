@@ -249,8 +249,8 @@ class FusionReviewBody(BaseModel):
 def review_fusion_candidate(bid:str, body:FusionReviewBody):
     import hashlib
     from .evidence_fusion import FusedCandidate
-    if body.decision not in ('accept','reject','unsure'):
-        raise HTTPException(422,'Decision must be accept, reject, or unsure')
+    if body.decision not in ('accept','reject','unsure','door','window'):
+        raise HTTPException(422,'Decision must be accept, reject, unsure, door, or window')
     try:candidate=FusedCandidate.model_validate(body.candidate)
     except ValueError as exc:raise HTTPException(422,'Invalid fusion candidate') from exc
     with Session(engine) as session:
