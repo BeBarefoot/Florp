@@ -100,9 +100,11 @@ def run_raster2seq(image_path:Path, *, root:Path,python_exec:Path,
                 raise Raster2SeqUnavailable('Inference exceeded configured timeout') from exc
             except OSError as exc:raise Raster2SeqUnavailable('Unable to launch Raster2Seq') from exc
             if completed.returncode:
-                # Keep diagnostic bounded; don't expose environment variables.
+                # Avoid returning a raw upstream traceback: file paths and
+                # environment-dependent diagnostics can contain private data.
                 raise Raster2SeqUnavailable(
-                    f'Raster2Seq exited {completed.returncode}: '+completed.stderr[-700:])
+                    f'Raster2Seq inference exited with code {completed.returncode}; '
+                    'inspect the isolated runner logs on the server')
             matches=list(out.glob('**/jsons/plan.json'))
             if len(matches)!=1:
                 raise Raster2SeqUnavailable('Expected one Raster2Seq saved prediction JSON')
