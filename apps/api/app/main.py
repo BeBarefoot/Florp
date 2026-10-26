@@ -226,7 +226,19 @@ def segmentation_proposal(bid:str):
         except ValueError as exc:raise HTTPException(422,str(exc))
         version=Layout(blueprint_id=bid,version=previous.version+1,verified=False,geometry=draft.model_dump())
         session.add(version);session.commit();session.refresh(version)
+        # Return an inspectable pixel mask as an optional translucent PNG layer.
+        # This is derived from actual model pixels, not from the simplified walls.
+        import base64
+        import numpy as np
+        from PIL import Image as PillowImage
+        rgba=np.zeros((bp.height,bp.width,4),dtype=np.uint8)
+        rgba[:,:,1]=160
+        rgba[:,:,2]=145
+        rgba[:,:,3]=np.where(mask>0,135,0).astype(np.uint8)
+        output=io.BytesIO()
+        PillowImage.fromarray(rgba,'RGBA').save(output,format='PNG')
         return {'layout':version,'report':{'checkpoint':checkpoint,**metadata,**report.model_dump()},
+                'mask_overlay_png_base64':base64.b64encode(output.getvalue()).decode('ascii'),
                 'topology':audit_topology(draft)}
 
 @app.post('/blueprints/{bid}/extract')
