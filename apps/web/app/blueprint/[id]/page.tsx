@@ -69,6 +69,10 @@ export default function Editor(){
  const [gapMessage,setGapMessage]=useState('');
  const [gapVersion,setGapVersion]=useState<number|null>(null);
   const [topology,setTopology]=useState<{wall_count:number;junction_count:number;disconnected_components:number;dangling_endpoints:number;crossing_pairs:[string,string][];notes:string[]}|null>(null);
+ const [sharedGraph,setSharedGraph]=useState<{layout_version:number;graph:{
+ nodes:{id:string;position:Pt;degree:number}[];
+ edges:{id:string;source_wall_id:string;start_node_id:string;end_node_id:string}[];
+ disconnected_components:number;dangling_nodes:number;intersections:number;warnings:string[]}}|null>(null);
  const [showModelDetections,setShowModelDetections]=useState(false),[modelBusy,setModelBusy]=useState(false);
  const [grayscale,setGrayscale]=useState(true),[showRaw,setShowRaw]=useState(false),[showSuggestions,setShowSuggestions]=useState(false);
  const [reviewScope,setReviewScope]=useState<'all'|'near'>('all');
@@ -232,6 +236,18 @@ export default function Editor(){
      setTopology(result);
      setStatus('Topology audit read from last saved layout. Save draft first to include current edits.');
    }catch(e){setStatus(String(e))}
+ }
+ async function inspectSharedGraph(){
+   if(!layout)return;
+   if(geometry!==layout.geometry){
+     setStatus('Save your edits first so junctions reflect your latest geometry.');
+     return;
+   }
+   try{
+     const result=await request<NonNullable<typeof sharedGraph>>(`/blueprints/${id}/structural-graph`);
+     setSharedGraph(result);
+     setStatus('Shared-junction graph inspected (read only); no walls or openings were changed.');
+   }catch(error){setStatus(String(error))}
  }
  async function extract(){setBusy(true);setStatus('');try{
   const l=await request<Layout>(`/blueprints/${id}/extract`,{method:'POST'});
@@ -651,6 +667,11 @@ export default function Editor(){
  <h2>Wall graph health</h2>
  <button className="secondary" disabled={busy} onClick={()=>void proposeRooms()}>Propose connected rooms</button>
  <button className="secondary" onClick={()=>void inspectTopology()}>Inspect saved wall connections</button>
+ <button className="secondary" onClick={()=>void inspectSharedGraph()}>Inspect shared junction graph</button>
+ {sharedGraph&&<div className="stack">
+ <small>Shared graph v{sharedGraph.layout_version}: {sharedGraph.graph.nodes.length} nodes · {sharedGraph.graph.edges.length} edges · {sharedGraph.graph.disconnected_components} groups · {sharedGraph.graph.dangling_nodes} loose nodes</small>
+ {sharedGraph.graph.warnings.map((warning,i)=><div key={i} className="notice">{warning}</div>)}
+ </div>}
  {topology&&<div className="stack">
  <small>{topology.wall_count} walls · {topology.junction_count} joined endpoints · {topology.disconnected_components} groups · {topology.dangling_endpoints} loose ends · {topology.crossing_pairs.length} crossings</small>
  {topology.notes.map((note,i)=><div className="notice" key={i}>{note}</div>)}
