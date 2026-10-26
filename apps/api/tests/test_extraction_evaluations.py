@@ -109,3 +109,16 @@ def test_evaluation_export_has_source_bound_baseline_and_completed_truth(evaluat
     with pytest.raises(HTTPException) as missing:
         main.get_extraction_evaluation(bid,'missing-record')
     assert missing.value.status_code==404
+
+def test_edited_starter_ids_do_not_block_human_reference(evaluation_setup):
+    _,bid,image=evaluation_setup
+    current=start(bid,image,geometry('model-1'))
+    from app.geometry import fallback_geometry
+    corrected=fallback_geometry(400,200)
+    # User adds a real internal partition and checks original perimeter.
+    corrected.walls.append(Wall(id='user-interior',start=Pt(x=80,y=70),
+                                end=Pt(x=80,y=160)))
+    result=main.finish_extraction_evaluation(bid,current['id'],main.EvaluationFinishBody(
+        geometry=corrected,correction_seconds=150,human_reviewed=True))
+    assert result['status']=='completed'
+    assert result['metrics']['walls']['ground_truth']==5
