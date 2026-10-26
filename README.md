@@ -295,3 +295,35 @@ error is caused by Yytsi's
 handling physical unit suffixes. Setting unit-free SVG dimensions consistent
 with `viewBox` avoids that exception, but **does not make converted PNGs into
 CubiCasa semantic SVGs**. Prefer Florp's raster adapter above.
+
+
+## Troubleshooting the Oct 26 local wall/3D issues
+
+- **`POST /blueprints/{id}/pretrained-reconstruct` returns 424:** that action uses
+  the **original YOLO detection checkpoint**, not Yytsi. Check
+  `http://localhost:8000/models/status` and the response body of the failed
+  request in browser DevTools. Confirm `PRETRAINED_YOLO_WEIGHTS` points to an
+  actual local `best.pt` and install
+  `uv sync --extra pretrained-yolo --extra yytsi` to enable both paths.
+  The status endpoint checks local files/dependencies; it does not test whether
+  the checkpoints are architecturally compatible until inference starts.
+- **`ChunkLoadError` for `Viewer3D.tsx` or `/_next/undefined`:** Next.js
+  failed to load a local development chunk. Stop the frontend, delete its
+  generated **`apps/web/.next`** directory, and run
+  `npm install && npm run dev` from `apps/web`. Hard-refresh your browser.
+  Do not delete your API's `apps/api/data` SQLite/storage directories.
+  If it persists, inspect the **Next.js terminal output** for a bundle/build
+  exception; a broken build requires fixing the reported error.
+- **Yytsi mask has some teal inner walls, but reconstructed walls are absent:**
+  inspect the **actual mask overlay**, not only the 3D wall solids. Pixel-mask
+  segmentation and mask-to-line extraction are different failure stages.
+  The vectorizer now supplements Hough lines with morphological horizontal/
+  vertical mask-supported runs. This may recover connected segments that Hough
+  drops, but cannot invent an interior wall absent from the semantic mask.
+  Yytsi's model operates at 512-pixel input with aspect-preserving letterbox;
+  narrow scanned interior walls can be under-resolved, and the model was
+  trained on a different image domain. A held-out annotated benchmark is still
+  needed before making detection-accuracy claims.
+- **Comparison:** run YOLO and Yytsi on separate blueprint uploads while
+  debugging. The experimental segmentation replaces the *unverified* draft
+  wall list, and cannot import old opening-wall anchors safely.
