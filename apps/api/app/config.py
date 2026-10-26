@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     yytsi_run_dir: str = './models/yytsi'
     yytsi_checkpoint: str = 'best.safetensors'
     yytsi_device: str = 'auto'
+    segmentation_multiscale: bool = True
+    segmentation_tile_size: int = 448
+    segmentation_tile_overlap: float = 0.30
+    segmentation_max_tiles: int = 64
+    segmentation_wall_threshold: float = 0.46
     llm_max_completion_tokens: int = 8192
     max_upload_mb: int = 20
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
