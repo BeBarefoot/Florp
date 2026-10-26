@@ -74,6 +74,8 @@ export default function Editor(){
  const [r2sBusy,setR2sBusy]=useState(false);
  const [r2sStatus,setR2sStatus]=useState('');
 
+ const [reviewType,setReviewType]=useState<'wall'|'opening'>('wall');
+ const [reviewFocus,setReviewFocus]=useState(false);
  const [fusionIndex,setFusionIndex]=useState(0);
  const [fusionDecisions,setFusionDecisions]=useState<Record<string,'accept'|'reject'|'unsure'|'door'|'window'>>({});
  const [fusionSaving,setFusionSaving]=useState(false);
@@ -223,10 +225,10 @@ export default function Editor(){
                           sources:event.candidate.sources,category:event.candidate.category}))continue;
        matches[current.id]=event.decision;
      }
-     setUnified(result);setFusionIndex(0);setFusionDecisions(matches);setOpeningIndex(0);setOpeningDecisions({});
+     setUnified(result);setFusionIndex(0);setFusionDecisions(matches);setOpeningIndex(0);setOpeningDecisions({});setReviewType('wall');setReviewFocus(false);
      setShowUnifiedWalls(true);setShowComparisonBoxes(false);
      setSegmentationOverlay('data:image/png;base64,'+result.mask_overlay_png_base64);
-     setShowSegmentationOverlay(true);setShowModelDetections(false);
+     setShowSegmentationOverlay(false);setShowModelDetections(false);
      setStatus('Comparison ready — no layout was saved or replaced. Review the proposed walls before applying.');
    }catch(err){setStatus(String(err))}
    finally{setModelBusy(false)}
@@ -629,88 +631,17 @@ export default function Editor(){
  <p>Orange dashed polygons = Raster2Seq rooms; orange/cyan small polygons = its door/window hypotheses. Compare with YOLO/Yytsi walls. This is a read-only overlay, not a verified 3D structure.</p>
  <small>Checkpoint: {r2s.metadata.checkpoint} · Source layout v{r2s.base_layout_version}</small>
  </div>}
- {view==='2d'&&unified&&<div style={{border:'1px solid #94a3b8',borderRadius:12,padding:12,marginBottom:12,background:'#f1f5f9',color:'#0f172a'}}>
- <strong>Same-image extraction comparison</strong>
- <details open style={{marginTop:10,padding:10,border:'1px solid #d97706',borderRadius:8}}>
- <summary>Suggested missing partitions · {unified.geometry_review?.suggestions.length??0}</summary>
- <p><small>Automatically ranked from existing image segmentation and wall connectivity. These are NOT verified walls or new training labels. Accept or reject individually.</small></p>
- {(unified.geometry_review?.suggestions||[]).slice(0,12).map(item=>
-  <div key={item.candidate_id} style={{borderTop:'1px solid #cbd5e1',padding:'7px 0'}}>
-   <small><strong>{item.candidate_id}</strong> · source support {Math.round(item.mask_support*100)}% · {item.reason}</small>
-   <div className="row" style={{flexWrap:'wrap'}}>
-    <button className="secondary" onClick={()=>{
-      const index=unified.candidates.findIndex(c=>c.id===item.candidate_id);
-      if(index>=0)setFusionIndex(index);
-    }}>Show on plan</button>
-    <button disabled={fusionSaving||fusionDecisions[item.candidate_id]==='accept'} onClick={()=>void reviewAgentCandidate(item.candidate_id,'accept')}>Accept wall</button>
-    <button className="secondary" disabled={fusionSaving||fusionDecisions[item.candidate_id]==='reject'} onClick={()=>void reviewAgentCandidate(item.candidate_id,'reject')}>Not a wall</button>
-    <small>{fusionDecisions[item.candidate_id]||'Needs review'}</small>
-   </div>
-  </div>)}
- {(unified.geometry_review?.suggestions.length??0)===0&&<small>No additional supported connections found. The agent cannot infer missing walls without sufficient evidence.</small>}
- <small>After reviewing, use “Use fused proposal in draft” to apply accepted candidates. No geometry is silently changed.</small>
- </details>
- <div style={{border:'1px solid #cbd5e1',borderRadius:10,padding:10,marginTop:10}}>
- <strong>Detected doors and windows · {unified.opening_hints.length}</strong>
- {currentOpening&&<>
- <p>{openingIndex+1}/{unified.opening_hints.length} · {currentOpening.kind} · {Math.round(currentOpening.source_confidence*100)}% detector confidence</p>
- <small>{currentOpening.wall_id?'Suggested host: '+currentOpening.wall_id:currentOpening.reason}</small>
- <div className="row" style={{flexWrap:'wrap',marginTop:8}}>
- <button className="secondary" onClick={()=>setOpeningIndex(i=>Math.max(0,i-1))}>Previous opening</button>
- <button disabled={fusionSaving} onClick={()=>void reviewDetectedOpening('accept')}>Confirm {currentOpening.kind}</button>
- <button className="secondary" disabled={fusionSaving} onClick={()=>void reviewDetectedOpening('reject')}>Not an opening</button>
- <button className="secondary" disabled={fusionSaving} onClick={()=>void reviewDetectedOpening('unsure')}>Unsure</button>
- <button className="secondary" onClick={()=>setOpeningIndex(i=>Math.min(unified.opening_hints.length-1,i+1))}>Next opening</button>
- </div>
- <small>Review: {openingDecisions[currentOpening.candidate_id]||'pending'}. Confirming classifies the detection; it does not change geometry until you apply the draft.</small>
- </>}
- </div>
- <div className="row" style={{gap:10,flexWrap:'wrap',marginTop:8}}>
- <span>Agreed: {unified.comparison.agreed_candidates}</span>
- <span>YOLO only: {unified.comparison.yolo_only_candidates}</span>
- <span>Yytsi only: {unified.comparison.yytsi_only_candidates}</span>
- </div>
- <div style={{border:'1px solid #94a3b8',borderRadius:10,padding:10,marginTop:10}}>
- <div className="row" style={{justifyContent:'space-between'}}>
- <strong>Review wall candidate · {fusionIndex+1}/{unified.candidates.length}</strong>
- <span>{fusionResolved} decided</span>
- </div>
- {reviewCandidate&&<>
- <p style={{margin:'8px 0'}}> {reviewCandidate.category==='agreed'?'Both models agree':
- reviewCandidate.category==='yolo_only'?'YOLO only':'Yytsi only'}
- · review priority {Math.round(reviewCandidate.review_priority*100)}/100
- · mask support {Math.round(reviewCandidate.mask_support*100)}%</p>
- <div className="row" style={{flexWrap:'wrap'}}>
- <button className="secondary" onClick={()=>setFusionIndex(i=>Math.max(0,i-1))}>Previous</button>
- <button disabled={fusionSaving} onClick={()=>void decideFusion('accept')}>Wall</button>
- <button disabled={fusionSaving} className="secondary" onClick={()=>void decideFusion('door')}>Door</button>
- <button disabled={fusionSaving} className="secondary" onClick={()=>void decideFusion('window')}>Window</button>
- <button disabled={fusionSaving} className="secondary" onClick={()=>void decideFusion('reject')}>Not wall</button>
- <button disabled={fusionSaving} className="secondary" onClick={()=>void decideFusion('unsure')}>Unsure</button>
- <button className="secondary" onClick={()=>setFusionIndex(i=>Math.min(unified.candidates.length-1,i+1))}>Skip →</button>
- </div>
- <small>{fusionDecisions[reviewCandidate.id]?'Last decision: '+fusionDecisions[reviewCandidate.id]: 'Not reviewed'}.
- Door/window classifications are saved as labels for review; they do not cut an opening into 3D until attached to a verified wall.</small>
- </>}
- </div>
- <div className="row" style={{flexWrap:'wrap',marginTop:8}}>
- <span>Yytsi mask axes: {unified.comparison.mask_lines}</span>
- <span>YOLO wall boxes: {unified.comparison.yolo_wall_boxes}</span>
- <span>YOLO with mask support: {unified.comparison.accepted_yolo_candidates}</span>
- <span>Fused wall proposals: {unified.comparison.fused_walls}</span>
- <span>Disconnected groups: {unified.comparison.topology.disconnected_components}</span>
- </div>
- {unified.yolo_error&&<small>YOLO unavailable: {unified.yolo_error}. Showing mask-only evidence.</small>}
- <div className="row" style={{flexWrap:'wrap',marginTop:8}}>
- <label><input type="checkbox" checked={showSegmentationOverlay} onChange={e=>setShowSegmentationOverlay(e.target.checked)}/> Yytsi pixels</label>
- <label><input type="checkbox" checked={showUnifiedWalls} onChange={e=>setShowUnifiedWalls(e.target.checked)}/> Fused wall proposals</label>
+ {view==='2d'&&unified&&<details style={{marginBottom:10}}>
+ <summary style={{cursor:'pointer',fontSize:13,color:'#475569'}}>Extraction diagnostics · {unified.comparison.agreed_candidates} agreed · {unified.comparison.yytsi_only_candidates} mask-only</summary>
+ <div className="notice" style={{marginTop:8}}>
+ <small>YOLO walls {unified.comparison.yolo_wall_boxes} · segmentation axes {unified.comparison.mask_lines} · disconnected components {unified.comparison.topology.disconnected_components}. All proposals require review.</small>
+ {unified.yolo_error&&<p role="alert">{unified.yolo_error}</p>}
  <label><input type="checkbox" checked={showComparisonBoxes} onChange={e=>setShowComparisonBoxes(e.target.checked)}/> YOLO boxes</label>
- <button disabled={busy||modelBusy} onClick={applyUnified}>Use fused proposal in draft</button>
+ <label><input type="checkbox" checked={showSegmentationOverlay} onChange={e=>setShowSegmentationOverlay(e.target.checked)}/> Segmentation mask</label>
+ <a href={`${API}/blueprints/${id}/training-export`} target="_blank" rel="noreferrer">Export annotation history</a>
  </div>
- <small>Teal mask = Yytsi; blue = agreement; amber = YOLO-only; purple = Yytsi-only. Reviewing saves labels, not layouts. Only accepted walls enter the draft.</small>
- <div><a href={`${API}/blueprints/${id}/training-export`} target="_blank" rel="noreferrer">View corrected wall labels (training JSON)</a></div>
- </div>}
-  {view==='2d'&&modelDetections&&<div style={{border:'1px solid #9fc7d5',borderRadius:12,padding:12,marginBottom:12,background:'#f1f9fa',color:'#18364a'}}>
+ </details>}
+ {view==='2d'&&modelDetections&&<div style={{border:'1px solid #9fc7d5',borderRadius:12,padding:12,marginBottom:12,background:'#f1f9fa',color:'#18364a'}}>
  <div className="row" style={{justifyContent:'space-between',alignItems:'center'}}>
  <strong>Review detected openings · {openingQueue.length-pendingQueue.length}/{openingQueue.length} resolved</strong>
  <button className="secondary" disabled={!pendingQueue.length} onClick={nextPending}>Next item →</button>
@@ -787,7 +718,18 @@ export default function Editor(){
  {view==='2d'&&<div className="row" style={{marginBottom:12}}>
  {(['wall','door','window'] as const).map(tool=><button key={tool} className={mode===tool?'':'secondary'} onClick={()=>{setMode(mode===tool?'edit':tool);setWallStart(null)}}>{tool==='wall'?'Draw missing wall':tool==='door'?'Add door':'Add window'}</button>)}
  </div>}
- {view==='2d'?<svg className="canvas" viewBox={`0 0 ${geometry.width_px} ${geometry.height_px}`}
+ {view==='2d'?<div style={{display:'grid',gridTemplateColumns:'minmax(0,1fr) minmax(235px,280px)',gap:14,alignItems:'start'}}>
+ <svg className="canvas" viewBox={reviewFocus&&unified?(()=>{
+ const selected=reviewType==='wall'?
+   {x1:reviewCandidate?.start.x??0,y1:reviewCandidate?.start.y??0,x2:reviewCandidate?.end.x??0,y2:reviewCandidate?.end.y??0}:
+   currentOpening;
+ if(!selected)return `0 0 ${geometry.width_px} ${geometry.height_px}`;
+ const w=Math.min(geometry.width_px,Math.max(Math.abs(selected.x2-selected.x1)*2.8,geometry.width_px*.30));
+ const h=Math.min(geometry.height_px,Math.max(Math.abs(selected.y2-selected.y1)*2.8,w*geometry.height_px/geometry.width_px));
+ const x=Math.max(0,Math.min(geometry.width_px-w,(selected.x1+selected.x2-w)/2));
+ const y=Math.max(0,Math.min(geometry.height_px-h,(selected.y1+selected.y2-h)/2));
+ return `${x} ${y} ${w} ${h}`;
+})():`0 0 ${geometry.width_px} ${geometry.height_px}`}
  style={{aspectRatio:geometry.width_px/geometry.height_px,touchAction:'none',cursor:mode!=='edit'?'crosshair':'default'}}
  onClick={e=>{const p=localPoint(e.currentTarget,e.clientX,e.clientY);if(!p)return;
  if(mode==='wall'){addWall({x:Math.max(0,Math.min(geometry.width_px,Math.round(p.x))),y:Math.max(0,Math.min(geometry.height_px,Math.round(p.y)))});return;}
@@ -816,21 +758,28 @@ export default function Editor(){
  {segmentationOverlay&&showSegmentationOverlay&&<image href={segmentationOverlay}
  width={geometry.width_px} height={geometry.height_px} pointerEvents="none"/>}
  {unified&&showUnifiedWalls&&unified.candidates.map((item,i)=>
+ <g key={'review-wall-'+item.id}>
+ <line x1={item.start.x} y1={item.start.y} x2={item.end.x} y2={item.end.y}
+ stroke="transparent" strokeWidth={Math.max(18,geometry.width_px/95)}
+ style={{cursor:'pointer'}} onClick={e=>{e.stopPropagation();setFusionIndex(i);setReviewType('wall');setReviewFocus(true)}}/>
+ </g>)}
+ {unified&&showUnifiedWalls&&unified.candidates.map((item,i)=>
  <line key={'fused-'+item.id} x1={item.start.x} y1={item.start.y}
  x2={item.end.x} y2={item.end.y}
- onClick={e=>{e.stopPropagation();setFusionIndex(i)}}
+ onClick={e=>{e.stopPropagation();setFusionIndex(i);setReviewType('wall');setReviewFocus(true)}}
  style={{cursor:'pointer'}}
  stroke={fusionDecisions[item.id]==='reject'?'#9ca3af':
  fusionDecisions[item.id]==='accept'?'#16a34a':
  item.category==='agreed'?'#1d4ed8':item.category==='yolo_only'?'#d97706':'#9333ea'}
- strokeWidth={Math.max(i===fusionIndex?7:4,geometry.width_px/300)} strokeDasharray="5 3"
- opacity={fusionDecisions[item.id]==='reject'?.4:1}>
+ strokeWidth={Math.max(reviewType==='wall'&&i===fusionIndex?8:3,geometry.width_px/360)}
+ strokeDasharray={reviewType==='wall'&&i===fusionIndex?'none':'5 3'}
+ opacity={reviewType==='wall'&&i===fusionIndex?1:fusionDecisions[item.id]==='reject'?.15:.45}>
  <title>{item.category}; mask support {Math.round(item.mask_support*100)}%</title>
  </line>)}
  {unified&&unified.opening_hints.map((hint,i)=>
  <rect key={'opening-hint-'+hint.candidate_id} x={hint.x1} y={hint.y1}
  width={hint.x2-hint.x1} height={hint.y2-hint.y1}
- onClick={e=>{e.stopPropagation();setOpeningIndex(i)}}
+ onClick={e=>{e.stopPropagation();setOpeningIndex(i);setReviewType('opening');setReviewFocus(true)}}
  stroke={openingDecisions[hint.candidate_id]==='reject'?'#9ca3af':
  openingDecisions[hint.candidate_id]==='accept'?'#16a34a':
  hint.kind==='door'?'#ea580c':'#0891b2'}
@@ -894,7 +843,57 @@ export default function Editor(){
   })
  ))}
  {wallStart&&<circle cx={wallStart.x} cy={wallStart.y} r={Math.max(5,geometry.width_px/130)} fill="#d97706" pointerEvents="none"/>}
- </svg>:<Viewer geometry={geometry}/>}
+ </svg>
+ <div style={{position:'sticky',top:12,border:'1px solid #cbd5e1',borderRadius:12,padding:12,background:'#f8fafc',color:'#0f172a',maxHeight:'80vh',overflowY:'auto'}}>
+ <strong>Review on plan</strong>
+ {!unified?<p className="muted">Run Extract and compare to review detected walls and openings here.</p>:<>
+ <div className="row" style={{margin:'12px 0',flexWrap:'wrap',gap:4}}>
+ <button className={reviewType==='wall'?'':'secondary'} onClick={()=>{setReviewType('wall');setReviewFocus(false)}}>Walls ({unified.candidates.length})</button>
+ <button className={reviewType==='opening'?'':'secondary'} onClick={()=>{setReviewType('opening');setReviewFocus(false)}}>Openings ({unified.opening_hints.length})</button>
+ </div>
+ <small>{reviewType==='wall'?
+ `${unified.candidates.filter(c=>fusionDecisions[c.id]&&fusionDecisions[c.id]!=='unsure').length} / ${unified.candidates.length} classified`:
+ `${unified.opening_hints.filter(h=>openingDecisions[h.candidate_id]&&openingDecisions[h.candidate_id]!=='unsure').length} / ${unified.opening_hints.length} classified`}</small>
+ <div style={{height:5,background:'#e2e8f0',borderRadius:8,margin:'8px 0 14px'}}>
+ <div style={{width:((reviewType==='wall'?unified.candidates.filter(c=>fusionDecisions[c.id]&&fusionDecisions[c.id]!=='unsure').length:unified.opening_hints.filter(h=>openingDecisions[h.candidate_id]&&openingDecisions[h.candidate_id]!=='unsure').length)/
+ Math.max(1,reviewType==='wall'?unified.candidates.length:unified.opening_hints.length)*100)+'%',height:'100%',background:'#059669',borderRadius:8}}/>
+ </div>
+ {reviewType==='wall'&&reviewCandidate&&<>
+ <strong>Wall candidate {fusionIndex+1} / {unified.candidates.length}</strong>
+ <p style={{fontSize:13,margin:'6px 0'}}>{unified.geometry_review?.suggestions.some(h=>h.candidate_id===reviewCandidate.id)?'Potential missing partition · ':''}{reviewCandidate.category.replaceAll('_',' ')} · mask support {Math.round(reviewCandidate.mask_support*100)}%</p>
+ <p style={{fontSize:13}}>Decision: <strong>{fusionDecisions[reviewCandidate.id]||'Pending'}</strong></p>
+ <div className="row" style={{flexWrap:'wrap',gap:5}}>
+ <button disabled={fusionSaving} onClick={()=>void decideFusion('accept')}>Wall</button>
+ <button className="secondary" disabled={fusionSaving} onClick={()=>void decideFusion('door')}>Door</button>
+ <button className="secondary" disabled={fusionSaving} onClick={()=>void decideFusion('window')}>Window</button>
+ <button className="secondary" disabled={fusionSaving} onClick={()=>void decideFusion('reject')}>Not wall</button>
+ <button className="secondary" disabled={fusionSaving} onClick={()=>void decideFusion('unsure')}>Unsure</button>
+ </div>
+ </>}
+ {reviewType==='opening'&&currentOpening&&<>
+ <strong>{currentOpening.kind==='door'?'Door':'Window'} {openingIndex+1} / {unified.opening_hints.length}</strong>
+ <p style={{fontSize:13}}>Detector confidence {Math.round(currentOpening.source_confidence*100)}%. {currentOpening.reason}</p>
+ <p style={{fontSize:13}}>Decision: <strong>{openingDecisions[currentOpening.candidate_id]||'Pending'}</strong></p>
+ <div className="row" style={{flexWrap:'wrap',gap:5}}>
+ <button disabled={fusionSaving} onClick={()=>void reviewDetectedOpening('accept')}>Confirm {currentOpening.kind}</button>
+ <button className="secondary" disabled={fusionSaving} onClick={()=>void reviewDetectedOpening('reject')}>Not opening</button>
+ <button className="secondary" disabled={fusionSaving} onClick={()=>void reviewDetectedOpening('unsure')}>Unsure</button>
+ </div>
+ </>}
+ <div className="row" style={{marginTop:12,gap:6,flexWrap:'wrap'}}>
+ <button className="secondary" onClick={()=>{if(reviewType==='wall')setFusionIndex(i=>Math.max(0,i-1));else setOpeningIndex(i=>Math.max(0,i-1));}}>← Previous</button>
+ <button className="secondary" onClick={()=>{if(reviewType==='wall')setFusionIndex(i=>Math.min(unified.candidates.length-1,i+1));else setOpeningIndex(i=>Math.min(unified.opening_hints.length-1,i+1));}}>Next →</button>
+ <button className="secondary" onClick={()=>{
+ if(reviewType==='wall'){const i=unified.candidates.findIndex((c,i)=>i>fusionIndex&&!fusionDecisions[c.id]);setFusionIndex(i<0?Math.max(0,unified.candidates.findIndex(c=>!fusionDecisions[c.id])):i);}
+ else{const i=unified.opening_hints.findIndex((h,j)=>j>openingIndex&&!openingDecisions[h.candidate_id]);setOpeningIndex(i<0?Math.max(0,unified.opening_hints.findIndex(h=>!openingDecisions[h.candidate_id])):i);}
+ }}>Next pending</button>
+ </div>
+ <label style={{display:'block',marginTop:12}}><input type="checkbox" checked={reviewFocus} onChange={e=>setReviewFocus(e.target.checked)}/> Zoom to selected item</label>
+ <small style={{display:'block',margin:'8px 0'}}>Select a colored line or opening on the drawing. Orange highlights mark the active selection.</small>
+ <button disabled={busy||modelBusy||fusionSaving} onClick={()=>void applyUnified()}>Apply accepted walls to draft</button>
+ <small style={{display:'block',marginTop:8}}>Review decisions are saved separately. Applying changes only your unsaved 2D/3D draft.</small>
+ </>}
+ </div></div>:<Viewer geometry={geometry}/>}
  <p className="muted">{mode==='wall'?'Click two points to add a missing wall.':mode==='door'||mode==='window'?'Click near a wall or on a detected opening box to add or correct it.':'Review model walls and detected openings; tap a wall to adjust or reject it.'}</p></div>
  <div className="stack"><div className="panel stack"><h2>Geometry</h2>
  <details><summary>Advanced scale override (optional)</summary><label>Pixels per meter <input type="number" min=".001" step=".1" value={geometry.px_per_meter??''}
