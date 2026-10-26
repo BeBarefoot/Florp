@@ -479,3 +479,31 @@ topology audit for the next step; never treat the default 3D shell as verified.
 ## Current priorities (accuracy-first, mobile roadmap)
 
 **Trusted 2D extraction is the release gate** before shipping the homeowner mobile experience. See [docs/ROADMAP_ACCURACY_MOBILE.md](docs/ROADMAP_ACCURACY_MOBILE.md) for the full task list: YOLO-first wall reconstruction, shared junctions/openings, benchmark and correction loop, and the later mobile-first upload → 3D → saved viewpoint → geometry-locked design generation journey. Mobile starts as a responsive PWA; normal users should not see model-debugging controls.
+
+
+## Combined door/window review (test milestone)
+
+After **Compare YOLO + Yytsi**, the editor now presents YOLO's door and
+window boxes as a separate, concise **Detected doors and windows** queue.
+Click the dashed orange/cyan opening detection or use Previous/Next, then
+**Confirm door/window**, **Not an opening**, or **Unsure**. The decision
+is stored as provenance-linked review data for future evaluation and training.
+
+After accepting wall segments, **Use fused proposal in draft** also requests
+conservative wall associations for confirmed opening detections. The service
+requires a nearby aligned host wall, avoids ambiguous equally near walls,
+rejects overlaps, and updates an existing opening with the same source ID
+rather than duplicating it. The opening is always **provisional**; dimensions
+derive from current scale or a fallback estimate, and are not verified.
+
+If a door/window cannot attach safely, it remains a review annotation and
+the editor displays the reason rather than inventing 3D geometry. Applying
+does not write a layout version until **Save draft**. This flow does not yet
+automatically solve precise opening widths, elevations, or complete mobile
+review. Run backend checks with:
+
+```bash
+cd apps/api
+uv run pytest -q tests/test_opening_review.py tests/test_compare_extraction.py
+uv run pytest -q
+```
