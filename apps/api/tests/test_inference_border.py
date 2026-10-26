@@ -24,7 +24,7 @@ def test_mask_padding_never_survives_crop():
     probs[:frame.top,:]=1.
     original=unpad_probabilities(probs,frame)
     assert original.shape==(70,130)
-    assert (original==.8).all()
+    assert np.allclose(original,.8)
 
 def test_small_legacy_false_area_stays_off_blueprint():
     image=np.zeros((90,180,3),dtype=np.uint8)
