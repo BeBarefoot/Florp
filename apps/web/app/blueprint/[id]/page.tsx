@@ -213,19 +213,34 @@ export default function Editor(){
        preview_sha256:string;candidate_id:string;decision:'accept'|'reject'|'unsure'|'door'|'window';
        candidate:EvidenceCandidate;input_manifest?:Record<string,unknown>}>>(`/blueprints/${id}/fusion-reviews`);
      const matches:Record<string,'accept'|'reject'|'unsure'|'door'|'window'>={};
+     const openingMatches:Record<string,'accept'|'reject'|'unsure'>={};
      for(const event of previous){
-       const current=result.candidates.find(c=>c.id===event.candidate_id);
-       if(event.preview_sha256!==result.input_manifest.source_preview_sha256||!current)continue;
+       if(event.preview_sha256!==result.input_manifest.source_preview_sha256)continue;
        if(event.input_manifest&&Object.keys(event.input_manifest).length&&
           JSON.stringify(event.input_manifest)!==JSON.stringify(result.input_manifest))continue;
-       // IDs alone are not sufficient if model weights/config change.
-       if(JSON.stringify({start:current.start,end:current.end,sources:current.sources,
-                          category:current.category})!==
-          JSON.stringify({start:event.candidate.start,end:event.candidate.end,
-                          sources:event.candidate.sources,category:event.candidate.category}))continue;
-       matches[current.id]=event.decision;
+       const current=result.candidates.find(c=>c.id===event.candidate_id);
+       if(current){
+         // IDs alone are not sufficient if model weights/config change.
+         if(JSON.stringify({start:current.start,end:current.end,sources:current.sources,
+                            category:current.category})!==
+            JSON.stringify({start:event.candidate.start,end:event.candidate.end,
+                            sources:event.candidate.sources,category:event.candidate.category}))continue;
+         matches[current.id]=event.decision;
+         continue;
+       }
+       const hint=result.opening_hints.find(h=>h.candidate_id===event.candidate_id);
+       if(!hint)continue;
+       const horizontal=hint.x2-hint.x1>=hint.y2-hint.y1;
+       const start=horizontal?{x:hint.x1,y:(hint.y1+hint.y2)/2}:{x:(hint.x1+hint.x2)/2,y:hint.y1};
+       const end=horizontal?{x:hint.x2,y:(hint.y1+hint.y2)/2}:{x:(hint.x1+hint.x2)/2,y:hint.y2};
+       if(JSON.stringify(event.candidate.start)!==JSON.stringify(start)||
+          JSON.stringify(event.candidate.end)!==JSON.stringify(end)||
+          !event.candidate.sources?.includes('yolo_'+hint.kind))continue;
+       if(event.decision===hint.kind)openingMatches[hint.candidate_id]='accept';
+       else if(event.decision==='reject'||event.decision==='unsure')
+         openingMatches[hint.candidate_id]=event.decision;
      }
-     setUnified(result);setFusionIndex(0);setFusionDecisions(matches);setOpeningIndex(0);setOpeningDecisions({});setReviewType('wall');setReviewFocus(false);
+     setUnified(result);setFusionIndex(0);setFusionDecisions(matches);setOpeningIndex(0);setOpeningDecisions(openingMatches);setReviewType('wall');setReviewFocus(false);
      setShowUnifiedWalls(true);setShowComparisonBoxes(false);
      setSegmentationOverlay('data:image/png;base64,'+result.mask_overlay_png_base64);
      setShowSegmentationOverlay(false);setShowModelDetections(false);
