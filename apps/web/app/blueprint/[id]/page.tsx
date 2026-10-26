@@ -535,6 +535,30 @@ export default function Editor(){
   if(!geometry)return;const value=Number(raw);if(!Number.isFinite(value)||value<0)return;
   setGeometry({...geometry,openings:geometry.openings.map(o=>o.id===id?{...o,[field]:value,inferred:true}:o)});
  }
+ function removeUntouchedStarterWalls(){
+   if(!geometry)return;
+   const pad=Math.min(geometry.width_px,geometry.height_px)*.12;
+   const x0=pad,y0=pad,x1=geometry.width_px-pad,y1=geometry.height_px-pad;
+   const match=(a:Pt,b:Pt,c:Pt,d:Pt)=>(
+     (Math.hypot(a.x-c.x,a.y-c.y)<.1&&Math.hypot(b.x-d.x,b.y-d.y)<.1)||
+     (Math.hypot(a.x-d.x,a.y-d.y)<.1&&Math.hypot(b.x-c.x,b.y-c.y)<.1));
+   const segments:[Pt,Pt][]=[
+     [{x:x0,y:y0},{x:x1,y:y0}],
+     [{x:x1,y:y0},{x:x1,y:y1}],
+     [{x:x1,y:y1},{x:x0,y:y1}],
+     [{x:x0,y:y1},{x:x0,y:y0}]];
+   const placeholders=geometry.walls.filter(w=>/^w[0-3]$/.test(w.id)&&
+     segments.some(([a,b])=>match(w.start,w.end,a,b)));
+   if(!placeholders.length){setStatus('No untouched starter walls found.');return;}
+   if(!window.confirm('Remove '+placeholders.length+' unmodified starter wall(s) from this UNSAVED draft? Only placeholders matching the initial rectangle will be removed. Inspect the result before saving.'))return;
+   const ids=new Set(placeholders.map(w=>w.id));
+   setGeometry({...geometry,structure_reviewed:false,
+     rooms:geometry.rooms.filter(r=>r.id!=='room-1'),
+     walls:geometry.walls.filter(w=>!ids.has(w.id)),
+     openings:geometry.openings.filter(o=>!ids.has(o.wall_id)),
+     warnings:geometry.warnings.filter(w=>!w.includes('Starter geometry'))});
+   setStatus('Removed '+placeholders.length+' untouched starter walls from unsaved draft. Review the remaining walls before saving or scoring.');
+ }
  function removeWall(id:string){if(!geometry)return;setSelectedWall(null);setGeometry({...geometry,structure_reviewed:false,walls:geometry.walls.filter(w=>w.id!==id),openings:geometry.openings.filter(o=>o.wall_id!==id)});setStatus('Draft wall removed. Save to persist changes.')}
  return <div className="app"><aside><h2>✦ Florp</h2><Link href="/">← Projects</Link>
  <hr style={{borderColor:'#354053',margin:'22px 0'}}/><p>Saved layout v{layout?.version??'–'} · {layout?.verified?'Verified':'Unverified'}</p>
@@ -889,6 +913,10 @@ export default function Editor(){
  {topology.notes.map((note,i)=><div className="notice" key={i}>{note}</div>)}
  </div>}
  </details>
+ {geometry.warnings.some(w=>w.includes('Starter geometry'))&&<div className="notice">
+ Starter rectangle is a placeholder, not extracted architecture.
+ <button className="secondary" onClick={removeUntouchedStarterWalls}>Remove untouched starter outline</button>
+ </div>}
  <h2>Wall corrections</h2>
  {selectedWall?<div className="stack">
  <small>Selected {selectedWall}: drag the green endpoint handles in the plan. Changes appear in 3D.</small>
