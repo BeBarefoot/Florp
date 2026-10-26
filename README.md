@@ -327,3 +327,28 @@ CubiCasa semantic SVGs**. Prefer Florp's raster adapter above.
 - **Comparison:** run YOLO and Yytsi on separate blueprint uploads while
   debugging. The experimental segmentation replaces the *unverified* draft
   wall list, and cannot import old opening-wall anchors safely.
+
+
+## Source-supported bottom/exterior wall recovery
+
+**Why:** YOLO finds some wall boxes but can miss an entire bottom boundary.
+The legacy **Auto-detected walls** checkbox only drew diagnostic lines and did
+not feed 3D. It is now labelled **Legacy line hints** and kept under
+**Advanced: diagnostic lines (not used in 3D)**.
+
+The **Recover missing wall candidates** button beside the blueprint calls
+`GET /blueprints/{id}/missing-wall-suggestions`, which now combines:
+- Image-supported gap bridges between already detected wall endpoints; and
+- One conservative long horizontal lower/exterior run, when the image pixels
+  support it and an existing vertical wall provides a nearby structural anchor.
+
+Candidates are shown in orange and are **not created automatically**.
+Select **Add wall** to add one to the current draft, where it appears in 2D
+and 3D; select **Save draft** to persist. Dismiss erroneous candidates.
+The source remains unchanged and approved geometry is never silently extended.
+
+This bottom-run recovery is a geometric heuristic. It does not prove the
+candidate is a structural or concrete wall, and is not general wall
+segmentation. Long dimension lines near the building can cause false
+suggestions. Missing walls elsewhere or a completely absent facade still
+require reviewed segmentation/other evidence.
