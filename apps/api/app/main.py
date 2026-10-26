@@ -30,6 +30,28 @@ SQLModel.metadata.create_all(engine)
 app=FastAPI(title='Florp API',version='0.1.0')
 app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origins.split(','),allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
 
+@app.get('/models/status')
+def local_model_status():
+    """Check local checkpoint configuration without loading models or exposing secrets."""
+    from importlib.util import find_spec
+    yolo_file=Path(settings.pretrained_yolo_weights).expanduser().resolve() if settings.pretrained_yolo_weights else None
+    yytsi_dir=Path(settings.yytsi_run_dir).expanduser().resolve()
+    return {
+        'yolo':{
+            'configured':bool(settings.pretrained_yolo_weights),
+            'checkpoint_found':bool(yolo_file and yolo_file.is_file()),
+            'dependency_installed':find_spec('ultralytics') is not None,
+            'note':'Required by Auto-build 2D + 3D; separate from Yytsi segmentation.',
+        },
+        'segmentation':{
+            'provider':settings.wall_segmentation_provider,
+            'yytsi_weights_found':(yytsi_dir/settings.yytsi_checkpoint).is_file(),
+            'yytsi_config_found':(yytsi_dir/'config.yaml').is_file(),
+            'yytsi_dependency_installed':find_spec('buildingcv') is not None,
+            'note':'Required by Experimental wall segmentation.',
+        },
+    }
+
 @app.get('/health')
 def health():return {'ok':True,'vision_configured':bool(settings.llm_api_key),'image_configured':bool(settings.image_api_key)}
 class CreateProject(BaseModel): title:str
