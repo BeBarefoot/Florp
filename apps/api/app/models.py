@@ -55,3 +55,14 @@ class ModelWallCorrection(SQLModel, table=True):
     corrected: dict = Field(default_factory=dict, sa_type=JSON)
     layout_version: int
     created_at: datetime = Field(default_factory=now)
+
+class FusionCandidateReview(SQLModel,table=True):
+    """Append-only human decisions tied to the original image and model proposal."""
+    id: str = Field(default_factory=uid,primary_key=True)
+    blueprint_id: str = Field(index=True,foreign_key='blueprint.id')
+    preview_sha256: str = Field(index=True)
+    candidate_id: str = Field(index=True)
+    category: str
+    decision: str
+    candidate: dict = Field(default_factory=dict,sa_type=JSON)
+    created_at: datetime = Field(default_factory=now)
