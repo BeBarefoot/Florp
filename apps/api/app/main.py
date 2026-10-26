@@ -286,6 +286,22 @@ def get_fusion_reviews(bid:str):
                  'decision':e.decision,'candidate':e.candidate,
                  'input_manifest':e.input_manifest,'created_at':e.created_at.isoformat()} for e in events]
 
+class OpeningReviewDraftBody(BaseModel):
+    geometry: Geometry
+    hint: dict
+
+@app.post('/blueprints/{bid}/opening-review/draft')
+def draft_reviewed_opening(bid:str,body:OpeningReviewDraftBody):
+    """Return modified UNSAVED draft; never writes a layout or moves confirmed openings."""
+    from .opening_review import OpeningHint,associate_opening,create_opening
+    with Session(engine) as session:
+        if not session.get(Blueprint,bid):raise HTTPException(404,'Blueprint not found')
+    hint=OpeningHint.model_validate(body.hint)
+    if hint.wall_id is None:
+        hint=associate_opening(body.geometry,hint)
+    updated,status=create_opening(body.geometry,hint)
+    return {'geometry':updated.model_dump(),'status':status,'hint':hint.model_dump()}
+
 @app.post('/blueprints/{bid}/compare-extraction')
 def compare_extraction(bid:str):
     """Read-only side-by-side model comparison; does not create a layout version.
@@ -318,6 +334,15 @@ def compare_extraction(bid:str):
                 detector=None
                 detection_error=str(err)
             proposed,candidates,comparison=fuse_evidence(existing,mask,report,detector)
+            opening_hints=[]
+            if detector is not None:
+                from .opening_review import OpeningHint,associate_opening
+                for i,box in enumerate(detector.boxes):
+                    if box.category not in ('door','window'):continue
+                    hint=OpeningHint(candidate_id=f'opening-box-{i}',kind=box.category,
+                        x1=box.x1,y1=box.y1,x2=box.x2,y2=box.y2,
+                        source_confidence=box.confidence,reason='YOLO detection; unverified')
+                    opening_hints.append(associate_opening(proposed,hint).model_dump())
         except DetectorUnavailable as exc:raise HTTPException(424,str(exc))
         except ValueError as exc:raise HTTPException(422,str(exc))
         overlay=np.zeros((bp.height,bp.width,4),dtype=np.uint8)
@@ -339,6 +364,7 @@ def compare_extraction(bid:str):
             'base_layout_version':current.version,
             'proposal':proposed.model_dump(),
             'candidates':[c.model_dump() for c in candidates],
+            'opening_hints':opening_hints,
             'comparison':comparison.model_dump(),
             'detections':detector.model_dump() if detector else None,
             'yolo_error':detection_error,
