@@ -79,7 +79,8 @@ def test_fusion_review_event_export_and_hash_guard(tmp_path,monkeypatch):
                              sources=['yolo_box:4'],mask_support=.0,
                              category='yolo_only',review_priority=.5)
     sha=hashlib.sha256(preview.read_bytes()).hexdigest()
-    body=main.FusionReviewBody(preview_sha256=sha,candidate=candidate.model_dump(),decision='accept')
+    body=main.FusionReviewBody(preview_sha256=sha,candidate=candidate.model_dump(),
+        decision='accept',input_manifest={'source_preview_sha256':sha,'segmentation_provider':'fixture-yytsi'})
     event=main.review_fusion_candidate(bid,body)
     assert event['saved'] is True
     assert event['decision']=='accept'
