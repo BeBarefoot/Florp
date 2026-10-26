@@ -56,7 +56,7 @@ export default function Editor(){
    yolo_error:string|null;mask_overlay_png_base64:string;saved:boolean;
  };
  const [unified,setUnified]=useState<UnifiedComparison|null>(null);
- type Raster2SeqResult={saved:false;image_sha256:string;base_layout_version:number;width_px:number;height_px:number;rooms:{category_id:number;points:[number,number][]}[];metadata:{provider:string;checkpoint:string;predicted_rooms:number};note:string};
+ type Raster2SeqResult={saved:false;image_sha256:string;base_layout_version:number;width_px:number;height_px:number;rooms:{category_id:number;points:[number,number][]}[];opening_symbols:{kind:'door'|'window';points:[number,number][]}[];metadata:{provider:string;checkpoint:string;predicted_rooms:number};note:string};
  const [r2s,setR2s]=useState<Raster2SeqResult|null>(null);
  const [r2sVisible,setR2sVisible]=useState(true);
  const [r2sBusy,setR2sBusy]=useState(false);
@@ -488,8 +488,8 @@ export default function Editor(){
  {geometry&&<div className="grid" style={{gridTemplateColumns:'minmax(0,2fr) minmax(290px,1fr)'}}>
  <div className="panel"><h2>{view==='2d'?'Floor-plan overlay':'3D shell · same outline'}</h2>
  {view==='2d'&&r2s&&<div className="notice" style={{marginBottom:12}}>
- <strong>Raster2Seq · {r2s.rooms.length} room polygons</strong>
- <p>Orange dashed polygons = Raster2Seq predictions. Compare visually with blue YOLO / purple Yytsi walls. This is a read-only overlay, not a verified 3D structure.</p>
+ <strong>Raster2Seq · {r2s.rooms.length} rooms · {r2s.opening_symbols.length} opening symbols</strong>
+ <p>Orange dashed polygons = Raster2Seq rooms; orange/cyan small polygons = its door/window hypotheses. Compare with YOLO/Yytsi walls. This is a read-only overlay, not a verified 3D structure.</p>
  <small>Checkpoint: {r2s.metadata.checkpoint} · Source layout v{r2s.base_layout_version}</small>
  </div>}
  {view==='2d'&&unified&&<div style={{border:'1px solid #94a3b8',borderRadius:12,padding:12,marginBottom:12,background:'#f1f5f9',color:'#0f172a'}}>
@@ -646,6 +646,13 @@ export default function Editor(){
  points={room.points.map(([x,y])=>`${x},${y}`).join(' ')}
  fill="#f59e0b" fillOpacity={.1} stroke="#d97706"
  strokeWidth={Math.max(2,geometry.width_px/420)} strokeDasharray="8 4"
+ pointerEvents="none"/>)}
+ {r2s&&r2sVisible&&r2s.opening_symbols.map((symbol,i)=>
+ <polygon key={'r2s-opening-'+i}
+ points={symbol.points.map(([x,y])=>`${x},${y}`).join(' ')}
+ fill={symbol.kind==='door'?'#ea580c':'#06b6d4'} fillOpacity={.15}
+ stroke={symbol.kind==='door'?'#ea580c':'#0891b2'}
+ strokeWidth={Math.max(3,geometry.width_px/360)} strokeDasharray="3 3"
  pointerEvents="none"/>)}
  {segmentationOverlay&&showSegmentationOverlay&&<image href={segmentationOverlay}
  width={geometry.width_px} height={geometry.height_px} pointerEvents="none"/>}
