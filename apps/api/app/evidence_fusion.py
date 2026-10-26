@@ -63,6 +63,12 @@ def _same_axis(a:Pt,b:Pt,c:Pt,d:Pt,tolerance:float=8)->bool:
     return abs((a.x+b.x-c.x-d.x)/2)<=tolerance and (
         min(max(a.y,b.y),max(c.y,d.y))-max(min(a.y,b.y),min(c.y,d.y))>0)
 
+def _overlap_fraction(a:Pt,b:Pt,c:Pt,d:Pt)->float:
+    horizontal=abs(b.x-a.x)>=abs(b.y-a.y)
+    lo1,hi1=sorted((a.x,b.x)) if horizontal else sorted((a.y,b.y))
+    lo2,hi2=sorted((c.x,d.x)) if horizontal else sorted((c.y,d.y))
+    return max(0,min(hi1,hi2)-max(lo1,lo2))/max(1,min(hi1-lo1,hi2-lo2))
+
 def fuse_evidence(base:Geometry,mask:np.ndarray,report:WallMaskReport,
                   detector:DetectorResult|None, min_support:float=.55):
     if mask.shape!=(base.height_px,base.width_px):
@@ -70,48 +76,52 @@ def fuse_evidence(base:Geometry,mask:np.ndarray,report:WallMaskReport,
     if detector and (detector.image_width,detector.image_height)!=(base.width_px,base.height_px):
         raise ValueError('YOLO and Yytsi coordinates differ: no fusion performed')
     lines=consolidate_wall_runs(report).lines
+    mask_axes=[(Pt(x=l.x1,y=l.y1),Pt(x=l.x2,y=l.y2),l) for l in lines]
     candidates=[]
-    for i,line in enumerate(lines):
-        a=Pt(x=line.x1,y=line.y1);b=Pt(x=line.x2,y=line.y2)
-        candidates.append(FusedCandidate(id=f'mask-{i}',start=a,end=b,
-                         sources=['yytsi_mask'],mask_support=_support(mask,a,b),
-                         category='yytsi_only',review_priority=round(.35+.4*line.support,3)))
     accepted=rejected=0
+    matched=set()
     if detector:
         for index,a,b in _model_wall_candidates(detector)[0]:
             support=_support(mask,a,b)
             confidence=float(detector.boxes[index].confidence)
-            match=next((item for item in candidates if _same_axis(item.start,item.end,a,b)),None)
-            if match:
-                accepted+=1
-                match.sources.append(f'yolo_box:{index}')
-                match.category='agreed'
-                match.yolo_confidence=confidence
-                # A ranking heuristic, not an empirical confidence estimate.
-                match.review_priority=round(min(1,.55+.25*confidence+.2*match.mask_support),3)
-            elif support>=min_support:
-                accepted+=1
-                candidates.append(FusedCandidate(id=f'yolo-supported-{index}',
-                    start=a,end=b,sources=[f'yolo_box:{index}','yytsi_supported'],
-                    category='agreed',yolo_confidence=confidence,
-                    review_priority=round(min(1,.45+.3*confidence+.25*support),3),
-                    mask_support=round(support,3)))
-            else:
-                # Preserve legitimate YOLO-only interior walls as review items.
-                # Do not silently add unsupported walls into the geometry.
-                rejected+=1
-                candidates.append(FusedCandidate(id=f'yolo-only-{index}',
-                    start=a,end=b,sources=[f'yolo_box:{index}'],
-                    category='yolo_only',yolo_confidence=confidence,
-                    review_priority=round(min(.75,.2+.45*confidence),3),
-                    mask_support=round(support,3)))
-    candidates.sort(key=lambda item:(-item.review_priority,item.id))
+            matches=[i for i,(p,q,_) in enumerate(mask_axes)
+                     if _same_axis(a,b,p,q,tolerance=10)]
+            matched.update(matches)
+            agreed=bool(matches) or support>=min_support
+            accepted+=int(agreed)
+            rejected+=int(not agreed)
+            candidates.append(FusedCandidate(id=f'yolo-wall-{index}',start=a,end=b,
+                sources=[f'yolo_box:{index}']+(['yytsi_mask'] if agreed else []),
+                mask_support=round(support,3),
+                category='agreed' if agreed else 'yolo_only',
+                review_priority=round(min(1,.55+.25*confidence+.2*support),3)
+                    if agreed else round(min(.75,.2+.45*confidence),3),
+                yolo_confidence=confidence))
+    for i,(a,b,line) in enumerate(mask_axes):
+        if i in matched:continue
+        if any(_same_axis(a,b,item.start,item.end,tolerance=10) for item in candidates):
+            continue
+        candidates.append(FusedCandidate(id=f'mask-{i}',start=a,end=b,
+            sources=['yytsi_mask'],mask_support=_support(mask,a,b),
+            category='yytsi_only',review_priority=round(.35+.4*line.support,3)))
+    candidates.sort(key=lambda c:(-hypot(c.end.x-c.start.x,c.end.y-c.start.y),c.id))
+    unique=[]
+    for item in candidates:
+        prior=next((p for p in unique if _same_axis(item.start,item.end,p.start,p.end,7)
+                    and _overlap_fraction(item.start,item.end,p.start,p.end)>=.8),None)
+        if prior is None:unique.append(item)
+        else:
+            prior.sources=list(dict.fromkeys(prior.sources+item.sources))
+            prior.mask_support=max(prior.mask_support,item.mask_support)
+            prior.review_priority=max(prior.review_priority,item.review_priority)
+            if item.category=='agreed':prior.category='agreed'
+    candidates=sorted(unique,key=lambda item:(-item.review_priority,item.id))
     proposed=base.model_copy(deep=True)
     proposed.rooms=[]
     # Default preview is deliberately conservative: YOLO-only walls require
     # explicit acceptance, while mask-derived proposals remain unverified.
     proposed.walls=[Wall(id=item.id,start=item.start,end=item.end,inferred=True)
-                    for item in candidates if item.category!='yolo_only']
+                    for item in candidates if item.category!='yytsi_only']
     proposed.openings=[]  # Opening association needs a separate verified step.
     proposed.structure_reviewed=False
     proposed.warnings=list(dict.fromkeys(base.warnings+[
