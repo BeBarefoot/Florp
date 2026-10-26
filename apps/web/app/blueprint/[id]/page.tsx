@@ -44,7 +44,12 @@ export default function Editor(){
  const [view,setView]=useState<'2d'|'3d'>('2d');
  const [modelDetections,setModelDetections]=useState<ModelDetections|null>(null);
  const [detectorAudit,setDetectorAudit]=useState<DetectorAudit|null>(null);
- const [topology,setTopology]=useState<{wall_count:number;junction_count:number;disconnected_components:number;dangling_endpoints:number;crossing_pairs:[string,string][];notes:string[]}|null>(null);
+ type GapProposal={id:string;start:Pt;end:Pt;axis:string;image_support:number};
+ const [missingGaps,setMissingGaps]=useState<GapProposal[]>([]);
+ const [dismissedGaps,setDismissedGaps]=useState<string[]>([]);
+ const [gapMessage,setGapMessage]=useState('');
+ const [gapVersion,setGapVersion]=useState<number|null>(null);
+  const [topology,setTopology]=useState<{wall_count:number;junction_count:number;disconnected_components:number;dangling_endpoints:number;crossing_pairs:[string,string][];notes:string[]}|null>(null);
  const [showModelDetections,setShowModelDetections]=useState(false),[modelBusy,setModelBusy]=useState(false);
  const [grayscale,setGrayscale]=useState(true),[showRaw,setShowRaw]=useState(false),[showSuggestions,setShowSuggestions]=useState(false);
  const [reviewScope,setReviewScope]=useState<'all'|'near'>('all');
@@ -108,7 +113,33 @@ export default function Editor(){
    }catch(error){setStatus(String(error))}
    finally{setBusy(false)}
  }
- async function inspectTopology(){
+ async function findMissingWalls(){
+   if(!geometry||!layout)return;
+   if(geometry!==layout.geometry){
+     setGapMessage('Save your edited walls before searching for gaps, so results match the current layout.');
+     return;
+   }
+   setBusy(true);setGapMessage('');
+   try{
+     const result=await request<{layout_version:number;suggestions:GapProposal[];warning:string}>(`/blueprints/${id}/missing-wall-suggestions`);
+     setMissingGaps(result.suggestions);setDismissedGaps([]);setGapVersion(result.layout_version);
+     setGapMessage(result.suggestions.length+' source-supported gap suggestions; none are added automatically.');
+   }catch(error){setGapMessage(String(error))}
+   finally{setBusy(false)}
+ }
+ function acceptGap(gap:GapProposal){
+   setGeometry(old=>{
+     if(!old)return old;
+     if(old.walls.some(w=>(dist(w.start,gap.start)<5&&dist(w.end,gap.end)<5)||
+                       (dist(w.start,gap.end)<5&&dist(w.end,gap.start)<5)))return old;
+     const wall:Wall={id:'user-gap-'+crypto.randomUUID(),start:gap.start,end:gap.end,
+       thickness_m:.15,height_m:2.8,inferred:true};
+     return {...old,structure_reviewed:false,walls:[...old.walls,wall]};
+   });
+   setMissingGaps(old=>old.filter(item=>item.id!==gap.id));
+   setGapMessage('Connection added to unsaved draft. Check alignment, then Save draft.');
+ }
+  async function inspectTopology(){
    try{
      const result=await request<{wall_count:number;junction_count:number;disconnected_components:number;dangling_endpoints:number;crossing_pairs:[string,string][];notes:string[]}>(`/blueprints/${id}/topology`);
      setTopology(result);
@@ -307,7 +338,22 @@ export default function Editor(){
  </div>:<small>Choose Next item to inspect the first unresolved door/window. Each selected box is highlighted on the plan.</small>}
  <small>Corrections stay in your current draft. Click Save draft when done.</small>
  </div>}
- {view==='2d'&&selectedWall&&<div style={{border:'2px solid #16a34a',borderRadius:10,padding:12,marginBottom:12,background:'#f0fdf4',color:'#14532d'}}>
+ {view==='2d'&&<div style={{border:'1px solid #d5dee7',borderRadius:10,padding:12,marginBottom:12}}>
+ <div className="row">
+ <strong>Missing-wall suggestions</strong>
+ <button className="secondary" disabled={busy} onClick={()=>void findMissingWalls()}>Find supported gaps</button>
+ </div>
+ {gapMessage&&<small>{gapMessage}</small>}
+ {gapVersion!==null&&layout&&gapVersion!==layout.version&&<small>Suggestions are outdated; scan again.</small>}
+ {missingGaps.filter(g=>!dismissedGaps.includes(g.id)).slice(0,8).map(g=>
+ <div key={g.id} className="row" style={{justifyContent:'space-between',padding:'6px 0'}}>
+ <small>{g.axis} gap · {Math.round(g.image_support*100)}% local ink support</small>
+ <button className="secondary" onClick={()=>acceptGap(g)}>Add wall</button>
+ <button className="secondary" onClick={()=>setDismissedGaps(prev=>[...prev,g.id])}>Dismiss</button>
+ </div>)}
+ <small>These are uncertain source-image connections, not proof of structural walls.</small>
+ </div>}
+  {view==='2d'&&selectedWall&&<div style={{border:'2px solid #16a34a',borderRadius:10,padding:12,marginBottom:12,background:'#f0fdf4',color:'#14532d'}}>
  <strong>Selected wall: {selectedWall}</strong>
  <div className="row">
  <button onClick={()=>removeWall(selectedWall)}>Reject false wall</button>
@@ -349,7 +395,11 @@ export default function Editor(){
  }}>
  <image href={`${API}/blueprints/${id}/preview`} width={geometry.width_px} height={geometry.height_px}
  style={{filter:grayscale?'grayscale(1) contrast(1.12) brightness(1.08)':'none'}}/>
- {showModelDetections&&modelDetections?.boxes.map((b,i)=>
+ {missingGaps.filter(g=>!dismissedGaps.includes(g.id)).map(g=>
+ <line key={'gap-'+g.id} x1={g.start.x} y1={g.start.y} x2={g.end.x} y2={g.end.y}
+ stroke="#d97706" strokeWidth={Math.max(4,geometry.width_px/260)} strokeDasharray="7 5"
+ pointerEvents="none"><title>Unverified missing-wall gap · {Math.round(g.image_support*100)}% ink support</title></line>)}
+  {showModelDetections&&modelDetections?.boxes.map((b,i)=>
  <g key={'model-'+i} pointerEvents={b.category==='door'||b.category==='window'?'all':'none'}
  onClick={e=>{if(b.category==='door'||b.category==='window'){e.stopPropagation();setSelectedDetection(i);setMode('edit')}}}
  style={{cursor:b.category==='door'||b.category==='window'?'pointer':'default'}}>
