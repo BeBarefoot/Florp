@@ -19,7 +19,7 @@ def normalize_florp_geometry(image:Path, geometry:dict,
         raise ValueError('Florp layout dimensions do not match the original preview')
     def pt(p):return Point(x=p.x,y=p.y)
     walls=[Segment(start=pt(w.start),end=pt(w.end)) for w in g.walls]
-    rooms=[[pt(p) for p in room.polygon] for room in g.rooms]
+    rooms=[[pt(p) for p in room.points] for room in g.rooms]
     openings=[]
     for o in g.openings:
         wall=next((wall for wall in g.walls if wall.id==o.wall_id),None)
