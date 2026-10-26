@@ -86,6 +86,8 @@ def test_fusion_review_event_export_and_hash_guard(tmp_path,monkeypatch):
     exported=main.training_export(bid)
     assert exported['fusion_candidate_reviews'][0]['candidate_id']=='yolo-only-4'
     assert exported['fusion_candidate_reviews'][0]['preview_sha256']==sha
+    assert exported['schema_version']==2
+    assert exported['fusion_candidate_reviews'][0]['input_manifest']['segmentation_provider']=='fixture-yytsi'
     with Session(engine) as session:
         assert len(list(session.exec(select(Layout).where(Layout.blueprint_id==bid)).all()))==1
     try:
