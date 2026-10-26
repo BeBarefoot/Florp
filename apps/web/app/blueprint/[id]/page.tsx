@@ -155,7 +155,7 @@ export default function Editor(){
    try{
      const result=await request<{id:string;status:string}>(`/blueprints/${id}/evaluations`,{
        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-       provider:'florp-fusion',image_sha256:unified.input_manifest.source_preview_sha256,
+       provider:unified.yolo_error?'florp-yytsi':'florp-fusion',image_sha256:unified.input_manifest.source_preview_sha256,
        base_layout_version:unified.base_layout_version,geometry:unified.proposal})});
      setActiveEvaluation(result.id);
      const rows=await request<EvaluationRecord[]>(`/blueprints/${id}/evaluations`);
@@ -579,6 +579,7 @@ export default function Editor(){
  <small>Keep a model snapshot, correct the drawing, then score it against your reviewed geometry.</small>
  <button className="secondary" disabled={!unified||evaluationBusy} onClick={()=>void captureBaseline()}>
  Save uncorrected model baseline</button>
+ {unified?.yolo_error&&<small role="status">YOLO unavailable — this baseline will be labeled Yytsi-only. Re-run extraction after YOLO is fixed to compare both models.</small>}
  {activeEvaluation&&<><small>Active evaluation: {activeEvaluation.slice(0,8)} · baseline stored</small>
  <label>Correction time (minutes)<input type="number" min="0" max="1440" step=".5"
  value={correctionMinutes} onChange={e=>setCorrectionMinutes(e.target.value)}/></label>
