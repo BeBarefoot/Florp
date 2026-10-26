@@ -20,6 +20,34 @@ class ExteriorRun(BaseModel):
     axis: str = 'horizontal'
     kind: str = 'exterior_wall_candidate'
 
+def _extend_on_supported_ink(horizontal:np.ndarray, y:float, left:float,
+                             right:float, max_gap:int=5)->tuple[float,float]:
+    """Grow a Hough fragment only within its connected source-ink run.
+
+    HoughLinesP may report a fragment of a continuous wall. Horizontal
+    morphology has already removed short isolated marks; a one-dimensional
+    closing fills only tiny breaks and never invents a door-sized span.
+    """
+    height,width=horizontal.shape
+    center=int(round(y))
+    row=np.any(horizontal[max(0,center-2):min(height,center+3)]>0,axis=0)
+    kernel=np.ones(max_gap,dtype=np.uint8)
+    continuous=cv2.morphologyEx(row.astype(np.uint8)[None,:],
+                                cv2.MORPH_CLOSE,kernel)[0]>0
+    labels_count,labels,stats,_=cv2.connectedComponentsWithStats(
+        continuous.astype(np.uint8)[None,:],connectivity=8)
+    best=(left,right)
+    overlap_max=0.
+    for index in range(1,labels_count):
+        x=int(stats[index,cv2.CC_STAT_LEFT])
+        span=int(stats[index,cv2.CC_STAT_WIDTH])
+        lo,hi=float(x),float(x+span-1)
+        overlap=max(0.,min(right,hi)-max(left,lo))
+        if overlap>overlap_max and overlap>=min(20.,(right-left)*.35):
+            overlap_max=overlap
+            best=(lo,hi)
+    return best
+
 def suggest_bottom_runs(geometry:Geometry, preview:Path,
                         min_length_fraction:float=.28)->list[ExteriorRun]:
     image=cv2.imread(str(preview),cv2.IMREAD_GRAYSCALE)
@@ -52,6 +80,8 @@ def suggest_bottom_runs(geometry:Geometry, preview:Path,
         if abs(y-bottom)>band:continue
         if abs(x2-x1)<length:continue
         left,right=sorted((float(x1),float(x2)))
+        left,right=_extend_on_supported_ink(horizontal,y,left,right)
+        if right-left<length:continue
         # Existing vertical endpoint anchors constrain which horizontal evidence
         # is likely to belong to the building, rather than annotations.
         close_anchors=[w for w in vertical if any(
