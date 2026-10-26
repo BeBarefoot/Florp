@@ -212,3 +212,27 @@ Default controls:
 
 Success means a repeatable dataset and honest comparison numbers,
 not another button or new model announcement.
+
+## 10. Evidence-grounded geometry review assistant
+
+The `Extract and compare` action also runs `geometry_review_agent.py` on
+the **same stored image evidence** and current proposed walls. In the existing
+comparison panel, open **Suggested missing partitions**:
+
+- Recommendations come from *real Yytsi-only wall candidates*, not imagined
+  text-to-coordinate generation.
+- A proposed missing partition must touch a detected wall and have >=78%
+  local wall-mask support; unsupported/floating strokes are not promoted.
+- Choose **Show on plan**, then **Accept wall** or **Not a wall**. These
+  decisions use the same append-only fusion review records. Only
+  **Use fused proposal in draft** places accepted walls into an unsaved draft.
+- Nothing automatically overwrites manually edited layouts or becomes
+  ground-truth training data. A human still validates the room topology and
+  whether the source segment is actually a wall.
+- This is a deterministic geometry-review assistant, **not** an LLM agent or
+  self-training loop. It can miss a completely absent wall where neither
+  model provides mask support; that should be logged as an extraction miss.
+
+Run `uv run pytest -q tests/test_geometry_review_agent.py` to verify
+the ranking, mask rejection, duplicate suppression, and no-mutation rules.
+Do not claim missing-wall recovery accuracy until scored on held-out plans.
