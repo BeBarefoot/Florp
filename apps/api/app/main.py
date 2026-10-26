@@ -247,6 +247,7 @@ def segmentation_proposal(bid:str):
             else:
                 raise ValueError('WALL_SEGMENTATION_PROVIDER must be yytsi or ultralytics')
             report=region_wall_lines(mask,min_length=max(22,min(bp.width,bp.height)//18))
+            raw_mask_line_count=report.line_count
             report=consolidate_wall_runs(report)
             if report.line_count==0:raise ValueError('Segmentation yielded no supported wall centerlines')
             draft=propose_mask_walls(current,report)
@@ -266,7 +267,7 @@ def segmentation_proposal(bid:str):
         rgba[:,:,3]=np.where(mask>0,135,0).astype(np.uint8)
         output=io.BytesIO()
         PillowImage.fromarray(rgba,'RGBA').save(output,format='PNG')
-        return {'layout':version,'report':{'checkpoint':checkpoint,**metadata,**report.model_dump()},
+        return {'layout':version,'report':{'checkpoint':checkpoint,**metadata,'raw_mask_line_count':raw_mask_line_count,'normalized_mask_line_count':report.line_count,**report.model_dump()},
                 'mask_overlay_png_base64':base64.b64encode(output.getvalue()).decode('ascii'),
                 'topology':audit_topology(draft)}
 
