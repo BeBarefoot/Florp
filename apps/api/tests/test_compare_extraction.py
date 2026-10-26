@@ -55,3 +55,40 @@ def test_compare_models_does_not_replace_saved_draft(tmp_path,monkeypatch):
         assert len(rows)==1
         assert rows[0].geometry==draft.model_dump()
     assert file.read_bytes()==original_bytes
+
+def test_fusion_review_event_export_and_hash_guard(tmp_path,monkeypatch):
+    from fastapi import HTTPException
+    from app.models import FusionCandidateReview
+    from app.evidence_fusion import FusedCandidate
+    from app.geometry import Pt
+    engine=create_engine('sqlite://',connect_args={'check_same_thread':False},
+                         poolclass=StaticPool)
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(main,'engine',engine)
+    preview=tmp_path/'plan.png'
+    assert cv2.imwrite(str(preview),np.full((200,400,3),255,dtype='uint8'))
+    with Session(engine) as session:
+        p=Project(title='training');session.add(p);session.flush()
+        bp=Blueprint(project_id=p.id,filename='plan.png',local_path=str(preview),
+             preview_path=str(preview),width=400,height=200)
+        session.add(bp);session.flush()
+        session.add(Layout(blueprint_id=bp.id,
+                           geometry=Geometry(width_px=400,height_px=200).model_dump()))
+        session.commit();bid=bp.id
+    candidate=FusedCandidate(id='yolo-only-4',start=Pt(x=10,y=20),end=Pt(x=200,y=20),
+                             sources=['yolo_box:4'],mask_support=.0,
+                             category='yolo_only',review_priority=.5)
+    sha=hashlib.sha256(preview.read_bytes()).hexdigest()
+    body=main.FusionReviewBody(preview_sha256=sha,candidate=candidate.model_dump(),decision='accept')
+    event=main.review_fusion_candidate(bid,body)
+    assert event['saved'] is True
+    assert event['decision']=='accept'
+    exported=main.training_export(bid)
+    assert exported['fusion_candidate_reviews'][0]['candidate_id']=='yolo-only-4'
+    assert exported['fusion_candidate_reviews'][0]['preview_sha256']==sha
+    with Session(engine) as session:
+        assert len(list(session.exec(select(Layout).where(Layout.blueprint_id==bid)).all()))==1
+    try:
+        main.review_fusion_candidate(bid,body.model_copy(update={'preview_sha256':'0'*64}))
+    except HTTPException as err:assert err.status_code==409
+    else:raise AssertionError('Stale image review must be rejected')
