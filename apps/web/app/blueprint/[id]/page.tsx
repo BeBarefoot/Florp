@@ -94,14 +94,14 @@ export default function Editor(){
    if(!window.confirm('Run experimental local wall segmentation? This creates a new draft and may replace all unreviewed wall proposals. Existing saved versions remain available.'))return;
    setModelBusy(true);setStatus('');
    try{
-     const result=await request<{layout:Layout;mask_overlay_png_base64:string;report:{provider:string;checkpoint:string;line_count:number;coverage_fraction:number}}>(
+     const result=await request<{layout:Layout;mask_overlay_png_base64:string;report:{provider:string;checkpoint:string;line_count:number;raw_mask_line_count:number;normalized_mask_line_count:number;coverage_fraction:number}}>(
        `/blueprints/${id}/segmentation/propose`,{method:'POST'});
      setLayout(result.layout);setGeometry(result.layout.geometry);
      setSegmentationOverlay('data:image/png;base64,'+result.mask_overlay_png_base64);
      setShowSegmentationOverlay(true);
      setModelDetections(null);setDetectorAudit(null);setSelectedDetection(null);setSelectedWall(null);
-     setStatus(result.report.provider+' segmentation: '+result.report.line_count+' mask-supported line candidates from '+result.report.checkpoint+
-       '. Check all walls and missing openings; this is not a verified floor plan.');
+     setStatus(result.report.provider+' segmentation: '+result.report.raw_mask_line_count+' detected axes → '+result.report.normalized_mask_line_count+
+       ' consolidated wall runs. Check the mask against the 3D solids; geometry and openings are unverified.');
    }catch(err){setStatus(String(err))}
    finally{setModelBusy(false)}
  }
