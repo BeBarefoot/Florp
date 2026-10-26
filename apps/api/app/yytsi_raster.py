@@ -11,6 +11,7 @@ import numpy as np
 from PIL import Image, ImageOps
 from .config import settings
 from .pretrained_detector import DetectorUnavailable
+from .multiscale_segmentation import combine_wall_probabilities
 
 MEAN=np.array([.485,.456,.406],dtype=np.float32)
 STD=np.array([.229,.224,.225],dtype=np.float32)
@@ -62,32 +63,54 @@ def _load_extractor(run_directory:str, checkpoint:str, device:str):
     except (OSError,RuntimeError,ValueError,KeyError) as exc:
         raise DetectorUnavailable('Unable to load Yytsi checkpoint/config: '+str(exc)[:240]) from exc
 
+def _predict_wall_probability(extractor,rgb:np.ndarray,wall_class:int)->np.ndarray:
+    import cv2
+    import torch
+    image=Image.fromarray(rgb,'RGB')
+    tensor,rect=prepare_raster(image,extractor.image_size,
+                                  extractor.letterbox,extractor.normalize)
+    input_tensor=torch.from_numpy(tensor).unsqueeze(0).to(extractor.device)
+    with torch.inference_mode():
+        scores=extractor.model(input_tensor)
+        # Float probabilities, not argmax: local tiles can reinforce fine walls.
+        probability=torch.softmax(scores.float(),dim=1)[0,wall_class].cpu().numpy()
+    x,y,w,h=rect
+    crop=probability[y:y+h,x:x+w]
+    return cv2.resize(crop,(rgb.shape[1],rgb.shape[0]),
+                      interpolation=cv2.INTER_LINEAR).astype('float32')
+
+
 def predict_yytsi_raster(preview:Path,width:int,height:int)->tuple[np.ndarray,dict]:
     run_dir=Path(settings.yytsi_run_dir).expanduser().resolve()
     if not (run_dir/'config.yaml').is_file() or not (run_dir/settings.yytsi_checkpoint).is_file():
         raise DetectorUnavailable('Yytsi requires config.yaml and '+settings.yytsi_checkpoint+
-            ' in YYTSI_RUN_DIR. Download pretrained files from Yytsi/floorplan-to-3d-walls.')
+            ' in YYTSI_RUN_DIR.')
     extractor=_load_extractor(str(run_dir),settings.yytsi_checkpoint,settings.yytsi_device)
     try:
-        import torch
         from buildingcv.labels import CLASS_TO_ID
         with Image.open(preview) as image:
-            actual=image.size
-            if actual!=(width,height):
+            original=ImageOps.exif_transpose(image).convert('RGB')
+            if original.size!=(width,height):
                 raise ValueError('Preview dimensions do not match stored blueprint')
-            tensor,rect=prepare_raster(image,extractor.image_size,
-                          extractor.letterbox,extractor.normalize)
-        model_input=torch.from_numpy(tensor).unsqueeze(0).to(extractor.device)
-        with torch.inference_mode():
-            class_ids=extractor.model(model_input).argmax(dim=1).squeeze(0).to('cpu',torch.uint8).numpy()
-        classes=restore_mask(class_ids,rect,(width,height))
-        wall=(classes==CLASS_TO_ID['wall']).astype(np.uint8)*255
-        fractions={key:round(float(np.mean(classes==value)),5)
-                   for key,value in CLASS_TO_ID.items()}
+            rgb=np.asarray(original,dtype=np.uint8)
+        wall_id=CLASS_TO_ID['wall']
+        def predict(tile):
+            return _predict_wall_probability(extractor,tile,wall_id)
+        if settings.segmentation_multiscale:
+            probabilities,stats=combine_wall_probabilities(rgb,predict,
+                tile_size=settings.segmentation_tile_size,
+                overlap=settings.segmentation_tile_overlap,
+                max_tiles=settings.segmentation_max_tiles)
+        else:
+            probabilities=predict(rgb)
+            stats={'tiles':0,'method':'global_only','source_resolution':[width,height]}
+        threshold=settings.segmentation_wall_threshold
+        wall=np.where(probabilities>=threshold,255,0).astype(np.uint8)
         return wall,{'provider':'Yytsi/ResNet34-UNet','checkpoint':settings.yytsi_checkpoint,
             'input_format':'raster_png','image_size':[width,height],
-            'class_fractions':fractions,'warning':
-            'PNG/PDF scans differ from CubiCasa SVG training renders; review all mask predictions.'}
+            'wall_fraction':round(float(np.mean(wall>0)),5),
+            'wall_threshold':threshold,'multiscale':stats,
+            'warning':'Tiled predictions are model hypotheses; verify interior walls, furniture and annotations.'}
     except DetectorUnavailable:raise
-    except (RuntimeError,ValueError,OSError) as exc:
-        raise DetectorUnavailable('Yytsi raster inference failed: '+str(exc)[:260]) from exc
+    except (RuntimeError,ValueError,OSError,MemoryError) as exc:
+        raise DetectorUnavailable('Yytsi multi-scale inference failed: '+str(exc)[:260]) from exc
