@@ -224,3 +224,74 @@ existing YOLO boxes on a held-out, annotated set of Florp scans (wall pixels,
 junction completeness, opening preservation and human correction time).
 
 Existing YOLO **Auto-build 2D + 3D** and review workflows are unchanged.
+
+
+## Yytsi pretrained segmentation — use PNG/JPG/PDF directly (no SVG required)
+
+Florp now provides a **native raster adapter** for Yytsi's pretrained
+ResNet34-UNet model. Yytsi's public demo expects CubiCasa-style SVG; converted
+images such as `width="992.000000pt"` trigger its SVG dimension parser and,
+more importantly, don't carry the CubiCasa structural class tokens. The
+Florp adapter bypasses SVG entirely:
+
+- Upload PNG/JPG normally; the original RGB preview goes into Yytsi.
+- Upload PDF normally; Florp first rasterizes page 1 at 2× into PNG, then
+  supplies the preview directly to Yytsi.
+- Yytsi's own config determines model resolution, aspect-preserving letterbox,
+  ImageNet normalization and model/device. Class predictions are cropped to
+  unpadded image content and nearest-neighbor scaled back to the source
+  blueprint's original coordinates.
+- The result includes wall-mask pixels overlaid in teal on the 2D drawing,
+  proposed wall centerlines, and unverified connected-room hypotheses.
+- Yytsi's 4 classes are floor, wall, door, window. The experimental endpoint
+  currently vectorizes the **wall** pixels; door/window class masks are not
+  yet converted to full opening graph objects. The YOLO opening workflow
+  remains separately available.
+
+### Setup on Mac (only once)
+
+```bash
+git pull origin main
+cd apps/api
+uv sync --extra yytsi
+mkdir -p models/yytsi
+curl -fL --retry 3 -o models/yytsi/best.safetensors 'https://huggingface.co/Yytsi/floorplan-to-3d-walls/resolve/main/best.safetensors'
+curl -fL --retry 3 -o models/yytsi/config.yaml 'https://huggingface.co/Yytsi/floorplan-to-3d-walls/resolve/main/config.yaml'
+```
+
+Set these in `apps/api/.env`:
+
+```dotenv
+WALL_SEGMENTATION_PROVIDER=yytsi
+YYTSI_RUN_DIR=./models/yytsi
+YYTSI_CHECKPOINT=best.safetensors
+YYTSI_DEVICE=auto
+```
+
+Restart FastAPI with `uv run uvicorn app.main:app --reload --port 8000`.
+Then open any PNG/JPG/PDF blueprint in Florp, expand **Experimental wall
+segmentation**, and click **Try wall-mask reconstruction**. Keep **Show actual
+wall pixels** enabled to compare predicted mask against the plan. It works
+without a paid AI API key. `YYTSI_DEVICE=cpu` forces CPU; `auto` uses the
+upstream implementation's MPS/CUDA/CPU detection.
+
+Do not re-run this on an edited or confirmed layout: the experiment intentionally
+rejects user-drawn or reviewed walls, to avoid discarding corrections. Previous
+saved versions are retained in SQLite, but there is not yet a version-restore UI.
+Start a new blueprint copy to compare the models safely.
+
+**Quality limitation:** Yytsi was trained on filtered CubiCasa SVG renders,
+where nonstructural elements were removed programmatically. Real scanned PNG
+plans contain furnishings, dimensions and noise. This domain shift may produce
+many false walls and missed walls. Don't confuse an operational model adapter
+with proven accuracy. Benchmark the raw overlay and then the wall graph separately.
+
+### Upstream SVG-only demo workaround (optional)
+
+For a converted SVG such as the one that reported
+`could not convert string to float: '992.000000pt'`, the immediate parsing
+error is caused by Yytsi's
+`buildingcv.data._read_svg_dims` calling `float(root.get("width"))` without
+handling physical unit suffixes. Setting unit-free SVG dimensions consistent
+with `viewBox` avoids that exception, but **does not make converted PNGs into
+CubiCasa semantic SVGs**. Prefer Florp's raster adapter above.
