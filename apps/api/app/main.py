@@ -230,6 +230,7 @@ class FusionReviewBody(BaseModel):
     preview_sha256: str
     candidate: dict
     decision: str
+    input_manifest: dict = {}
 
 @app.post('/blueprints/{bid}/fusion-reviews')
 def review_fusion_candidate(bid:str, body:FusionReviewBody):
@@ -255,7 +256,8 @@ def review_fusion_candidate(bid:str, body:FusionReviewBody):
             raise HTTPException(422,'Candidate missing valid geometry or provenance')
         event=FusionCandidateReview(blueprint_id=bid,preview_sha256=preview_hash,
             candidate_id=candidate.id,category=candidate.category,
-            decision=body.decision,candidate=candidate.model_dump())
+            decision=body.decision,candidate=candidate.model_dump(),
+            input_manifest=body.input_manifest)
         session.add(event);session.commit();session.refresh(event)
         return {'review_id':event.id,'candidate_id':candidate.id,
                 'decision':event.decision,'saved':True}
@@ -269,7 +271,7 @@ def get_fusion_reviews(bid:str):
                 FusionCandidateReview.created_at)).all())
         return [{'preview_sha256':e.preview_sha256,'candidate_id':e.candidate_id,
                  'decision':e.decision,'candidate':e.candidate,
-                 'created_at':e.created_at.isoformat()} for e in events]
+                 'input_manifest':e.input_manifest,'created_at':e.created_at.isoformat()} for e in events]
 
 @app.post('/blueprints/{bid}/compare-extraction')
 def compare_extraction(bid:str):
@@ -456,10 +458,10 @@ def training_export(bid:str):
         model_reviews=list(s.exec(select(ModelWallCorrection).where(ModelWallCorrection.blueprint_id==bid)).all())
         fusion_reviews=list(s.exec(select(FusionCandidateReview).where(FusionCandidateReview.blueprint_id==bid)).all())
         walls=[w for w in Geometry.model_validate(layout.geometry).model_dump()['walls'] if w['id'].startswith('user-')] if layout else []
-    return {'schema_version':1,'blueprint_id':bid,'image_width':bp.width,'image_height':bp.height,
+    return {'schema_version':2,'blueprint_id':bid,'image_width':bp.width,'image_height':bp.height,
       'annotations':[{'label':a.label,**a.coordinates} for a in annotations],
       'manually_drawn_walls':walls,
-      'fusion_candidate_reviews':[{'candidate_id':r.candidate_id,'category':r.category,'decision':r.decision,'preview_sha256':r.preview_sha256,'candidate':r.candidate,'created_at':r.created_at.isoformat()} for r in fusion_reviews],
+      'fusion_candidate_reviews':[{'candidate_id':r.candidate_id,'category':r.category,'decision':r.decision,'preview_sha256':r.preview_sha256,'candidate':r.candidate,'input_manifest':r.input_manifest,'created_at':r.created_at.isoformat()} for r in fusion_reviews],
       'model_wall_corrections':[{'model_wall_id':r.model_wall_id,'action':r.action,'original':r.original,'corrected':r.corrected,'layout_version':r.layout_version} for r in model_reviews],
       'note':'Review labels before training; this is not a trained detector.'}
 
