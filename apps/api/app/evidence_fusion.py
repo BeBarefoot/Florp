@@ -118,10 +118,14 @@ def fuse_evidence(base:Geometry,mask:np.ndarray,report:WallMaskReport,
     candidates=sorted(unique,key=lambda item:(-item.review_priority,item.id))
     proposed=base.model_copy(deep=True)
     proposed.rooms=[]
-    # Default preview is deliberately conservative: YOLO-only walls require
-    # explicit acceptance, while mask-derived proposals remain unverified.
+    # YOLO defines the initial structural axes when available. If YOLO cannot
+    # run, retain Yytsi walls so mask-only fallback remains functional.
+    initial_candidates=(
+        [item for item in candidates if item.category!='yytsi_only']
+        if detector is not None else candidates
+    )
     proposed.walls=[Wall(id=item.id,start=item.start,end=item.end,inferred=True)
-                    for item in candidates if item.category!='yytsi_only']
+                    for item in initial_candidates]
     proposed.openings=[]  # Opening association needs a separate verified step.
     proposed.structure_reviewed=False
     proposed.warnings=list(dict.fromkeys(base.warnings+[
