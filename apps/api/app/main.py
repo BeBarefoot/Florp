@@ -24,6 +24,7 @@ from .wall_segmentation import infer_wall_mask, mask_centerlines, propose_mask_w
 from .yytsi_raster import predict_yytsi_raster
 from .mask_topology import region_wall_lines
 from .wall_run_normalization import consolidate_wall_runs
+from .evidence_fusion import fuse_evidence
 
 Path(settings.storage_path).mkdir(parents=True,exist_ok=True)
 if settings.database_url.startswith('sqlite:///'):
@@ -224,6 +225,57 @@ def pretrained_reconstruct(bid:str):
         draft=Layout(blueprint_id=bid,version=previous.version+1,verified=False,geometry=geometry.model_dump())
         session.add(draft);session.commit();session.refresh(draft)
         return {'layout':draft,'detections':detection,'detection_audit':detection_audit(detection),'topology':audit_topology(geometry)}
+
+@app.post('/blueprints/{bid}/compare-extraction')
+def compare_extraction(bid:str):
+    """Read-only side-by-side model comparison; does not create a layout version.
+
+    Both models consume the identical stored full-resolution PNG preview.
+    A missing YOLO dependency yields an explicitly labeled mask-only result.
+    """
+    import base64
+    import numpy as np
+    with Session(engine) as session:
+        bp=session.get(Blueprint,bid)
+        if not bp:raise HTTPException(404,'Blueprint not found')
+        current=session.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
+        if not current:raise HTTPException(404,'No layout')
+        existing=Geometry.model_validate(current.geometry)
+        preview_path=Path(bp.preview_path)
+        try:
+            provider=settings.wall_segmentation_provider.lower().strip()
+            if provider=='yytsi':
+                mask,metadata=predict_yytsi_raster(preview_path,bp.width,bp.height)
+            elif provider=='ultralytics':
+                mask,checkpoint=infer_wall_mask(preview_path,bp.width,bp.height)
+                metadata={'provider':'Ultralytics/instance-segmentation','checkpoint':checkpoint}
+            else:
+                raise ValueError('Invalid segmentation provider')
+            report=region_wall_lines(mask,min_length=max(22,min(bp.width,bp.height)//18))
+            detection_error=None
+            try:detector=detect_objects(preview_path,bp.width,bp.height)
+            except DetectorUnavailable as err:
+                detector=None
+                detection_error=str(err)
+            proposed,candidates,comparison=fuse_evidence(existing,mask,report,detector)
+        except DetectorUnavailable as exc:raise HTTPException(424,str(exc))
+        except ValueError as exc:raise HTTPException(422,str(exc))
+        overlay=np.zeros((bp.height,bp.width,4),dtype=np.uint8)
+        overlay[:,:,1]=160;overlay[:,:,2]=145
+        overlay[:,:,3]=np.where(mask>0,130,0).astype(np.uint8)
+        image=io.BytesIO()
+        Image.fromarray(overlay,'RGBA').save(image,format='PNG')
+        return {
+            'base_layout_version':current.version,
+            'proposal':proposed.model_dump(),
+            'candidates':[c.model_dump() for c in candidates],
+            'comparison':comparison.model_dump(),
+            'detections':detector.model_dump() if detector else None,
+            'yolo_error':detection_error,
+            'segmentation':metadata,
+            'mask_overlay_png_base64':base64.b64encode(image.getvalue()).decode('ascii'),
+            'saved':False,
+        }
 
 @app.post('/blueprints/{bid}/segmentation/propose')
 def segmentation_proposal(bid:str):
