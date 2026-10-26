@@ -20,6 +20,7 @@ from .topology import audit_topology
 from .missing_wall_evidence import gap_suggestions
 from .graph_reconstruction import propose_connected_geometry
 from .wall_segmentation import infer_wall_mask, mask_centerlines, propose_mask_walls
+from .yytsi_raster import predict_yytsi_raster
 
 Path(settings.storage_path).mkdir(parents=True,exist_ok=True)
 if settings.database_url.startswith('sqlite:///'):
@@ -208,7 +209,15 @@ def segmentation_proposal(bid:str):
         if previous.verified or current.structure_reviewed or any(w.id.startswith('user-') for w in current.walls):
             raise HTTPException(409,'Current layout contains approved or manually edited geometry. Save an independent experiment copy before applying segmentation.')
         try:
-            mask,checkpoint=infer_wall_mask(Path(bp.preview_path),bp.width,bp.height)
+            provider=settings.wall_segmentation_provider.lower().strip()
+            if provider=='yytsi':
+                mask,metadata=predict_yytsi_raster(Path(bp.preview_path),bp.width,bp.height)
+                checkpoint=metadata['checkpoint']
+            elif provider=='ultralytics':
+                mask,checkpoint=infer_wall_mask(Path(bp.preview_path),bp.width,bp.height)
+                metadata={'provider':'Ultralytics/instance-segmentation','checkpoint':checkpoint}
+            else:
+                raise ValueError('WALL_SEGMENTATION_PROVIDER must be yytsi or ultralytics')
             report=mask_centerlines(mask,min_length=max(22,min(bp.width,bp.height)//18))
             if report.line_count==0:raise ValueError('Segmentation yielded no supported wall centerlines')
             draft=propose_mask_walls(current,report)
@@ -217,7 +226,7 @@ def segmentation_proposal(bid:str):
         except ValueError as exc:raise HTTPException(422,str(exc))
         version=Layout(blueprint_id=bid,version=previous.version+1,verified=False,geometry=draft.model_dump())
         session.add(version);session.commit();session.refresh(version)
-        return {'layout':version,'report':{'checkpoint':checkpoint,**report.model_dump()},
+        return {'layout':version,'report':{'checkpoint':checkpoint,**metadata,**report.model_dump()},
                 'topology':audit_topology(draft)}
 
 @app.post('/blueprints/{bid}/extract')
