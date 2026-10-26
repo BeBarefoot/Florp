@@ -84,7 +84,7 @@ export default function Editor(){
    setModelBusy(true);setStatus('');
    try{
      const result=await request<Reconstructed>(`/blueprints/${id}/pretrained-reconstruct`,{method:'POST'});
-     setModelDetections(result.detections);setDetectorAudit(result.detection_audit||null);setShowModelDetections(true);
+     setModelDetections(result.detections);setDetectorAudit(result.detection_audit||null);setShowModelDetections(true);setSegmentationOverlay(null);
      setLayout(result.layout);setGeometry(result.layout.geometry);setSelectedDetection(null);setRejectedDetections([]);
      setStatus('Pretrained model generated '+result.layout.geometry.walls.length+' draft walls, '+result.layout.geometry.rooms.length+' proposed enclosed rooms and '+result.layout.geometry.openings.length+' provisional openings. Review all results before confirming.');
    }catch(err){setStatus(String(err))}
