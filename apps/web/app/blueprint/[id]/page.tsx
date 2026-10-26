@@ -371,12 +371,14 @@ export default function Editor(){
  'Select an orange/cyan detection to review it, then choose Add opening or Dismiss. Your wall edits remain untouched.'}
  </div>}
  {view==='2d'&&<div className="row" style={{marginBottom:12}}>
+ <button disabled={modelBusy||busy} onClick={()=>void trySegmentation()}>
+ {modelBusy?'Running wall segmentation…':'Reconstruct walls (multi-scale)'}</button>
+ {segmentationOverlay&&<label><input type="checkbox" checked={showSegmentationOverlay}
+ onChange={e=>setShowSegmentationOverlay(e.target.checked)}/> Show actual wall pixels</label>}
+ <details><summary>Alternative: YOLO box-based build</summary>
+ <p className="muted">Legacy wall-box reconstruction. It can miss interior walls; use for comparison or door/window detection, not verified architectural geometry.</p>
  <button className="secondary" disabled={modelBusy||busy} onClick={()=>void runPretrained()}>
- {modelBusy?'Running local model…':'Auto-build 2D + 3D'}</button>
- <details><summary>Experimental wall segmentation</summary>
- <p className="muted">Multi-scale Yytsi: global plan + overlapping image tiles, then connected wall-mask regions. PNG/JPG directly; PDF uses its raster preview. Predictions remain unverified.</p>
- {segmentationOverlay&&<label><input type="checkbox" checked={showSegmentationOverlay} onChange={e=>setShowSegmentationOverlay(e.target.checked)}/> Show actual wall pixels</label>}
- <button className="secondary" disabled={modelBusy||busy} onClick={()=>void trySegmentation()}>Run multi-scale wall reconstruction</button>
+ {modelBusy?'Running YOLO…':'Auto-build from YOLO boxes'}</button>
  </details>
  {modelDetections&&<label><input type="checkbox" checked={showModelDetections} onChange={e=>setShowModelDetections(e.target.checked)}/> Model boxes ({modelDetections.boxes.length})</label>}
  <label><input type="checkbox" checked={grayscale} onChange={e=>setGrayscale(e.target.checked)}/> Grayscale</label>
