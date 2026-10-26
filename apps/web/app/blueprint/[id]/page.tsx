@@ -43,16 +43,21 @@ export default function Editor(){
  const [status,setStatus]=useState(''),[busy,setBusy]=useState(false);
  const [view,setView]=useState<'2d'|'3d'>('2d');
  const [modelDetections,setModelDetections]=useState<ModelDetections|null>(null);
- type EvidenceCandidate={id:string;start:Pt;end:Pt;sources:string[];mask_support:number};
+ type EvidenceCandidate={id:string;start:Pt;end:Pt;sources:string[];mask_support:number;category:'agreed'|'yolo_only'|'yytsi_only';review_priority:number;yolo_confidence?:number|null};
  type UnifiedComparison={
    base_layout_version:number;proposal:Geometry;candidates:EvidenceCandidate[];
+   input_manifest:{source_preview_sha256:string};
    comparison:{mask_lines:number;yolo_wall_boxes:number;accepted_yolo_candidates:number;
      rejected_yolo_candidates:number;fused_walls:number;
+     yolo_only_candidates:number;yytsi_only_candidates:number;agreed_candidates:number;
      topology:{connected_components:number;dangling_nodes:string[]}};
    detections:ModelDetections|null;segmentation:{provider:string};
    yolo_error:string|null;mask_overlay_png_base64:string;saved:boolean;
  };
  const [unified,setUnified]=useState<UnifiedComparison|null>(null);
+ const [fusionIndex,setFusionIndex]=useState(0);
+ const [fusionDecisions,setFusionDecisions]=useState<Record<string,'accept'|'reject'|'unsure'>>({});
+ const [fusionSaving,setFusionSaving]=useState(false);
  const [showUnifiedWalls,setShowUnifiedWalls]=useState(true);
  const [showComparisonBoxes,setShowComparisonBoxes]=useState(false);
   const [segmentationOverlay,setSegmentationOverlay]=useState<string|null>(null);
@@ -111,12 +116,28 @@ export default function Editor(){
    setModelBusy(true);setStatus('');
    try{
      const result=await request<UnifiedComparison>(`/blueprints/${id}/compare-extraction`,{method:'POST'});
-     setUnified(result);setShowUnifiedWalls(true);setShowComparisonBoxes(false);
+     setUnified(result);setFusionIndex(0);setFusionDecisions({});setShowUnifiedWalls(true);setShowComparisonBoxes(false);
      setSegmentationOverlay('data:image/png;base64,'+result.mask_overlay_png_base64);
      setShowSegmentationOverlay(true);
      setStatus('Comparison ready — no layout was saved or replaced. Review the proposed walls before applying.');
    }catch(err){setStatus(String(err))}
    finally{setModelBusy(false)}
+ }
+ const reviewCandidate=unified?.candidates[fusionIndex]||null;
+ const fusionResolved=unified?.candidates.filter(c=>fusionDecisions[c.id]&&fusionDecisions[c.id]!=='unsure').length||0;
+ async function decideFusion(decision:'accept'|'reject'|'unsure'){
+   if(!unified||!reviewCandidate||fusionSaving)return;
+   setFusionSaving(true);
+   try{
+     await request(`/blueprints/${id}/fusion-reviews`,{method:'POST',
+       headers:{'Content-Type':'application/json'},body:JSON.stringify({
+       preview_sha256:unified.input_manifest.source_preview_sha256,
+       candidate:reviewCandidate,decision})});
+     setFusionDecisions(old=>({...old,[reviewCandidate.id]:decision}));
+     setFusionIndex(current=>Math.min(current+1,unified.candidates.length-1));
+     setStatus('Review saved for '+reviewCandidate.id+'. Continue through the candidate queue.');
+   }catch(err){setStatus('Unable to save review: '+String(err))}
+   finally{setFusionSaving(false)}
  }
  function applyUnified(){
    if(!unified||!layout||!geometry)return;
@@ -127,8 +148,13 @@ export default function Editor(){
      setStatus('Unsaved edits exist. Save them or compare again before applying.');return;
    }
    if(!window.confirm('Load the fused wall proposal into your UNSAVED editor draft? This does not approve its geometry. Previous saved version remains unchanged.'))return;
-   setGeometry(unified.proposal);setSelectedWall(null);
-   setStatus('Fused proposal loaded locally. Review and correct walls, then Save draft. No previous version was overwritten.');
+   const selected=unified.candidates.filter(c=>fusionDecisions[c.id]==='accept');
+   if(!selected.length){setStatus('Accept at least one candidate before applying a wall draft.');return;}
+   const walls:Wall[]=selected.map(c=>({id:c.id,start:c.start,end:c.end,
+     thickness_m:.15,height_m:2.8,inferred:true}));
+   setGeometry({...unified.proposal,walls,rooms:[],openings:[],structure_reviewed:false});
+   setSelectedWall(null);
+   setStatus(selected.length+' accepted candidates loaded as UNSAVED walls. Confirm topology and openings after review.');
  }
  async function trySegmentation(){
    if(!window.confirm('Run experimental local wall segmentation? This creates a new draft and may replace all unreviewed wall proposals. Existing saved versions remain available.'))return;
@@ -366,10 +392,36 @@ export default function Editor(){
  <div className="panel"><h2>{view==='2d'?'Floor-plan overlay':'3D shell · same outline'}</h2>
  {view==='2d'&&unified&&<div style={{border:'1px solid #94a3b8',borderRadius:12,padding:12,marginBottom:12,background:'#f1f5f9',color:'#0f172a'}}>
  <strong>Same-image extraction comparison</strong>
+ <div className="row" style={{gap:10,flexWrap:'wrap',marginTop:8}}>
+ <span>Agreed: {unified.comparison.agreed_candidates}</span>
+ <span>YOLO only: {unified.comparison.yolo_only_candidates}</span>
+ <span>Yytsi only: {unified.comparison.yytsi_only_candidates}</span>
+ </div>
+ <div style={{border:'1px solid #94a3b8',borderRadius:10,padding:10,marginTop:10}}>
+ <div className="row" style={{justifyContent:'space-between'}}>
+ <strong>Review wall candidate · {fusionIndex+1}/{unified.candidates.length}</strong>
+ <span>{fusionResolved} decided</span>
+ </div>
+ {reviewCandidate&&<>
+ <p style={{margin:'8px 0'}}> {reviewCandidate.category==='agreed'?'Both models agree':
+ reviewCandidate.category==='yolo_only'?'YOLO only':'Yytsi only'}
+ · review priority {Math.round(reviewCandidate.review_priority*100)}/100
+ · mask support {Math.round(reviewCandidate.mask_support*100)}%</p>
+ <div className="row" style={{flexWrap:'wrap'}}>
+ <button className="secondary" onClick={()=>setFusionIndex(i=>Math.max(0,i-1))}>Previous</button>
+ <button disabled={fusionSaving} onClick={()=>void decideFusion('accept')}>Accept wall</button>
+ <button disabled={fusionSaving} className="secondary" onClick={()=>void decideFusion('reject')}>Not wall</button>
+ <button disabled={fusionSaving} className="secondary" onClick={()=>void decideFusion('unsure')}>Unsure</button>
+ <button className="secondary" onClick={()=>setFusionIndex(i=>Math.min(unified.candidates.length-1,i+1))}>Skip →</button>
+ </div>
+ <small>{fusionDecisions[reviewCandidate.id]?'Last decision: '+fusionDecisions[reviewCandidate.id]: 'Not reviewed'}.
+ Review priority is a heuristic, not calibrated confidence. Decisions are stored for later adjudication.</small>
+ </>}
+ </div>
  <div className="row" style={{flexWrap:'wrap',marginTop:8}}>
  <span>Yytsi mask axes: {unified.comparison.mask_lines}</span>
  <span>YOLO wall boxes: {unified.comparison.yolo_wall_boxes}</span>
- <span>YOLO supported by mask: {unified.comparison.accepted_yolo_candidates}</span>
+ <span>YOLO with mask support: {unified.comparison.accepted_yolo_candidates}</span>
  <span>Fused wall proposals: {unified.comparison.fused_walls}</span>
  <span>Disconnected groups: {unified.comparison.topology.connected_components}</span>
  </div>
@@ -380,7 +432,7 @@ export default function Editor(){
  <label><input type="checkbox" checked={showComparisonBoxes} onChange={e=>setShowComparisonBoxes(e.target.checked)}/> YOLO boxes</label>
  <button disabled={busy||modelBusy} onClick={applyUnified}>Use fused proposal in draft</button>
  </div>
- <small>Comparison is read-only. Teal pixels = Yytsi; blue lines = proposed fused geometry. None are verified.</small>
+ <small>Teal mask = Yytsi; blue = agreement; amber = YOLO-only; purple = Yytsi-only. Reviewing saves labels, not layouts. Only accepted walls enter the draft.</small>
  <div><a href={`${API}/blueprints/${id}/training-export`} target="_blank" rel="noreferrer">View corrected wall labels (training JSON)</a></div>
  </div>}
   {view==='2d'&&modelDetections&&<div style={{border:'1px solid #9fc7d5',borderRadius:12,padding:12,marginBottom:12,background:'#f1f9fa',color:'#18364a'}}>
@@ -465,12 +517,17 @@ export default function Editor(){
  style={{filter:grayscale?'grayscale(1) contrast(1.12) brightness(1.08)':'none'}}/>
  {segmentationOverlay&&showSegmentationOverlay&&<image href={segmentationOverlay}
  width={geometry.width_px} height={geometry.height_px} pointerEvents="none"/>}
- {unified&&showUnifiedWalls&&unified.candidates.map(item=>
+ {unified&&showUnifiedWalls&&unified.candidates.map((item,i)=>
  <line key={'fused-'+item.id} x1={item.start.x} y1={item.start.y}
- x2={item.end.x} y2={item.end.y} pointerEvents="none"
- stroke={item.sources.some(source=>source.startsWith('yolo_box:'))?'#1d4ed8':'#0ea5e9'}
- strokeWidth={Math.max(3,geometry.width_px/420)} strokeDasharray="4 2">
- <title>{item.sources.join(' + ')}; mask support {Math.round(item.mask_support*100)}%</title>
+ x2={item.end.x} y2={item.end.y}
+ onClick={e=>{e.stopPropagation();setFusionIndex(i)}}
+ style={{cursor:'pointer'}}
+ stroke={fusionDecisions[item.id]==='reject'?'#9ca3af':
+ fusionDecisions[item.id]==='accept'?'#16a34a':
+ item.category==='agreed'?'#1d4ed8':item.category==='yolo_only'?'#d97706':'#9333ea'}
+ strokeWidth={Math.max(i===fusionIndex?7:4,geometry.width_px/300)} strokeDasharray="5 3"
+ opacity={fusionDecisions[item.id]==='reject'?.4:1}>
+ <title>{item.category}; mask support {Math.round(item.mask_support*100)}%</title>
  </line>)}
  {unified&&showComparisonBoxes&&unified.detections?.boxes.filter(b=>b.category==='wall').map((b,i)=>
  <rect key={'compare-box-'+i} x={b.x1} y={b.y1} width={b.x2-b.x1} height={b.y2-b.y1}
