@@ -60,7 +60,7 @@ export default function Editor(){
  const [evaluations,setEvaluations]=useState<EvaluationRecord[]>([]);
  const [activeEvaluation,setActiveEvaluation]=useState<string|null>(null);
  const [evaluationBusy,setEvaluationBusy]=useState(false);
- const [correctionMinutes,setCorrectionMinutes]=useState('3');
+ const [correctionMinutes,setCorrectionMinutes]=useState('');
  const [evaluationNotes,setEvaluationNotes]=useState('');
  const [reviewAttested,setReviewAttested]=useState(false);
  const [evaluationError,setEvaluationError]=useState('');
@@ -168,7 +168,7 @@ export default function Editor(){
    if(!geometry||!activeEvaluation)return;
    if(!reviewAttested){setEvaluationError('Review all walls and openings before attesting reference accuracy.');return}
    const minutes=Number(correctionMinutes);
-   if(!Number.isFinite(minutes)||minutes<0||minutes>1440){
+   if(correctionMinutes.trim()===''||!Number.isFinite(minutes)||minutes<0||minutes>1440){
      setEvaluationError('Enter actual correction minutes (0 to 1440).');return;
    }
    setEvaluationBusy(true);setEvaluationError('');
