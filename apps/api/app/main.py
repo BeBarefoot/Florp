@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from PIL import Image
 import fitz
 from .config import settings
-from .models import Project, Blueprint, Layout, Render, WallAnnotation, ModelWallCorrection, FusionCandidateReview
+from .models import Project, Blueprint, Layout, Render, WallAnnotation, ModelWallCorrection, FusionCandidateReview, ExtractionEvaluation
 from .geometry import Geometry, fallback_geometry, validate_geometry
 from .providers import extract_geometry, ProviderUnavailable, ProviderAuthenticationError, ProviderConfigurationError, ProviderOutputError
 from .evidence import inspect_plan
@@ -75,7 +75,7 @@ def delete_project(pid:str):
         plans=list(s.exec(select(Blueprint).where(Blueprint.project_id==pid)).all())
         ids=[bp.id for bp in plans]
         for bid in ids:
-            for table in (Render,ModelWallCorrection,WallAnnotation,FusionCandidateReview,Layout):
+            for table in (Render,ModelWallCorrection,WallAnnotation,FusionCandidateReview,ExtractionEvaluation,Layout):
                 for row in s.exec(select(table).where(table.blueprint_id==bid)).all():
                     s.delete(row)
         for bp in plans:s.delete(bp)
@@ -131,6 +131,99 @@ def get_layout(bid:str):
         row=s.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
         if not row:raise HTTPException(404,'No layout')
         return row
+class EvaluationStartBody(BaseModel):
+    provider: str
+    image_sha256: str
+    base_layout_version: int
+    geometry: Geometry
+
+class EvaluationFinishBody(BaseModel):
+    geometry: Geometry
+    correction_seconds: int
+    notes: str = ''
+    human_reviewed: bool = False
+
+@app.post('/blueprints/{bid}/evaluations')
+def start_extraction_evaluation(bid:str,body:EvaluationStartBody):
+    """Store an immutable AI baseline BEFORE manual corrections."""
+    import hashlib
+    from .extraction_exports import normalize_florp_geometry
+    if body.provider not in ('florp-fusion','florp-yolo','florp-yytsi'):
+        raise HTTPException(422,'Unsupported baseline provider')
+    with Session(engine) as session:
+        bp=session.get(Blueprint,bid)
+        if not bp:raise HTTPException(404,'Blueprint not found')
+        current=session.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
+        if not current:raise HTTPException(404,'No saved layout')
+        preview=Path(bp.preview_path)
+        digest=hashlib.sha256(preview.read_bytes()).hexdigest()
+        if digest!=body.image_sha256 or current.version!=body.base_layout_version:
+            raise HTTPException(409,'Image or saved layout changed; run extraction again')
+        if body.geometry.width_px!=bp.width or body.geometry.height_px!=bp.height:
+            raise HTTPException(422,'Baseline dimensions do not match blueprint')
+        if not body.geometry.walls:raise HTTPException(422,'No detected walls to evaluate')
+        baseline=normalize_florp_geometry(preview,body.geometry.model_dump(),body.provider)
+        row=ExtractionEvaluation(blueprint_id=bid,image_sha256=digest,
+            provider=body.provider,base_layout_version=current.version,
+            baseline=baseline.model_dump(mode='json'))
+        session.add(row);session.commit();session.refresh(row)
+        return {'id':row.id,'status':row.status,'provider':row.provider,
+                'baseline_walls':len(baseline.walls),'created_at':row.created_at}
+
+@app.get('/blueprints/{bid}/evaluations')
+def list_extraction_evaluations(bid:str):
+    with Session(engine) as session:
+        if not session.get(Blueprint,bid):raise HTTPException(404,'Blueprint not found')
+        rows=session.exec(select(ExtractionEvaluation).where(
+            ExtractionEvaluation.blueprint_id==bid).order_by(
+            ExtractionEvaluation.created_at.desc())).all()
+        return [{'id':r.id,'provider':r.provider,'status':r.status,
+                 'base_layout_version':r.base_layout_version,
+                 'image_sha256':r.image_sha256,'metrics':r.metrics,
+                 'correction_seconds':r.correction_seconds,
+                 'notes':r.notes,'created_at':r.created_at} for r in rows]
+
+@app.post('/blueprints/{bid}/evaluations/{evaluation_id}/finish')
+def finish_extraction_evaluation(bid:str,evaluation_id:str,body:EvaluationFinishBody):
+    """Commit attested human reference; comparisons never overwrite layouts."""
+    import hashlib
+    from datetime import datetime,timezone
+    from .extraction_benchmark import PlanPrediction,compare
+    from .extraction_exports import normalize_florp_geometry
+    if not body.human_reviewed:
+        raise HTTPException(422,'Explicit independent human review required')
+    if not 0<=body.correction_seconds<=86400:
+        raise HTTPException(422,'Correction duration must be between 0 and 24 hours')
+    if len(body.notes)>2000:raise HTTPException(422,'Notes are too long')
+    with Session(engine) as session:
+        row=session.get(ExtractionEvaluation,evaluation_id)
+        if row is None or row.blueprint_id!=bid:raise HTTPException(404,'Evaluation not found')
+        if row.status!='baseline':raise HTTPException(409,'Evaluation already completed')
+        bp=session.get(Blueprint,bid)
+        if bp is None:raise HTTPException(404,'Blueprint not found')
+        preview=Path(bp.preview_path)
+        if hashlib.sha256(preview.read_bytes()).hexdigest()!=row.image_sha256:
+            raise HTTPException(409,'Source image changed')
+        if (body.geometry.width_px,body.geometry.height_px)!=(bp.width,bp.height):
+            raise HTTPException(422,'Reference image dimensions mismatch')
+        if not body.geometry.walls:
+            raise HTTPException(422,'Reference must contain independently checked walls')
+        if any(w.id.startswith('w') and w.id[1:].isdigit() for w in body.geometry.walls):
+            # Generic starter square has IDs w0..w3: reject as reference.
+            raise HTTPException(422,'Replace starter geometry before claiming ground truth')
+        reference=normalize_florp_geometry(preview,body.geometry.model_dump(),'human-reviewed')
+        baseline=PlanPrediction.model_validate(row.baseline)
+        metrics=compare(reference,baseline)
+        row.reference=reference.model_dump(mode='json')
+        row.metrics=metrics
+        row.correction_seconds=body.correction_seconds
+        row.notes=body.notes.strip()
+        row.status='completed'
+        row.completed_at=datetime.now(timezone.utc)
+        session.add(row);session.commit()
+        return {'id':row.id,'status':row.status,'metrics':metrics,
+                'correction_seconds':row.correction_seconds}
+
 @app.get('/blueprints/{bid}/topology')
 def topology_report(bid: str):
     with Session(engine) as session:
