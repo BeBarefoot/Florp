@@ -236,3 +236,32 @@ comparison panel, open **Suggested missing partitions**:
 Run `uv run pytest -q tests/test_geometry_review_agent.py` to verify
 the ranking, mask rejection, duplicate suppression, and no-mutation rules.
 Do not claim missing-wall recovery accuracy until scored on held-out plans.
+
+## 11. Canvas-first annotation workflow (CVAT / Label Studio patterns)
+
+Design references:
+- CVAT annotation editor: https://docs.cvat.ai/docs/annotation/annotation-editor/
+- CVAT zoom/selection: https://docs.cvat.ai/docs/annotation/annotation-editor/controls-sidebar/
+- Label Studio ML-assisted preannotations: https://github.com/HumanSignal/label-studio/blob/develop/docs/source/guide/labeling.md
+
+The main 2D page now keeps **one selected item** in a compact inspector beside
+the plan. Click a line or opening on the plan; its segment appears highlighted
+with an orange halo. The inspector displays model source, decision, previous/
+next/next pending, and a compact progress bar. You can use the focus toggle to
+zoom into the selected object. The large model-candidate lists no longer sit
+between the review buttons and the drawing; diagnostic metrics are collapsed.
+
+Keyboard controls in 2D review/edit mode (disabled while typing):
+- Left/Right arrow: previous/next
+- 1: Wall (or confirm current detected opening)
+- 2: Door (wall-candidate classification only)
+- 3: Window (wall-candidate classification only)
+- 4: Reject
+- 5: Unsure
+- F: toggle zoom to selection
+
+Review decisions are stored in the append-only `FusionCandidateReview`
+stream, preserving image and inference provenance. The current model's
+preannotations are *not* ground truth. Accepted walls are put in the editable
+geometry only when **Apply accepted walls to draft** is selected; verified
+human reference is still a separate evaluation record.
