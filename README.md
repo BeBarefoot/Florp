@@ -474,3 +474,8 @@ accepted wall draft has deliberately empty room/opening objects, because
 merging human decisions into a topology graph requires additional snapping,
 junction IDs, and opening-link validation. Use the existing 2D correction and
 topology audit for the next step; never treat the default 3D shell as verified.
+
+
+## Current priorities (accuracy-first, mobile roadmap)
+
+**Trusted 2D extraction is the release gate** before shipping the homeowner mobile experience. See [docs/ROADMAP_ACCURACY_MOBILE.md](docs/ROADMAP_ACCURACY_MOBILE.md) for the full task list: YOLO-first wall reconstruction, shared junctions/openings, benchmark and correction loop, and the later mobile-first upload → 3D → saved viewpoint → geometry-locked design generation journey. Mobile starts as a responsive PWA; normal users should not see model-debugging controls.
