@@ -50,7 +50,7 @@ export default function Editor(){
    comparison:{mask_lines:number;yolo_wall_boxes:number;accepted_yolo_candidates:number;
      rejected_yolo_candidates:number;fused_walls:number;
      yolo_only_candidates:number;yytsi_only_candidates:number;agreed_candidates:number;
-     topology:{connected_components:number;dangling_nodes:string[]}};
+     topology:{disconnected_components:number;dangling_endpoints:number}};
    detections:ModelDetections|null;segmentation:{provider:string};
    yolo_error:string|null;mask_overlay_png_base64:string;saved:boolean;
  };
@@ -116,7 +116,22 @@ export default function Editor(){
    setModelBusy(true);setStatus('');
    try{
      const result=await request<UnifiedComparison>(`/blueprints/${id}/compare-extraction`,{method:'POST'});
-     setUnified(result);setFusionIndex(0);setFusionDecisions({});setShowUnifiedWalls(true);setShowComparisonBoxes(false);
+     const previous=await request<Array<{
+       preview_sha256:string;candidate_id:string;decision:'accept'|'reject'|'unsure';
+       candidate:EvidenceCandidate}>>(`/blueprints/${id}/fusion-reviews`);
+     const matches:Record<string,'accept'|'reject'|'unsure'>={};
+     for(const event of previous){
+       const current=result.candidates.find(c=>c.id===event.candidate_id);
+       if(event.preview_sha256!==result.input_manifest.source_preview_sha256||!current)continue;
+       // IDs alone are not sufficient if model weights/config change.
+       if(JSON.stringify({start:current.start,end:current.end,sources:current.sources,
+                          category:current.category})!==
+          JSON.stringify({start:event.candidate.start,end:event.candidate.end,
+                          sources:event.candidate.sources,category:event.candidate.category}))continue;
+       matches[current.id]=event.decision;
+     }
+     setUnified(result);setFusionIndex(0);setFusionDecisions(matches);
+     setShowUnifiedWalls(true);setShowComparisonBoxes(false);
      setSegmentationOverlay('data:image/png;base64,'+result.mask_overlay_png_base64);
      setShowSegmentationOverlay(true);
      setStatus('Comparison ready — no layout was saved or replaced. Review the proposed walls before applying.');
@@ -423,7 +438,7 @@ export default function Editor(){
  <span>YOLO wall boxes: {unified.comparison.yolo_wall_boxes}</span>
  <span>YOLO with mask support: {unified.comparison.accepted_yolo_candidates}</span>
  <span>Fused wall proposals: {unified.comparison.fused_walls}</span>
- <span>Disconnected groups: {unified.comparison.topology.connected_components}</span>
+ <span>Disconnected groups: {unified.comparison.topology.disconnected_components}</span>
  </div>
  {unified.yolo_error&&<small>YOLO unavailable: {unified.yolo_error}. Showing mask-only evidence.</small>}
  <div className="row" style={{flexWrap:'wrap',marginTop:8}}>
