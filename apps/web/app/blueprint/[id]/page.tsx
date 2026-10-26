@@ -96,7 +96,7 @@ export default function Editor(){
    setModelBusy(true);setStatus('');
    try{
      const result=await request<Reconstructed>(`/blueprints/${id}/pretrained-reconstruct`,{method:'POST'});
-     setModelDetections(result.detections);setDetectorAudit(result.detection_audit||null);setShowModelDetections(true);setSegmentationOverlay(null);
+     setModelDetections(result.detections);setDetectorAudit(result.detection_audit||null);setShowModelDetections(true);setSegmentationOverlay(null);setUnified(null);
      setLayout(result.layout);setGeometry(result.layout.geometry);setSelectedDetection(null);setRejectedDetections([]);
      setStatus('Pretrained model generated '+result.layout.geometry.walls.length+' draft walls, '+result.layout.geometry.rooms.length+' proposed enclosed rooms and '+result.layout.geometry.openings.length+' provisional openings. Review all results before confirming.');
    }catch(err){setStatus(String(err))}
@@ -139,7 +139,7 @@ export default function Editor(){
      setLayout(result.layout);setGeometry(result.layout.geometry);
      setSegmentationOverlay('data:image/png;base64,'+result.mask_overlay_png_base64);
      setShowSegmentationOverlay(true);
-     setModelDetections(null);setDetectorAudit(null);setSelectedDetection(null);setSelectedWall(null);
+     setModelDetections(null);setDetectorAudit(null);setUnified(null);setSelectedDetection(null);setSelectedWall(null);
      setStatus(result.report.provider+' segmentation: '+result.report.raw_mask_line_count+' detected axes → '+result.report.normalized_mask_line_count+
        ' consolidated wall runs. Check the mask against the 3D solids; geometry and openings are unverified.');
    }catch(err){setStatus(String(err))}
@@ -381,6 +381,7 @@ export default function Editor(){
  <button disabled={busy||modelBusy} onClick={applyUnified}>Use fused proposal in draft</button>
  </div>
  <small>Comparison is read-only. Teal pixels = Yytsi; blue lines = proposed fused geometry. None are verified.</small>
+ <div><a href={`${API}/blueprints/${id}/training-export`} target="_blank" rel="noreferrer">View corrected wall labels (training JSON)</a></div>
  </div>}
   {view==='2d'&&modelDetections&&<div style={{border:'1px solid #9fc7d5',borderRadius:12,padding:12,marginBottom:12,background:'#f1f9fa',color:'#18364a'}}>
  <div className="row" style={{justifyContent:'space-between',alignItems:'center'}}>
