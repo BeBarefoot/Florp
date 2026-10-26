@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     fal_api_base: str = 'https://queue.fal.run'
     pretrained_yolo_weights: str = ''
     wall_segmentation_weights: str = ''
+    wall_segmentation_provider: str = 'yytsi'
+    yytsi_run_dir: str = './models/yytsi'
+    yytsi_checkpoint: str = 'best.safetensors'
+    yytsi_device: str = 'auto'
     llm_max_completion_tokens: int = 8192
     max_upload_mb: int = 20
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
