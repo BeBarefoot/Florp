@@ -507,3 +507,7 @@ cd apps/api
 uv run pytest -q tests/test_opening_review.py tests/test_compare_extraction.py
 uv run pytest -q
 ```
+
+## Extraction accuracy sprint
+
+Start with the [complete Mac-first action plan](docs/ACCURACY_ACTION_PLAN.md): a simplified Extract → Correct → Measure workflow, source-locked SQLite evaluations, JSON exports, benchmarking criteria, and commercial-license decision gates. Do not deploy research checkpoints without verifying commercial rights.
