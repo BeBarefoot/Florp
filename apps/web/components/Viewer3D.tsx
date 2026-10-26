@@ -67,7 +67,7 @@ export default function Viewer3D({geometry}:{geometry:Geometry}){
   const data=useMemo(()=>{
     // Detector-derived walls are the authoritative solids; proposed room polygons
     // may add floors, but must NEVER replace, mask, or duplicate detected walls.
-    const hasModelWalls=geometry.walls.some(w=>!/^w[0-3]$/.test(w.id));
+    const hasModelWalls=geometry.walls.length>0;
     const hasPlaceholderRoom=geometry.rooms.some(r=>r.id==='room-1' &&
       geometry.warnings.some(w=>w.includes('Starter geometry')));
     const edges=hasModelWalls||hasPlaceholderRoom?[]:shellEdges(geometry);
@@ -80,8 +80,18 @@ export default function Viewer3D({geometry}:{geometry:Geometry}){
     });
     // AI/proposed and manually placed walls not already represented as room boundary.
     // Avoid double-rendering legacy starter rectangle and coincident edges.
+    const pad=Math.min(geometry.width_px,geometry.height_px)*.12;
+    const rectangle:[Pt,Pt][]=[
+      [{x:pad,y:pad},{x:geometry.width_px-pad,y:pad}],
+      [{x:geometry.width_px-pad,y:pad},{x:geometry.width_px-pad,y:geometry.height_px-pad}],
+      [{x:geometry.width_px-pad,y:geometry.height_px-pad},{x:pad,y:geometry.height_px-pad}],
+      [{x:pad,y:geometry.height_px-pad},{x:pad,y:pad}]];
+    const close=(p:Pt,q:Pt)=>Math.hypot(p.x-q.x,p.y-q.y)<.2;
+    const isUntouchedStarter=(w:Geometry['walls'][number])=>hasPlaceholderRoom&&/^w[0-3]$/.test(w.id)&&
+      rectangle.some(([a,b])=>(close(w.start,a)&&close(w.end,b))||
+                               (close(w.start,b)&&close(w.end,a)));
     const independent=geometry.walls.filter(w=>{
-      if(hasModelWalls)return !(/^w[0-3]$/.test(w.id)&&hasPlaceholderRoom);
+      if(hasModelWalls)return !isUntouchedStarter(w);
       if(/^w[0-3]$/.test(w.id)&&geometry.rooms.length===1)return false;
       const m={x:(w.start.x+w.end.x)/2,y:(w.start.y+w.end.y)/2};
       return !edges.some(e=>{
