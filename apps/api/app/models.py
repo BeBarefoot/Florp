@@ -65,4 +65,5 @@ class FusionCandidateReview(SQLModel,table=True):
     category: str
     decision: str
     candidate: dict = Field(default_factory=dict,sa_type=JSON)
+    input_manifest: dict = Field(default_factory=dict,sa_type=JSON)
     created_at: datetime = Field(default_factory=now)
