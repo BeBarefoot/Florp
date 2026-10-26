@@ -87,3 +87,22 @@ def test_starter_outline_cannot_be_reference(evaluation_setup):
         main.finish_extraction_evaluation(bid,current['id'],main.EvaluationFinishBody(
           geometry=fallback_geometry(400,200),correction_seconds=20,human_reviewed=True))
     assert err.value.status_code==422
+
+def test_evaluation_export_has_source_bound_baseline_and_completed_truth(evaluation_setup):
+    _,bid,image=evaluation_setup
+    record=start(bid,image,geometry('model-1'))
+    before=main.get_extraction_evaluation(bid,record['id'])
+    assert before['schema_version']==1
+    assert before['reference'] is None
+    assert before['baseline']['provider']=='florp-fusion'
+    main.finish_extraction_evaluation(bid,record['id'],main.EvaluationFinishBody(
+        geometry=geometry('human-1','human-2'),
+        correction_seconds=90,notes='one partition missed',
+        human_reviewed=True))
+    after=main.get_extraction_evaluation(bid,record['id'])
+    assert len(after['reference']['walls'])==2
+    assert after['metrics']['walls']['recall']==.5
+    assert after['correction_seconds']==90
+    with pytest.raises(HTTPException) as missing:
+        main.get_extraction_evaluation(bid,'missing-record')
+    assert missing.value.status_code==404
