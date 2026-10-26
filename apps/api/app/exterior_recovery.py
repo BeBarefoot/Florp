@@ -16,7 +16,8 @@ class ExteriorRun(BaseModel):
     id: str
     start: Pt
     end: Pt
-    support: float = Field(ge=0,le=1)
+    image_support: float = Field(ge=0,le=1)
+    axis: str = 'horizontal'
     kind: str = 'exterior_wall_candidate'
 
 def suggest_bottom_runs(geometry:Geometry, preview:Path,
@@ -69,7 +70,7 @@ def suggest_bottom_runs(geometry:Geometry, preview:Path,
                min(w.start.x,w.end.x)<=left+14 and max(w.start.x,w.end.x)>=right-14
                for w in geometry.walls):continue
         suggestions.append(ExteriorRun(id=f'bottom-{len(suggestions)}',
-            start=Pt(x=left,y=y),end=Pt(x=right,y=y),support=round(score,3)))
+            start=Pt(x=left,y=y),end=Pt(x=right,y=y),image_support=round(score,3)))
     # Return longest evidence-backed run; avoid multiple parallel wall layers.
-    suggestions.sort(key=lambda item:(-(item.end.x-item.start.x),-item.support))
+    suggestions.sort(key=lambda item:(-(item.end.x-item.start.x),-item.image_support))
     return suggestions[:1]
