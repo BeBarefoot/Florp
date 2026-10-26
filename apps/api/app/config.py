@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     yytsi_run_dir: str = './models/yytsi'
     yytsi_checkpoint: str = 'best.safetensors'
     yytsi_device: str = 'auto'
+    raster2seq_enabled: bool = False
+    raster2seq_root: str = ''
+    raster2seq_python: str = ''
+    raster2seq_device: str = 'cuda'
+    raster2seq_checkpoint: str = 'hf:cubicasa5k'
+    raster2seq_timeout_seconds: int = 600
     segmentation_multiscale: bool = True
     segmentation_tile_size: int = 448
     segmentation_tile_overlap: float = 0.30
