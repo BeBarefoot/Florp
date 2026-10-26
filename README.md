@@ -440,3 +440,37 @@ provenance, repeatable comparisons and non-destructive review. A measured
 improvement in wall completeness, rooms or time-to-correction still requires
 human-labeled ground truth on held-out complete plans. Do not crop away
 outer walls or dimension evidence as a preprocessing shortcut.
+
+
+## Confidence-aware fusion review (October 2026)
+
+**Compare YOLO + Yytsi** now returns a ranked and color-coded queue:
+
+- **Both models agree (blue)** — wall-mask line with matching YOLO box, or YOLO
+  axis with local mask support.
+- **YOLO only (amber)** — a model box was NOT supported by the mask. Previously
+  dropped from fusion; now it remains a review candidate, never automatically
+  added to the default proposal.
+- **Yytsi only (purple)** — a mask-supported wall axis without a matching YOLO box.
+
+The displayed **review priority** is a hand-defined ranking score, not a
+calibrated confidence or evidence that a wall exists. The 2D plan highlights
+the selected candidate, and the inline Next-item UI has **Accept wall / Not
+wall / Unsure / Skip**, Previous, and direct click-to-select. Accepted lines
+turn green; rejected lines become dim. Only **accepted** candidates are
+loaded by **Use fused proposal in draft**. No walls are silently verified.
+
+Review actions are stored as append-only `FusionCandidateReview` entries
+(via `POST /blueprints/{id}/fusion-reviews`), linked to the blueprint's
+SHA-256, proposed source model(s), candidate coordinates, category, and
+decision. `GET /blueprints/{id}/fusion-reviews` restores decisions for
+unchanged candidates; the existing `training-export` now includes these
+review events. Review events are *not* automatically adjudicated training
+truth; a second-pass human quality check and held-out benchmark are still
+needed before fine-tuning. Previous saved layouts aren't touched by reviewing.
+
+This is **not yet a complete connected structural wall graph**. The newly
+accepted wall draft has deliberately empty room/opening objects, because
+merging human decisions into a topology graph requires additional snapping,
+junction IDs, and opening-link validation. Use the existing 2D correction and
+topology audit for the next step; never treat the default 3D shell as verified.
