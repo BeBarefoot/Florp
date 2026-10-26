@@ -67,7 +67,7 @@ export default function Viewer3D({geometry}:{geometry:Geometry}){
   const data=useMemo(()=>{
     // Detector-derived walls are the authoritative solids; proposed room polygons
     // may add floors, but must NEVER replace, mask, or duplicate detected walls.
-    const hasModelWalls=geometry.walls.some(w=>w.id.startsWith('model-'));
+    const hasModelWalls=geometry.walls.some(w=>w.id.startsWith('model-')||w.id.startsWith('mask-'));
     const edges=hasModelWalls?[]:shellEdges(geometry);
     const floors=geometry.rooms.filter(r=>validPolygon(r.points)).map(r=>{
       const shape=new THREE.Shape();
