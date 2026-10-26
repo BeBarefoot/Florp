@@ -95,3 +95,38 @@ def test_fusion_review_event_export_and_hash_guard(tmp_path,monkeypatch):
         main.review_fusion_candidate(bid,body.model_copy(update={'preview_sha256':'0'*64}))
     except HTTPException as err:assert err.status_code==409
     else:raise AssertionError('Stale image review must be rejected')
+
+def test_fusion_candidate_can_be_reclassified_as_door_or_window(tmp_path,monkeypatch):
+    engine=create_engine('sqlite://',connect_args={'check_same_thread':False},
+                         poolclass=StaticPool)
+    SQLModel.metadata.create_all(engine)
+    monkeypatch.setattr(main,'engine',engine)
+    preview=tmp_path/'plan.png'
+    assert cv2.imwrite(str(preview),np.full((200,400,3),255,dtype='uint8'))
+    with Session(engine) as session:
+        project=Project(title='opening labels')
+        session.add(project);session.flush()
+        bp=Blueprint(project_id=project.id,filename='plan.png',
+                     local_path=str(preview),preview_path=str(preview),
+                     width=400,height=200)
+        session.add(bp);session.flush()
+        session.add(Layout(blueprint_id=bp.id,
+                           geometry=Geometry(width_px=400,height_px=200).model_dump()))
+        session.commit();bid=bp.id
+    from app.evidence_fusion import FusedCandidate
+    from app.geometry import Pt
+    candidate=FusedCandidate(id='yolo-wall-6',start=Pt(x=50,y=60),
+            end=Pt(x=140,y=60),sources=['yolo_box:6'],
+            mask_support=.1,category='yolo_only')
+    hash_value=hashlib.sha256(preview.read_bytes()).hexdigest()
+    for classification in ('door','window'):
+        response=main.review_fusion_candidate(bid,main.FusionReviewBody(
+            preview_sha256=hash_value,candidate=candidate.model_dump(),
+            decision=classification))
+        assert response['decision']==classification
+    export=main.training_export(bid)
+    assert [e['decision'] for e in export['fusion_candidate_reviews']]==['door','window']
+    with Session(engine) as session:
+        stored=list(session.exec(select(Layout).where(Layout.blueprint_id==bid)).all())
+        assert len(stored)==1
+        assert stored[0].geometry['openings']==[]
