@@ -43,9 +43,10 @@ export default function Editor(){
  const [status,setStatus]=useState(''),[busy,setBusy]=useState(false);
  const [view,setView]=useState<'2d'|'3d'>('2d');
  const [modelDetections,setModelDetections]=useState<ModelDetections|null>(null);
+ type OpeningHint={candidate_id:string;kind:'door'|'window';x1:number;y1:number;x2:number;y2:number;source_confidence:number;wall_id:string|null;fraction:number|null;reason:string};
  type EvidenceCandidate={id:string;start:Pt;end:Pt;sources:string[];mask_support:number;category:'agreed'|'yolo_only'|'yytsi_only';review_priority:number;yolo_confidence?:number|null};
  type UnifiedComparison={
-   base_layout_version:number;proposal:Geometry;candidates:EvidenceCandidate[];
+   base_layout_version:number;proposal:Geometry;candidates:EvidenceCandidate[];opening_hints:OpeningHint[];
    input_manifest:{source_preview_sha256:string;[key:string]:unknown};
    comparison:{mask_lines:number;yolo_wall_boxes:number;accepted_yolo_candidates:number;
      rejected_yolo_candidates:number;fused_walls:number;
@@ -58,6 +59,8 @@ export default function Editor(){
  const [fusionIndex,setFusionIndex]=useState(0);
  const [fusionDecisions,setFusionDecisions]=useState<Record<string,'accept'|'reject'|'unsure'|'door'|'window'>>({});
  const [fusionSaving,setFusionSaving]=useState(false);
+ const [openingIndex,setOpeningIndex]=useState(0);
+ const [openingDecisions,setOpeningDecisions]=useState<Record<string,'accept'|'reject'|'unsure'>>({});
  const [showUnifiedWalls,setShowUnifiedWalls]=useState(true);
  const [showComparisonBoxes,setShowComparisonBoxes]=useState(false);
   const [segmentationOverlay,setSegmentationOverlay]=useState<string|null>(null);
@@ -136,7 +139,7 @@ export default function Editor(){
                           sources:event.candidate.sources,category:event.candidate.category}))continue;
        matches[current.id]=event.decision;
      }
-     setUnified(result);setFusionIndex(0);setFusionDecisions(matches);
+     setUnified(result);setFusionIndex(0);setFusionDecisions(matches);setOpeningIndex(0);setOpeningDecisions({});
      setShowUnifiedWalls(true);setShowComparisonBoxes(false);
      setSegmentationOverlay('data:image/png;base64,'+result.mask_overlay_png_base64);
      setShowSegmentationOverlay(true);setShowModelDetections(false);
@@ -160,7 +163,48 @@ export default function Editor(){
    }catch(err){setStatus('Unable to save review: '+String(err))}
    finally{setFusionSaving(false)}
  }
- function applyUnified(){
+ const currentOpening=unified?.opening_hints[openingIndex]||null;
+ async function reviewDetectedOpening(decision:'accept'|'reject'|'unsure'){
+   if(!unified||!currentOpening||fusionSaving)return;
+   setFusionSaving(true);
+   try{
+     // Persist classification through the same audit stream as reviewed wall
+     // proposals. Opening geometry is NOT added by the review action.
+     const horizontal=currentOpening.x2-currentOpening.x1>=currentOpening.y2-currentOpening.y1;
+     const candidate:EvidenceCandidate={id:currentOpening.candidate_id,
+       start:horizontal?{x:currentOpening.x1,y:(currentOpening.y1+currentOpening.y2)/2}:{x:(currentOpening.x1+currentOpening.x2)/2,y:currentOpening.y1},
+       end:horizontal?{x:currentOpening.x2,y:(currentOpening.y1+currentOpening.y2)/2}:{x:(currentOpening.x1+currentOpening.x2)/2,y:currentOpening.y2},
+       sources:['yolo_'+currentOpening.kind],mask_support:0,
+       category:'yolo_only',review_priority:currentOpening.source_confidence};
+     await request(`/blueprints/${id}/fusion-reviews`,{method:'POST',
+       headers:{'Content-Type':'application/json'},body:JSON.stringify({
+       preview_sha256:unified.input_manifest.source_preview_sha256,candidate,
+       decision:decision==='accept'?currentOpening.kind:decision,
+       input_manifest:unified.input_manifest})});
+     setOpeningDecisions(old=>({...old,[currentOpening.candidate_id]:decision}));
+     setOpeningIndex(i=>Math.min(i+1,unified.opening_hints.length-1));
+     setStatus(decision==='accept'?'Opening classified. Apply reviewed draft to attach it to a wall.':'Opening review saved.');
+   }catch(err){setStatus(String(err))}
+   finally{setFusionSaving(false)}
+ }
+ async function applyReviewedOpenings(draft:Geometry):Promise<{geometry:Geometry;messages:string[]}>{
+   if(!unified)return {geometry:draft,messages:[]};
+   let current=draft;const messages:string[]=[];
+   for(const hint of unified.opening_hints){
+     if(openingDecisions[hint.candidate_id]!=='accept')continue;
+     try{
+       const res=await request<{geometry:Geometry;status:string;hint:OpeningHint}>(
+         `/blueprints/${id}/opening-review/draft`,{method:'POST',
+         headers:{'Content-Type':'application/json'},body:JSON.stringify({geometry:current,hint})});
+       current=res.geometry;
+       if(res.status!=='added'&&res.status!=='updated'){
+         messages.push(hint.kind+' '+hint.candidate_id+': '+res.status+' — requires manual review');
+       }
+     }catch(err){messages.push(hint.kind+' '+hint.candidate_id+': '+String(err))}
+   }
+   return {geometry:current,messages};
+ }
+ async function applyUnified(){
    if(!unified||!layout||!geometry)return;
    if(layout.version!==unified.base_layout_version){
      setStatus('Saved layout changed since comparison. Run comparison again.');return;
@@ -173,9 +217,11 @@ export default function Editor(){
    if(!selected.length){setStatus('Accept at least one candidate before applying a wall draft.');return;}
    const walls:Wall[]=selected.map(c=>({id:c.id,start:c.start,end:c.end,
      thickness_m:.15,height_m:2.8,inferred:true}));
-   setGeometry({...unified.proposal,walls,rooms:[],openings:[],structure_reviewed:false});
+   const draft={...unified.proposal,walls,rooms:[],openings:[],structure_reviewed:false};
+   const openings=await applyReviewedOpenings(draft);
+   setGeometry(openings.geometry);
    setSelectedWall(null);
-   setStatus(selected.length+' accepted candidates loaded as UNSAVED walls. Confirm topology and openings after review.');
+   setStatus(selected.length+' accepted walls loaded into UNSAVED draft. '+(openings.messages.length?openings.messages.join('; '):'Reviewed openings placed where a unique host wall was found. Confirm measurements.'));
  }
  async function trySegmentation(){
    if(!window.confirm('Run experimental local wall segmentation? This creates a new draft and may replace all unreviewed wall proposals. Existing saved versions remain available.'))return;
@@ -425,6 +471,21 @@ export default function Editor(){
  <div className="panel"><h2>{view==='2d'?'Floor-plan overlay':'3D shell · same outline'}</h2>
  {view==='2d'&&unified&&<div style={{border:'1px solid #94a3b8',borderRadius:12,padding:12,marginBottom:12,background:'#f1f5f9',color:'#0f172a'}}>
  <strong>Same-image extraction comparison</strong>
+ <div style={{border:'1px solid #cbd5e1',borderRadius:10,padding:10,marginTop:10}}>
+ <strong>Detected doors and windows · {unified.opening_hints.length}</strong>
+ {currentOpening&&<>
+ <p>{openingIndex+1}/{unified.opening_hints.length} · {currentOpening.kind} · {Math.round(currentOpening.source_confidence*100)}% detector confidence</p>
+ <small>{currentOpening.wall_id?'Suggested host: '+currentOpening.wall_id:currentOpening.reason}</small>
+ <div className="row" style={{flexWrap:'wrap',marginTop:8}}>
+ <button className="secondary" onClick={()=>setOpeningIndex(i=>Math.max(0,i-1))}>Previous opening</button>
+ <button disabled={fusionSaving} onClick={()=>void reviewDetectedOpening('accept')}>Confirm {currentOpening.kind}</button>
+ <button className="secondary" disabled={fusionSaving} onClick={()=>void reviewDetectedOpening('reject')}>Not an opening</button>
+ <button className="secondary" disabled={fusionSaving} onClick={()=>void reviewDetectedOpening('unsure')}>Unsure</button>
+ <button className="secondary" onClick={()=>setOpeningIndex(i=>Math.min(unified.opening_hints.length-1,i+1))}>Next opening</button>
+ </div>
+ <small>Review: {openingDecisions[currentOpening.candidate_id]||'pending'}. Confirming classifies the detection; it does not change geometry until you apply the draft.</small>
+ </>}
+ </div>
  <div className="row" style={{gap:10,flexWrap:'wrap',marginTop:8}}>
  <span>Agreed: {unified.comparison.agreed_candidates}</span>
  <span>YOLO only: {unified.comparison.yolo_only_candidates}</span>
@@ -564,7 +625,16 @@ export default function Editor(){
  opacity={fusionDecisions[item.id]==='reject'?.4:1}>
  <title>{item.category}; mask support {Math.round(item.mask_support*100)}%</title>
  </line>)}
- {unified&&showComparisonBoxes&&unified.detections?.boxes.filter(b=>b.category==='wall').map((b,i)=>
+ {unified&&unified.opening_hints.map((hint,i)=>
+ <rect key={'opening-hint-'+hint.candidate_id} x={hint.x1} y={hint.y1}
+ width={hint.x2-hint.x1} height={hint.y2-hint.y1}
+ onClick={e=>{e.stopPropagation();setOpeningIndex(i)}}
+ stroke={openingDecisions[hint.candidate_id]==='reject'?'#9ca3af':
+ openingDecisions[hint.candidate_id]==='accept'?'#16a34a':
+ hint.kind==='door'?'#ea580c':'#0891b2'}
+ strokeWidth={i===openingIndex?3:2} strokeDasharray="6 4"
+ fill="transparent" style={{cursor:'pointer'}}><title>{hint.kind}: {hint.reason}</title></rect>)}
+  {unified&&showComparisonBoxes&&unified.detections?.boxes.filter(b=>b.category==='wall').map((b,i)=>
  <rect key={'compare-box-'+i} x={b.x1} y={b.y1} width={b.x2-b.x1} height={b.y2-b.y1}
  fill="none" stroke="#a855f7" strokeWidth="2" strokeDasharray="7 4" pointerEvents="none"/>)}
   {missingGaps.filter(g=>!dismissedGaps.includes(g.id)).map(g=>
