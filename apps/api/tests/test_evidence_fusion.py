@@ -92,3 +92,12 @@ def test_two_predictions_of_same_wall_are_one_review_item():
     assert len(items)==1
     assert items[0].id=='yolo-wall-0'
     assert len(proposal.walls)==1
+
+def test_duplicate_yolo_boxes_do_not_require_double_review():
+    mask=np.zeros((200,400),dtype='uint8')
+    report=WallMaskReport(coverage_fraction=0,line_count=0,lines=[])
+    proposal,candidates,summary=fuse_evidence(base(),mask,report,
+        yolo(wall(20,90,310,96),wall(35,91,300,97)))
+    assert len(candidates)==1
+    assert len(proposal.walls)==1
+    assert len([s for s in candidates[0].sources if s.startswith('yolo_box:')])==2
