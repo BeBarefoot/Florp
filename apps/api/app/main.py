@@ -23,6 +23,7 @@ from .graph_reconstruction import propose_connected_geometry
 from .wall_segmentation import infer_wall_mask, mask_centerlines, propose_mask_walls
 from .yytsi_raster import predict_yytsi_raster
 from .mask_topology import region_wall_lines
+from .wall_run_normalization import consolidate_wall_runs
 
 Path(settings.storage_path).mkdir(parents=True,exist_ok=True)
 if settings.database_url.startswith('sqlite:///'):
@@ -246,6 +247,7 @@ def segmentation_proposal(bid:str):
             else:
                 raise ValueError('WALL_SEGMENTATION_PROVIDER must be yytsi or ultralytics')
             report=region_wall_lines(mask,min_length=max(22,min(bp.width,bp.height)//18))
+            report=consolidate_wall_runs(report)
             if report.line_count==0:raise ValueError('Segmentation yielded no supported wall centerlines')
             draft=propose_mask_walls(current,report)
             draft=propose_connected_geometry(draft)
