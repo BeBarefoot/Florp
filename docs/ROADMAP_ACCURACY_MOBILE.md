@@ -7,7 +7,7 @@
 - [x] Preserve full original plan pixels; prevent destructive crops and log input hash.
 - [x] Run YOLO and Yytsi against the same preview; retain model disagreements.
 - [x] Prioritize YOLO structural wall axes, deduplicate corroborating segmentation lines, preserve Yytsi-only possibilities for review.
-- [ ] Implement canonical connected wall graph: shared junction IDs, wall thickness, exterior/interior type, holes/openings, floor/room faces.
+- [ ] Implement canonical connected wall graph: shared junction IDs, wall thickness, exterior/interior type, holes/openings, floor/room faces. **Progress:** non-destructive shared-node / split-edge topology inspector implemented; persistent editable graph and opening migration remain outstanding.
 - [ ] Snap and extend ONLY with mask/pixel/dimension support; never connect across a valid opening.
 - [ ] Recover bottom/perimeter walls and partition walls without creating false dimension/furniture walls.
 - [ ] Connect detected doors/windows to correct wall spans and measure from drawing annotations automatically.
