@@ -43,6 +43,9 @@ def test_evaluation_records_original_baseline_and_scores_human_reference(evaluat
     engine,bid,image=evaluation_setup
     first=start(bid,image,geometry('model-1'))
     assert first['status']=='baseline'
+    pending=main.list_extraction_evaluations(bid)
+    assert pending[0]['status']=='baseline'
+    assert pending[0]['metrics'] is None
     with pytest.raises(HTTPException) as missing_consent:
         main.finish_extraction_evaluation(bid,first['id'],main.EvaluationFinishBody(
            geometry=geometry('human-1','human-2'),correction_seconds=120))
