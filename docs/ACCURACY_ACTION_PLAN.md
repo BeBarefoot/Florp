@@ -101,8 +101,9 @@ API routes:
 Records stay **local** with the SQLite database and blueprint images. Back
 up the entire `data/` folder (DB + storage), NOT just the database.
 Do not delete projects if you want to preserve evaluation records.
-This version has no cloud synchronization or export of all evaluation rows;
-use the SQLite database backup as the authoritative record.
+Use **Saved evaluations → Export JSON** for individual complete evaluation
+records. There is no cloud sync or one-click export of an entire dataset yet;
+use the SQLite database backup as the authoritative full archive.
 Existing `training-export` remains separate: it captures user-candidate
 classification events but is NOT a verified gold-standard drawing.
 
