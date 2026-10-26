@@ -43,6 +43,8 @@ export default function Editor(){
  const [status,setStatus]=useState(''),[busy,setBusy]=useState(false);
  const [view,setView]=useState<'2d'|'3d'>('2d');
  const [modelDetections,setModelDetections]=useState<ModelDetections|null>(null);
+ const [segmentationOverlay,setSegmentationOverlay]=useState<string|null>(null);
+ const [showSegmentationOverlay,setShowSegmentationOverlay]=useState(true);
  const [detectorAudit,setDetectorAudit]=useState<DetectorAudit|null>(null);
  type GapProposal={id:string;start:Pt;end:Pt;axis:string;image_support:number};
  const [missingGaps,setMissingGaps]=useState<GapProposal[]>([]);
@@ -92,11 +94,13 @@ export default function Editor(){
    if(!window.confirm('Run experimental local wall segmentation? This creates a new draft and may replace all unreviewed wall proposals. Existing saved versions remain available.'))return;
    setModelBusy(true);setStatus('');
    try{
-     const result=await request<{layout:Layout;report:{checkpoint:string;line_count:number;coverage_fraction:number}}>(
+     const result=await request<{layout:Layout;mask_overlay_png_base64:string;report:{provider:string;checkpoint:string;line_count:number;coverage_fraction:number}}>(
        `/blueprints/${id}/segmentation/propose`,{method:'POST'});
      setLayout(result.layout);setGeometry(result.layout.geometry);
+     setSegmentationOverlay('data:image/png;base64,'+result.mask_overlay_png_base64);
+     setShowSegmentationOverlay(true);
      setModelDetections(null);setDetectorAudit(null);setSelectedDetection(null);setSelectedWall(null);
-     setStatus('Segmentation experiment: '+result.report.line_count+' mask-supported line candidates from '+result.report.checkpoint+
+     setStatus(result.report.provider+' segmentation: '+result.report.line_count+' mask-supported line candidates from '+result.report.checkpoint+
        '. Check all walls and missing openings; this is not a verified floor plan.');
    }catch(err){setStatus(String(err))}
    finally{setModelBusy(false)}
@@ -370,7 +374,8 @@ export default function Editor(){
  <button className="secondary" disabled={modelBusy||busy} onClick={()=>void runPretrained()}>
  {modelBusy?'Running local model…':'Auto-build 2D + 3D'}</button>
  <details><summary>Experimental wall segmentation</summary>
- <p className="muted">Requires a separate locally configured segmentation model with a wall mask class. Current box-only YOLO weights will not work.</p>
+ <p className="muted">Yytsi reads PNG/JPG directly, and PDF via Florp's PNG preview. No SVG conversion. Requires pretrained Yytsi weights configured in the backend.</p>
+ {segmentationOverlay&&<label><input type="checkbox" checked={showSegmentationOverlay} onChange={e=>setShowSegmentationOverlay(e.target.checked)}/> Show actual wall pixels</label>}
  <button className="secondary" disabled={modelBusy||busy} onClick={()=>void trySegmentation()}>Try wall-mask reconstruction</button>
  </details>
  {modelDetections&&<label><input type="checkbox" checked={showModelDetections} onChange={e=>setShowModelDetections(e.target.checked)}/> Model boxes ({modelDetections.boxes.length})</label>}
@@ -395,6 +400,8 @@ export default function Editor(){
  }}>
  <image href={`${API}/blueprints/${id}/preview`} width={geometry.width_px} height={geometry.height_px}
  style={{filter:grayscale?'grayscale(1) contrast(1.12) brightness(1.08)':'none'}}/>
+ {segmentationOverlay&&showSegmentationOverlay&&<image href={segmentationOverlay}
+ width={geometry.width_px} height={geometry.height_px} pointerEvents="none"/>}
  {missingGaps.filter(g=>!dismissedGaps.includes(g.id)).map(g=>
  <line key={'gap-'+g.id} x1={g.start.x} y1={g.start.y} x2={g.end.x} y2={g.end.y}
  stroke="#d97706" strokeWidth={Math.max(4,geometry.width_px/260)} strokeDasharray="7 5"
