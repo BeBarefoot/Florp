@@ -26,6 +26,8 @@ dependencies = [
 [project.optional-dependencies]
 # Experimental only: consult AGPL-3.0 / Enterprise licensing for Ultralytics.
 pretrained-yolo = ["ultralytics>=8.2.8,<9"]
+# Yytsi ResNet34-UNet, installed from the published upstream source. Uses raster input directly.
+yytsi = ["buildingcv[serve] @ git+https://github.com/Yytsi/floorplan-to-3d.git"]
 
 [dependency-groups]
 dev=["pytest>=8,<10", "pytest-asyncio>=0.24,<2"]
