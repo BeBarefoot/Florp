@@ -56,6 +56,12 @@ export default function Editor(){
    yolo_error:string|null;mask_overlay_png_base64:string;saved:boolean;
  };
  const [unified,setUnified]=useState<UnifiedComparison|null>(null);
+ type Raster2SeqResult={saved:false;image_sha256:string;base_layout_version:number;width_px:number;height_px:number;rooms:{category_id:number;points:[number,number][]}[];metadata:{provider:string;checkpoint:string;predicted_rooms:number};note:string};
+ const [r2s,setR2s]=useState<Raster2SeqResult|null>(null);
+ const [r2sVisible,setR2sVisible]=useState(true);
+ const [r2sBusy,setR2sBusy]=useState(false);
+ const [r2sStatus,setR2sStatus]=useState('');
+
  const [fusionIndex,setFusionIndex]=useState(0);
  const [fusionDecisions,setFusionDecisions]=useState<Record<string,'accept'|'reject'|'unsure'|'door'|'window'>>({});
  const [fusionSaving,setFusionSaving]=useState(false);
@@ -114,6 +120,17 @@ export default function Editor(){
      setStatus('Pretrained model generated '+result.layout.geometry.walls.length+' draft walls, '+result.layout.geometry.rooms.length+' proposed enclosed rooms and '+result.layout.geometry.openings.length+' provisional openings. Review all results before confirming.');
    }catch(err){setStatus(String(err))}
    finally{setModelBusy(false)}
+ }
+ async function compareRaster2Seq(){
+   setR2sBusy(true);setR2sStatus('');setR2s(null);
+   try{
+     const result=await request<Raster2SeqResult>(`/blueprints/${id}/compare-raster2seq`,{method:'POST'});
+     if(geometry&&(result.width_px!==geometry.width_px||result.height_px!==geometry.height_px))
+       throw new Error('Raster2Seq source coordinates do not match this blueprint');
+     setR2s(result);setR2sVisible(true);
+     setR2sStatus(result.rooms.length+' room polygons predicted. Experimental, not verified.');
+   }catch(err){setR2sStatus(String(err))}
+   finally{setR2sBusy(false)}
  }
  async function compareUnified(){
    if(!layout||!geometry)return;
@@ -470,6 +487,11 @@ export default function Editor(){
  {status&&<p className="notice">{status}</p>}
  {geometry&&<div className="grid" style={{gridTemplateColumns:'minmax(0,2fr) minmax(290px,1fr)'}}>
  <div className="panel"><h2>{view==='2d'?'Floor-plan overlay':'3D shell · same outline'}</h2>
+ {view==='2d'&&r2s&&<div className="notice" style={{marginBottom:12}}>
+ <strong>Raster2Seq · {r2s.rooms.length} room polygons</strong>
+ <p>Orange dashed polygons = Raster2Seq predictions. Compare visually with blue YOLO / purple Yytsi walls. This is a read-only overlay, not a verified 3D structure.</p>
+ <small>Checkpoint: {r2s.metadata.checkpoint} · Source layout v{r2s.base_layout_version}</small>
+ </div>}
  {view==='2d'&&unified&&<div style={{border:'1px solid #94a3b8',borderRadius:12,padding:12,marginBottom:12,background:'#f1f5f9',color:'#0f172a'}}>
  <strong>Same-image extraction comparison</strong>
  <div style={{border:'1px solid #cbd5e1',borderRadius:10,padding:10,marginTop:10}}>
@@ -579,6 +601,11 @@ export default function Editor(){
  'Select an orange/cyan detection to review it, then choose Add opening or Dismiss. Your wall edits remain untouched.'}
  </div>}
  {view==='2d'&&<div className="row" style={{marginBottom:12}}>
+ <button className="secondary" disabled={r2sBusy||busy} onClick={()=>void compareRaster2Seq()}>
+ {r2sBusy?'Running Raster2Seq…':'Compare Raster2Seq rooms (experimental)'}</button>
+ {r2s&&<label><input type="checkbox" checked={r2sVisible}
+ onChange={e=>setR2sVisible(e.target.checked)}/> Show Raster2Seq room polygons ({r2s.rooms.length})</label>}
+ {r2sStatus&&<small role="status">{r2sStatus}</small>}
  <button disabled={modelBusy||busy} onClick={()=>void compareUnified()}>
  {modelBusy?'Comparing extraction…':'Compare YOLO + Yytsi (recommended)'}</button>
   <button disabled={modelBusy||busy} onClick={()=>void trySegmentation()}>
@@ -614,6 +641,12 @@ export default function Editor(){
  }}>
  <image href={`${API}/blueprints/${id}/preview`} width={geometry.width_px} height={geometry.height_px}
  style={{filter:grayscale?'grayscale(1) contrast(1.12) brightness(1.08)':'none'}}/>
+ {r2s&&r2sVisible&&r2s.rooms.map((room,i)=>
+ <polygon key={'r2s-'+i}
+ points={room.points.map(([x,y])=>`${x},${y}`).join(' ')}
+ fill="#f59e0b" fillOpacity={.1} stroke="#d97706"
+ strokeWidth={Math.max(2,geometry.width_px/420)} strokeDasharray="8 4"
+ pointerEvents="none"/>)}
  {segmentationOverlay&&showSegmentationOverlay&&<image href={segmentationOverlay}
  width={geometry.width_px} height={geometry.height_px} pointerEvents="none"/>}
  {unified&&showUnifiedWalls&&unified.candidates.map((item,i)=>
