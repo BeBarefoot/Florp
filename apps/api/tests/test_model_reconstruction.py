@@ -31,7 +31,7 @@ def test_filter_audit_counts_short_and_nonelongated_boxes():
     from app.model_reconstruction import detection_audit
     boxes=[
         DetectionBox(category='wall',confidence=.9,x1=10,y1=10,x2=200,y2=20),
-        DetectionBox(category='wall',confidence=.9,x1=10,y1=10,x2=25,y2=20),
+        DetectionBox(category='wall',confidence=.9,x1=10,y1=10,x2=25,y2=13),
         DetectionBox(category='wall',confidence=.9,x1=50,y1=50,x2=100,y2=94),
         DetectionBox(category='window',confidence=.9,x1=100,y1=100,x2=140,y2=120),
     ]
