@@ -288,6 +288,35 @@ export default function Editor(){
    }catch(err){setStatus(String(err))}
    finally{setFusionSaving(false)}
  }
+ // CVAT-inspired shortcuts: only when reviewing (not when typing/editing).
+ useEffect(()=>{
+   if(!unified||view!=='2d'||mode!=='edit')return;
+   const handler=(event:KeyboardEvent)=>{
+     if(event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return;
+     const target=event.target;
+     if(target instanceof HTMLElement &&
+         (target.isContentEditable||['INPUT','TEXTAREA','SELECT','BUTTON'].includes(target.tagName)))return;
+     if(event.key==='ArrowRight'||event.key==='ArrowLeft'){
+       event.preventDefault();
+       const delta=event.key==='ArrowRight'?1:-1;
+       if(reviewType==='wall')setFusionIndex(i=>Math.max(0,Math.min(unified.candidates.length-1,i+delta)));
+       else setOpeningIndex(i=>Math.max(0,Math.min(unified.opening_hints.length-1,i+delta)));
+       return;
+     }
+     if(event.key.toLowerCase()==='f'){event.preventDefault();setReviewFocus(f=>!f);return;}
+     if(fusionSaving)return;
+     if(reviewType==='wall'){
+       const choice:Record<string,'accept'|'reject'|'unsure'|'door'|'window'>={
+         '1':'accept','2':'door','3':'window','4':'reject','5':'unsure'};
+       if(choice[event.key]){event.preventDefault();void decideFusion(choice[event.key]);}
+     }else{
+       const choice:Record<string,'accept'|'reject'|'unsure'>={'1':'accept','4':'reject','5':'unsure'};
+       if(choice[event.key]){event.preventDefault();void reviewDetectedOpening(choice[event.key]);}
+     }
+   };
+   window.addEventListener('keydown',handler);
+   return ()=>window.removeEventListener('keydown',handler);
+ },[unified,view,mode,reviewType,fusionSaving,fusionIndex,openingIndex,reviewCandidate,currentOpening]);
  async function applyReviewedOpenings(draft:Geometry):Promise<{geometry:Geometry;messages:string[]}>{
    if(!unified)return {geometry:draft,messages:[]};
    let current=draft;const messages:string[]=[];
@@ -718,7 +747,7 @@ export default function Editor(){
  {view==='2d'&&<div className="row" style={{marginBottom:12}}>
  {(['wall','door','window'] as const).map(tool=><button key={tool} className={mode===tool?'':'secondary'} onClick={()=>{setMode(mode===tool?'edit':tool);setWallStart(null)}}>{tool==='wall'?'Draw missing wall':tool==='door'?'Add door':'Add window'}</button>)}
  </div>}
- {view==='2d'?<div style={{display:'grid',gridTemplateColumns:'minmax(0,1fr) minmax(235px,280px)',gap:14,alignItems:'start'}}>
+ {view==='2d'?<div className="annotation-workspace">
  <svg className="canvas" viewBox={reviewFocus&&unified?(()=>{
  const selected=reviewType==='wall'?
    {x1:reviewCandidate?.start.x??0,y1:reviewCandidate?.start.y??0,x2:reviewCandidate?.end.x??0,y2:reviewCandidate?.end.y??0}:
@@ -783,7 +812,9 @@ export default function Editor(){
  stroke={openingDecisions[hint.candidate_id]==='reject'?'#9ca3af':
  openingDecisions[hint.candidate_id]==='accept'?'#16a34a':
  hint.kind==='door'?'#ea580c':'#0891b2'}
- strokeWidth={i===openingIndex?3:2} strokeDasharray="6 4"
+ strokeWidth={reviewType==='opening'&&i===openingIndex?Math.max(5,geometry.width_px/270):2}
+ strokeDasharray={reviewType==='opening'&&i===openingIndex?'none':'6 4'}
+ opacity={reviewType==='opening'&&i===openingIndex?1:.5}
  fill="transparent" style={{cursor:'pointer'}}><title>{hint.kind}: {hint.reason}</title></rect>)}
   {unified&&showComparisonBoxes&&unified.detections?.boxes.filter(b=>b.category==='wall').map((b,i)=>
  <rect key={'compare-box-'+i} x={b.x1} y={b.y1} width={b.x2-b.x1} height={b.y2-b.y1}
@@ -844,7 +875,7 @@ export default function Editor(){
  ))}
  {wallStart&&<circle cx={wallStart.x} cy={wallStart.y} r={Math.max(5,geometry.width_px/130)} fill="#d97706" pointerEvents="none"/>}
  </svg>
- <div style={{position:'sticky',top:12,border:'1px solid #cbd5e1',borderRadius:12,padding:12,background:'#f8fafc',color:'#0f172a',maxHeight:'80vh',overflowY:'auto'}}>
+ <div className="annotation-inspector">
  <strong>Review on plan</strong>
  {!unified?<p className="muted">Run Extract and compare to review detected walls and openings here.</p>:<>
  <div className="row" style={{margin:'12px 0',flexWrap:'wrap',gap:4}}>
@@ -889,7 +920,7 @@ export default function Editor(){
  }}>Next pending</button>
  </div>
  <label style={{display:'block',marginTop:12}}><input type="checkbox" checked={reviewFocus} onChange={e=>setReviewFocus(e.target.checked)}/> Zoom to selected item</label>
- <small style={{display:'block',margin:'8px 0'}}>Select a colored line or opening on the drawing. Orange highlights mark the active selection.</small>
+ <small style={{display:'block',margin:'8px 0'}}>Select geometry on the plan. Shortcuts: ← / → navigate, 1 wall/confirm, 2 door, 3 window, 4 reject, 5 unsure, F zoom. Shortcuts are inactive while typing.</small>
  <button disabled={busy||modelBusy||fusionSaving} onClick={()=>void applyUnified()}>Apply accepted walls to draft</button>
  <small style={{display:'block',marginTop:8}}>Review decisions are saved separately. Applying changes only your unsaved 2D/3D draft.</small>
  </>}
