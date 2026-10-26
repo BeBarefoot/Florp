@@ -46,7 +46,7 @@ export default function Editor(){
  type EvidenceCandidate={id:string;start:Pt;end:Pt;sources:string[];mask_support:number;category:'agreed'|'yolo_only'|'yytsi_only';review_priority:number;yolo_confidence?:number|null};
  type UnifiedComparison={
    base_layout_version:number;proposal:Geometry;candidates:EvidenceCandidate[];
-   input_manifest:{source_preview_sha256:string};
+   input_manifest:{source_preview_sha256:string;[key:string]:unknown};
    comparison:{mask_lines:number;yolo_wall_boxes:number;accepted_yolo_candidates:number;
      rejected_yolo_candidates:number;fused_walls:number;
      yolo_only_candidates:number;yytsi_only_candidates:number;agreed_candidates:number;
@@ -118,11 +118,13 @@ export default function Editor(){
      const result=await request<UnifiedComparison>(`/blueprints/${id}/compare-extraction`,{method:'POST'});
      const previous=await request<Array<{
        preview_sha256:string;candidate_id:string;decision:'accept'|'reject'|'unsure';
-       candidate:EvidenceCandidate}>>(`/blueprints/${id}/fusion-reviews`);
+       candidate:EvidenceCandidate;input_manifest?:Record<string,unknown>}>>(`/blueprints/${id}/fusion-reviews`);
      const matches:Record<string,'accept'|'reject'|'unsure'>={};
      for(const event of previous){
        const current=result.candidates.find(c=>c.id===event.candidate_id);
        if(event.preview_sha256!==result.input_manifest.source_preview_sha256||!current)continue;
+       if(event.input_manifest&&Object.keys(event.input_manifest).length&&
+          JSON.stringify(event.input_manifest)!==JSON.stringify(result.input_manifest))continue;
        // IDs alone are not sufficient if model weights/config change.
        if(JSON.stringify({start:current.start,end:current.end,sources:current.sources,
                           category:current.category})!==
@@ -133,7 +135,7 @@ export default function Editor(){
      setUnified(result);setFusionIndex(0);setFusionDecisions(matches);
      setShowUnifiedWalls(true);setShowComparisonBoxes(false);
      setSegmentationOverlay('data:image/png;base64,'+result.mask_overlay_png_base64);
-     setShowSegmentationOverlay(true);
+     setShowSegmentationOverlay(true);setShowModelDetections(false);
      setStatus('Comparison ready — no layout was saved or replaced. Review the proposed walls before applying.');
    }catch(err){setStatus(String(err))}
    finally{setModelBusy(false)}
@@ -147,7 +149,7 @@ export default function Editor(){
      await request(`/blueprints/${id}/fusion-reviews`,{method:'POST',
        headers:{'Content-Type':'application/json'},body:JSON.stringify({
        preview_sha256:unified.input_manifest.source_preview_sha256,
-       candidate:reviewCandidate,decision})});
+       candidate:reviewCandidate,decision,input_manifest:unified.input_manifest})});
      setFusionDecisions(old=>({...old,[reviewCandidate.id]:decision}));
      setFusionIndex(current=>Math.min(current+1,unified.candidates.length-1));
      setStatus('Review saved for '+reviewCandidate.id+'. Continue through the candidate queue.');
