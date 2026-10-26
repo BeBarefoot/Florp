@@ -43,7 +43,19 @@ export default function Editor(){
  const [status,setStatus]=useState(''),[busy,setBusy]=useState(false);
  const [view,setView]=useState<'2d'|'3d'>('2d');
  const [modelDetections,setModelDetections]=useState<ModelDetections|null>(null);
- const [segmentationOverlay,setSegmentationOverlay]=useState<string|null>(null);
+ type EvidenceCandidate={id:string;start:Pt;end:Pt;sources:string[];mask_support:number};
+ type UnifiedComparison={
+   base_layout_version:number;proposal:Geometry;candidates:EvidenceCandidate[];
+   comparison:{mask_lines:number;yolo_wall_boxes:number;accepted_yolo_candidates:number;
+     rejected_yolo_candidates:number;fused_walls:number;
+     topology:{connected_components:number;dangling_nodes:string[]}};
+   detections:ModelDetections|null;segmentation:{provider:string};
+   yolo_error:string|null;mask_overlay_png_base64:string;saved:boolean;
+ };
+ const [unified,setUnified]=useState<UnifiedComparison|null>(null);
+ const [showUnifiedWalls,setShowUnifiedWalls]=useState(true);
+ const [showComparisonBoxes,setShowComparisonBoxes]=useState(false);
+  const [segmentationOverlay,setSegmentationOverlay]=useState<string|null>(null);
  const [showSegmentationOverlay,setShowSegmentationOverlay]=useState(true);
  const [detectorAudit,setDetectorAudit]=useState<DetectorAudit|null>(null);
  type GapProposal={id:string;start:Pt;end:Pt;axis:string;image_support:number};
@@ -89,6 +101,34 @@ export default function Editor(){
      setStatus('Pretrained model generated '+result.layout.geometry.walls.length+' draft walls, '+result.layout.geometry.rooms.length+' proposed enclosed rooms and '+result.layout.geometry.openings.length+' provisional openings. Review all results before confirming.');
    }catch(err){setStatus(String(err))}
    finally{setModelBusy(false)}
+ }
+ async function compareUnified(){
+   if(!layout||!geometry)return;
+   if(geometry!==layout.geometry){
+     setStatus('Save or discard your unsaved corrections before comparison; no edits will be overwritten.');
+     return;
+   }
+   setModelBusy(true);setStatus('');
+   try{
+     const result=await request<UnifiedComparison>(`/blueprints/${id}/compare-extraction`,{method:'POST'});
+     setUnified(result);setShowUnifiedWalls(true);setShowComparisonBoxes(false);
+     setSegmentationOverlay('data:image/png;base64,'+result.mask_overlay_png_base64);
+     setShowSegmentationOverlay(true);
+     setStatus('Comparison ready — no layout was saved or replaced. Review the proposed walls before applying.');
+   }catch(err){setStatus(String(err))}
+   finally{setModelBusy(false)}
+ }
+ function applyUnified(){
+   if(!unified||!layout||!geometry)return;
+   if(layout.version!==unified.base_layout_version){
+     setStatus('Saved layout changed since comparison. Run comparison again.');return;
+   }
+   if(geometry!==layout.geometry){
+     setStatus('Unsaved edits exist. Save them or compare again before applying.');return;
+   }
+   if(!window.confirm('Load the fused wall proposal into your UNSAVED editor draft? This does not approve its geometry. Previous saved version remains unchanged.'))return;
+   setGeometry(unified.proposal);setSelectedWall(null);
+   setStatus('Fused proposal loaded locally. Review and correct walls, then Save draft. No previous version was overwritten.');
  }
  async function trySegmentation(){
    if(!window.confirm('Run experimental local wall segmentation? This creates a new draft and may replace all unreviewed wall proposals. Existing saved versions remain available.'))return;
@@ -324,7 +364,25 @@ export default function Editor(){
  {status&&<p className="notice">{status}</p>}
  {geometry&&<div className="grid" style={{gridTemplateColumns:'minmax(0,2fr) minmax(290px,1fr)'}}>
  <div className="panel"><h2>{view==='2d'?'Floor-plan overlay':'3D shell · same outline'}</h2>
- {view==='2d'&&modelDetections&&<div style={{border:'1px solid #9fc7d5',borderRadius:12,padding:12,marginBottom:12,background:'#f1f9fa',color:'#18364a'}}>
+ {view==='2d'&&unified&&<div style={{border:'1px solid #94a3b8',borderRadius:12,padding:12,marginBottom:12,background:'#f1f5f9',color:'#0f172a'}}>
+ <strong>Same-image extraction comparison</strong>
+ <div className="row" style={{flexWrap:'wrap',marginTop:8}}>
+ <span>Yytsi mask axes: {unified.comparison.mask_lines}</span>
+ <span>YOLO wall boxes: {unified.comparison.yolo_wall_boxes}</span>
+ <span>YOLO supported by mask: {unified.comparison.accepted_yolo_candidates}</span>
+ <span>Fused wall proposals: {unified.comparison.fused_walls}</span>
+ <span>Disconnected groups: {unified.comparison.topology.connected_components}</span>
+ </div>
+ {unified.yolo_error&&<small>YOLO unavailable: {unified.yolo_error}. Showing mask-only evidence.</small>}
+ <div className="row" style={{flexWrap:'wrap',marginTop:8}}>
+ <label><input type="checkbox" checked={showSegmentationOverlay} onChange={e=>setShowSegmentationOverlay(e.target.checked)}/> Yytsi pixels</label>
+ <label><input type="checkbox" checked={showUnifiedWalls} onChange={e=>setShowUnifiedWalls(e.target.checked)}/> Fused wall proposals</label>
+ <label><input type="checkbox" checked={showComparisonBoxes} onChange={e=>setShowComparisonBoxes(e.target.checked)}/> YOLO boxes</label>
+ <button disabled={busy||modelBusy} onClick={applyUnified}>Use fused proposal in draft</button>
+ </div>
+ <small>Comparison is read-only. Teal pixels = Yytsi; blue lines = proposed fused geometry. None are verified.</small>
+ </div>}
+  {view==='2d'&&modelDetections&&<div style={{border:'1px solid #9fc7d5',borderRadius:12,padding:12,marginBottom:12,background:'#f1f9fa',color:'#18364a'}}>
  <div className="row" style={{justifyContent:'space-between',alignItems:'center'}}>
  <strong>Review detected openings · {openingQueue.length-pendingQueue.length}/{openingQueue.length} resolved</strong>
  <button className="secondary" disabled={!pendingQueue.length} onClick={nextPending}>Next item →</button>
@@ -371,7 +429,9 @@ export default function Editor(){
  'Select an orange/cyan detection to review it, then choose Add opening or Dismiss. Your wall edits remain untouched.'}
  </div>}
  {view==='2d'&&<div className="row" style={{marginBottom:12}}>
- <button disabled={modelBusy||busy} onClick={()=>void trySegmentation()}>
+ <button disabled={modelBusy||busy} onClick={()=>void compareUnified()}>
+ {modelBusy?'Comparing extraction…':'Compare YOLO + Yytsi (recommended)'}</button>
+  <button disabled={modelBusy||busy} onClick={()=>void trySegmentation()}>
  {modelBusy?'Running wall segmentation…':'Reconstruct walls (multi-scale)'}</button>
  {segmentationOverlay&&<label><input type="checkbox" checked={showSegmentationOverlay}
  onChange={e=>setShowSegmentationOverlay(e.target.checked)}/> Show actual wall pixels</label>}
@@ -404,7 +464,17 @@ export default function Editor(){
  style={{filter:grayscale?'grayscale(1) contrast(1.12) brightness(1.08)':'none'}}/>
  {segmentationOverlay&&showSegmentationOverlay&&<image href={segmentationOverlay}
  width={geometry.width_px} height={geometry.height_px} pointerEvents="none"/>}
- {missingGaps.filter(g=>!dismissedGaps.includes(g.id)).map(g=>
+ {unified&&showUnifiedWalls&&unified.candidates.map(item=>
+ <line key={'fused-'+item.id} x1={item.start.x} y1={item.start.y}
+ x2={item.end.x} y2={item.end.y} pointerEvents="none"
+ stroke={item.sources.some(source=>source.startsWith('yolo_box:'))?'#1d4ed8':'#0ea5e9'}
+ strokeWidth={Math.max(3,geometry.width_px/420)} strokeDasharray="4 2">
+ <title>{item.sources.join(' + ')}; mask support {Math.round(item.mask_support*100)}%</title>
+ </line>)}
+ {unified&&showComparisonBoxes&&unified.detections?.boxes.filter(b=>b.category==='wall').map((b,i)=>
+ <rect key={'compare-box-'+i} x={b.x1} y={b.y1} width={b.x2-b.x1} height={b.y2-b.y1}
+ fill="none" stroke="#a855f7" strokeWidth="2" strokeDasharray="7 4" pointerEvents="none"/>)}
+  {missingGaps.filter(g=>!dismissedGaps.includes(g.id)).map(g=>
  <line key={'gap-'+g.id} x1={g.start.x} y1={g.start.y} x2={g.end.x} y2={g.end.y}
  stroke="#d97706" strokeWidth={Math.max(4,geometry.width_px/260)} strokeDasharray="7 5"
  pointerEvents="none"><title>Unverified missing-wall gap · {Math.round(g.image_support*100)}% ink support</title></line>)}
