@@ -6,7 +6,7 @@ Official model: https://github.com/Cornell-VAILab/Raster2Seq
 
 - Raster2Seq **source** is MIT licensed; the officially released **pretrained weights** (including `hf:cubicasa5k`) are **CC BY-NC 4.0**. Do **not** enable them in Florp's commercial/SaaS production runtime without separate commercial permission.
 - Upstream `predict.py` expects an NVIDIA/CUDA-compatible Linux environment. It creates CUDA timing events even when `--device cpu` is supplied, so a CPU-only or native macOS run is **not supported as-is**.
-- This implementation creates no new project/layout version. It only draws the predicted room polygons on top of the existing blueprint. It does **not** infer metric dimensions, door/window geometry, verified walls, or 3D solids.
+- This implementation creates no new project/layout version. It only draws the predicted room polygons on top of the existing blueprint. It does **not** infer metric dimensions, verified wall thickness, anchored 3D door/window openings, or 3D solids. The model may label door/window **polygons**, which are unverified symbols rather than measured opening spans.
 - Zero Raster2Seq model inference has been run on the user's blueprints by this integration until a properly configured isolated runtime executes it.
 
 ## Install isolated Raster2Seq environment (Linux + CUDA)
@@ -46,7 +46,7 @@ A laptop-hosted FastAPI backend cannot invoke a CUDA interpreter installed on a 
 
 1. Upload a PNG/JPG/PDF plan in Florp. PDF uploads already use the stored raster preview.
 2. Click **Compare Raster2Seq rooms (experimental)**.
-3. Orange dashed polygons appear over the original plan.
+3. Orange dashed room polygons appear over the original plan; CubiCasa categories 9 (window) and 10 (door) appear separately as cyan/orange opening-symbol polygons.
 4. Toggle **Show Raster2Seq room polygons**; compare them with the blue/purple YOLO + Yytsi structural evidence (run the separate **Compare YOLO + Yytsi** action).
 5. The new inference writes **no** approved geometry, floor/room version, opening, or 3D component.
 
