@@ -67,3 +67,19 @@ class FusionCandidateReview(SQLModel,table=True):
     candidate: dict = Field(default_factory=dict,sa_type=JSON)
     input_manifest: dict = Field(default_factory=dict,sa_type=JSON)
     created_at: datetime = Field(default_factory=now)
+
+class ExtractionEvaluation(SQLModel,table=True):
+    """Immutable source-bound baseline + optionally reviewed reference and metrics."""
+    id: str = Field(default_factory=uid,primary_key=True)
+    blueprint_id: str = Field(index=True,foreign_key='blueprint.id')
+    image_sha256: str = Field(index=True)
+    provider: str
+    base_layout_version: int
+    baseline: dict = Field(default_factory=dict,sa_type=JSON)
+    reference: dict = Field(default_factory=dict,sa_type=JSON)
+    metrics: dict = Field(default_factory=dict,sa_type=JSON)
+    correction_seconds: Optional[int] = None
+    notes: str = ''
+    status: str = 'baseline'
+    created_at: datetime = Field(default_factory=now)
+    completed_at: Optional[datetime] = None
