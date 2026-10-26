@@ -10,6 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 from pydantic import BaseModel, Field
 from .config import settings
+from .inference_border import add_inference_border, translate_box
 
 class DetectorUnavailable(RuntimeError): pass
 
