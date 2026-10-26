@@ -154,6 +154,19 @@ def propose_topology(bid: str):
         session.add(row);session.commit();session.refresh(row)
         return {'layout':row,'topology':audit_topology(proposal)}
 
+@app.get('/blueprints/{bid}/structural-graph')
+def inspect_structural_graph(bid: str):
+    from .structural_graph import build_structural_graph
+    with Session(engine) as session:
+        blueprint=session.get(Blueprint,bid)
+        if blueprint is None:
+            raise HTTPException(404,'Blueprint not found')
+        layout=session.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
+        if layout is None:
+            raise HTTPException(404,'No layout')
+        graph=build_structural_graph(Geometry.model_validate(layout.geometry))
+        return {'layout_version':layout.version,'verified':False,'graph':graph.model_dump()}
+
 @app.get('/blueprints/{bid}/missing-wall-suggestions')
 def missing_wall_suggestions(bid:str):
     """Read-only proposals grounded in stored image and current saved geometry."""
