@@ -135,6 +135,16 @@ export default function Editor(){
    finally{setModelBusy(false)}
  }
 
+ async function downloadEvaluation(recordId:string){
+   try{
+     const data=await request<unknown>(`/blueprints/${id}/evaluations/${recordId}`);
+     const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+     const url=URL.createObjectURL(blob);
+     const anchor=document.createElement('a');
+     anchor.href=url;anchor.download=`florp-evaluation-${recordId}.json`;
+     anchor.click();URL.revokeObjectURL(url);
+   }catch(err){setEvaluationError('Unable to export evaluation: '+String(err))}
+ }
  async function captureBaseline(){
    if(!unified||!layout||!geometry)return;
    if(geometry!==layout.geometry){
@@ -560,6 +570,7 @@ export default function Editor(){
  <small>{r.provider} · {r.status} · {r.id.slice(0,8)}</small>
  {r.metrics&&<small> Wall precision {Math.round(r.metrics.walls.precision*100)}% · recall {Math.round(r.metrics.walls.recall*100)}% · F1 {Math.round(r.metrics.walls.f1*100)}% · {(r.correction_seconds??0)/60} min</small>}
  {r.status==='baseline'&&<button className="secondary" onClick={()=>setActiveEvaluation(r.id)}>Resume</button>}
+ <button className="secondary" onClick={()=>void downloadEvaluation(r.id)}>Export JSON</button>
  </div>)}
  </details>
  </div></aside>
@@ -864,7 +875,7 @@ export default function Editor(){
  <button className="secondary" onClick={()=>{if(!geometry)return;
    setGeometry({...geometry,px_per_meter:s.px_per_meter,scale_source:'user_confirmed',warnings:geometry.warnings.filter(w=>!w.toLowerCase().includes('provisional'))});
    setStatus('Scale hypothesis selected. Confirm that '+s.text+' is centimeters and refers to the highlighted plan dimension.');}}>Use estimate</button></div>)}
- <h2>Wall graph health</h2>
+ <details><summary>Advanced: wall graph health</summary>
  <button className="secondary" disabled={busy} onClick={()=>void proposeRooms()}>Propose connected rooms</button>
  <button className="secondary" onClick={()=>void inspectTopology()}>Inspect saved wall connections</button>
  <button className="secondary" onClick={()=>void inspectSharedGraph()}>Inspect shared junction graph</button>
@@ -876,6 +887,7 @@ export default function Editor(){
  <small>{topology.wall_count} walls · {topology.junction_count} joined endpoints · {topology.disconnected_components} groups · {topology.dangling_endpoints} loose ends · {topology.crossing_pairs.length} crossings</small>
  {topology.notes.map((note,i)=><div className="notice" key={i}>{note}</div>)}
  </div>}
+ </details>
  <h2>Wall corrections</h2>
  {selectedWall?<div className="stack">
  <small>Selected {selectedWall}: drag the green endpoint handles in the plan. Changes appear in 3D.</small>
