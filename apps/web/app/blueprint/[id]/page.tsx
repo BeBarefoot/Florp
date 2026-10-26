@@ -47,6 +47,9 @@ export default function Editor(){
  type EvidenceCandidate={id:string;start:Pt;end:Pt;sources:string[];mask_support:number;category:'agreed'|'yolo_only'|'yytsi_only';review_priority:number;yolo_confidence?:number|null};
  type UnifiedComparison={
    base_layout_version:number;proposal:Geometry;candidates:EvidenceCandidate[];opening_hints:OpeningHint[];
+   geometry_review:{auto_applied:boolean;explanation:string;suggestions:{
+     candidate_id:string;reason:string;category:string;priority:number;mask_support:number;
+     connects_to_structure:boolean;start:Pt;end:Pt}[]};
    input_manifest:{source_preview_sha256:string;[key:string]:unknown};
    comparison:{mask_lines:number;yolo_wall_boxes:number;accepted_yolo_candidates:number;
      rejected_yolo_candidates:number;fused_walls:number;
@@ -227,6 +230,21 @@ export default function Editor(){
      setStatus('Comparison ready — no layout was saved or replaced. Review the proposed walls before applying.');
    }catch(err){setStatus(String(err))}
    finally{setModelBusy(false)}
+ }
+ async function reviewAgentCandidate(candidateId:string,decision:'accept'|'reject'){
+   if(!unified||fusionSaving)return;
+   const candidate=unified.candidates.find(c=>c.id===candidateId);
+   if(!candidate){setStatus('Suggested candidate is no longer in comparison. Re-run extraction.');return;}
+   setFusionSaving(true);
+   try{
+     await request(`/blueprints/${id}/fusion-reviews`,{method:'POST',
+       headers:{'Content-Type':'application/json'},body:JSON.stringify({
+         preview_sha256:unified.input_manifest.source_preview_sha256,
+         candidate,decision,input_manifest:unified.input_manifest})});
+     setFusionDecisions(old=>({...old,[candidateId]:decision}));
+     setStatus('Saved '+decision+' for '+candidateId+'. Accepting only labels it for inclusion in the draft.');
+   }catch(err){setStatus('Unable to save suggestion review: '+String(err))}
+   finally{setFusionSaving(false)}
  }
  const reviewCandidate=unified?.candidates[fusionIndex]||null;
  const fusionResolved=unified?.candidates.filter(c=>fusionDecisions[c.id]&&fusionDecisions[c.id]!=='unsure').length||0;
@@ -613,6 +631,25 @@ export default function Editor(){
  </div>}
  {view==='2d'&&unified&&<div style={{border:'1px solid #94a3b8',borderRadius:12,padding:12,marginBottom:12,background:'#f1f5f9',color:'#0f172a'}}>
  <strong>Same-image extraction comparison</strong>
+ <details open style={{marginTop:10,padding:10,border:'1px solid #d97706',borderRadius:8}}>
+ <summary>Suggested missing partitions · {unified.geometry_review?.suggestions.length??0}</summary>
+ <p><small>Automatically ranked from existing image segmentation and wall connectivity. These are NOT verified walls or new training labels. Accept or reject individually.</small></p>
+ {(unified.geometry_review?.suggestions||[]).slice(0,12).map(item=>
+  <div key={item.candidate_id} style={{borderTop:'1px solid #cbd5e1',padding:'7px 0'}}>
+   <small><strong>{item.candidate_id}</strong> · source support {Math.round(item.mask_support*100)}% · {item.reason}</small>
+   <div className="row" style={{flexWrap:'wrap'}}>
+    <button className="secondary" onClick={()=>{
+      const index=unified.candidates.findIndex(c=>c.id===item.candidate_id);
+      if(index>=0)setFusionIndex(index);
+    }}>Show on plan</button>
+    <button disabled={fusionSaving||fusionDecisions[item.candidate_id]==='accept'} onClick={()=>void reviewAgentCandidate(item.candidate_id,'accept')}>Accept wall</button>
+    <button className="secondary" disabled={fusionSaving||fusionDecisions[item.candidate_id]==='reject'} onClick={()=>void reviewAgentCandidate(item.candidate_id,'reject')}>Not a wall</button>
+    <small>{fusionDecisions[item.candidate_id]||'Needs review'}</small>
+   </div>
+  </div>)}
+ {(unified.geometry_review?.suggestions.length??0)===0&&<small>No additional supported connections found. The agent cannot infer missing walls without sufficient evidence.</small>}
+ <small>After reviewing, use “Use fused proposal in draft” to apply accepted candidates. No geometry is silently changed.</small>
+ </details>
  <div style={{border:'1px solid #cbd5e1',borderRadius:10,padding:10,marginTop:10}}>
  <strong>Detected doors and windows · {unified.opening_hints.length}</strong>
  {currentOpening&&<>
