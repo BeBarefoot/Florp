@@ -109,7 +109,7 @@ def test_click_near_multiple_predicted_openings_does_not_create_third(monkeypatc
         session.add(Layout(blueprint_id=blueprint.id,geometry=geometry.model_dump()))
         session.commit();bid=blueprint.id
     result=main.propose_opening(bid,main.ProvisionalOpeningInput(kind='door',
-                                           wall_id='model-7',fraction=.34))
+                                           wall_id='model-7',fraction=.22))
     parsed=Geometry.model_validate(result.geometry)
     assert len(parsed.openings)==2
     assert any(opening.kind=='door' for opening in parsed.openings)
