@@ -69,6 +69,37 @@ def _overlap_fraction(a:Pt,b:Pt,c:Pt,d:Pt)->float:
     lo2,hi2=sorted((c.x,d.x)) if horizontal else sorted((c.y,d.y))
     return max(0,min(hi1,hi2)-max(lo1,lo2))/max(1,min(hi1-lo1,hi2-lo2))
 
+def _uncovered_mask_spans(a:Pt,b:Pt,matched:list[tuple[Pt,Pt]],
+                          min_length:float=16.)->list[tuple[Pt,Pt]]:
+    """Subtract collinear YOLO spans from a mask run, preserving real gaps.
+
+    This avoids losing a 100px interior partition merely because YOLO matched
+    a 10px segment at its edge. Endpoint positions are source-image pixels.
+    """
+    horizontal=abs(b.x-a.x)>=abs(b.y-a.y)
+    axis=(a.y+b.y)/2 if horizontal else (a.x+b.x)/2
+    low,high=sorted((a.x,b.x)) if horizontal else sorted((a.y,b.y))
+    covered=[]
+    for c,d in matched:
+        if not _same_axis(a,b,c,d,tolerance=10):continue
+        start,end=sorted((c.x,d.x)) if horizontal else sorted((c.y,d.y))
+        start=max(low,start);end=min(high,end)
+        if end>start:covered.append((start,end))
+    if not covered:return [(a,b)]
+    covered.sort()
+    joined=[]
+    for start,end in covered:
+        if joined and start<=joined[-1][1]+2:
+            joined[-1]=(joined[-1][0],max(joined[-1][1],end))
+        else:joined.append((start,end))
+    gaps=[];cursor=low
+    for start,end in joined:
+        if start-cursor>=min_length:gaps.append((cursor,start))
+        cursor=max(cursor,end)
+    if high-cursor>=min_length:gaps.append((cursor,high))
+    if horizontal:return [(Pt(x=start,y=axis),Pt(x=end,y=axis)) for start,end in gaps]
+    return [(Pt(x=axis,y=start),Pt(x=axis,y=end)) for start,end in gaps]
+
 def fuse_evidence(base:Geometry,mask:np.ndarray,report:WallMaskReport,
                   detector:DetectorResult|None, min_support:float=.55):
     if mask.shape!=(base.height_px,base.width_px):
@@ -98,12 +129,17 @@ def fuse_evidence(base:Geometry,mask:np.ndarray,report:WallMaskReport,
                     if agreed else round(min(.75,.2+.45*confidence),3),
                 yolo_confidence=confidence))
     for i,(a,b,line) in enumerate(mask_axes):
-        if i in matched:continue
-        if any(_same_axis(a,b,item.start,item.end,tolerance=10) for item in candidates):
-            continue
-        candidates.append(FusedCandidate(id=f'mask-{i}',start=a,end=b,
-            sources=['yytsi_mask'],mask_support=_support(mask,a,b),
-            category='yytsi_only',review_priority=round(.35+.4*line.support,3)))
+        # Only subtract actual YOLO-covered pixels. An adjacent longer mask
+        # line may contain a valid missing partition that deserves review.
+        yolo_axes=[(item.start,item.end) for item in candidates
+                   if any(src.startswith('yolo_box:') for src in item.sources)]
+        for segment,(p,q) in enumerate(_uncovered_mask_spans(a,b,yolo_axes)):
+            if hypot(p.x-q.x,p.y-q.y)<16:continue
+            candidates.append(FusedCandidate(id=f'mask-{i}-gap-{segment}',
+                start=p,end=q,sources=['yytsi_mask','yolo_uncovered'],
+                mask_support=round(_support(mask,p,q),3),
+                category='yytsi_only',
+                review_priority=round(.35+.4*line.support,3)))
     candidates.sort(key=lambda c:(-hypot(c.end.x-c.start.x,c.end.y-c.start.y),c.id))
     unique=[]
     for item in candidates:
