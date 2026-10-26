@@ -341,11 +341,14 @@ def compare_raster2seq(bid:str):
                 timeout_seconds=settings.raster2seq_timeout_seconds)
         except Raster2SeqUnavailable as exc:raise HTTPException(424,str(exc)) from exc
         except ValueError as exc:raise HTTPException(422,str(exc)) from exc
+        interior=[room.model_dump() for room in rooms if room.category_id not in (9,10)]
+        symbols=[{'kind':'window' if room.category_id==9 else 'door',
+                  'points':room.points} for room in rooms if room.category_id in (9,10)]
         return {'saved':False,'image_sha256':digest,'base_layout_version':current.version,
                 'width_px':bp.width,'height_px':bp.height,
-                'rooms':[room.model_dump() for room in rooms],
+                'rooms':interior,'opening_symbols':symbols,
                 'metadata':metadata,
-                'note':'Room polygons only: no verified wall thickness, dimensions or openings'}
+                'note':'Unverified room and opening-symbol polygons; no calibrated scale, wall thickness or 3D cutouts'}
 
 @app.post('/blueprints/{bid}/compare-extraction')
 def compare_extraction(bid:str):
