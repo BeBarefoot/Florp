@@ -226,9 +226,18 @@ def finish_extraction_evaluation(bid:str,evaluation_id:str,body:EvaluationFinish
             raise HTTPException(422,'Reference image dimensions mismatch')
         if not body.geometry.walls:
             raise HTTPException(422,'Reference must contain independently checked walls')
-        if any(w.id.startswith('w') and w.id[1:].isdigit() for w in body.geometry.walls):
-            # Generic starter square has IDs w0..w3: reject as reference.
-            raise HTTPException(422,'Replace starter geometry before claiming ground truth')
+        # Starter IDs are not reliable proof of an untouched placeholder:
+        # legitimate user edits can retain those IDs alongside new walls.
+        # Reject only an entirely unmodified fallback wall set. A reviewer
+        # must still remove any remaining fictitious placeholders manually.
+        starter=fallback_geometry(bp.width,bp.height)
+        def segment_key(w):
+            return tuple(sorted(((round(w.start.x,3),round(w.start.y,3)),
+                                 (round(w.end.x,3),round(w.end.y,3)))))
+        observed={segment_key(w) for w in body.geometry.walls}
+        placeholders={segment_key(w) for w in starter.walls}
+        if observed==placeholders and len(body.geometry.walls)==len(starter.walls):
+            raise HTTPException(422,'Unmodified starter outline is not reviewed ground truth; correct or replace its walls first')
         reference=normalize_florp_geometry(preview,body.geometry.model_dump(),'human-reviewed')
         baseline=PlanPrediction.model_validate(row.baseline)
         metrics=compare(reference,baseline)
