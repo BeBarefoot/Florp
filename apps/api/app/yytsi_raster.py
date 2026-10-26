@@ -12,6 +12,7 @@ from PIL import Image, ImageOps
 from .config import settings
 from .pretrained_detector import DetectorUnavailable
 from .multiscale_segmentation import combine_wall_probabilities
+from .inference_border import add_inference_border,unpad_probabilities
 
 MEAN=np.array([.485,.456,.406],dtype=np.float32)
 STD=np.array([.229,.224,.225],dtype=np.float32)
@@ -93,6 +94,10 @@ def predict_yytsi_raster(preview:Path,width:int,height:int)->tuple[np.ndarray,di
             if original.size!=(width,height):
                 raise ValueError('Preview dimensions do not match stored blueprint')
             rgb=np.asarray(original,dtype=np.uint8)
+        frame=None
+        if settings.inference_border_enabled:
+            rgb,frame=add_inference_border(rgb,settings.inference_border_fraction,
+                                           settings.inference_border_min_px)
         wall_id=CLASS_TO_ID['wall']
         def predict(tile):
             return _predict_wall_probability(extractor,tile,wall_id)
@@ -104,12 +109,16 @@ def predict_yytsi_raster(preview:Path,width:int,height:int)->tuple[np.ndarray,di
         else:
             probabilities=predict(rgb)
             stats={'tiles':0,'method':'global_only','source_resolution':[width,height]}
+        if frame is not None:
+            probabilities=unpad_probabilities(probabilities,frame)
         threshold=settings.segmentation_wall_threshold
         wall=np.where(probabilities>=threshold,255,0).astype(np.uint8)
         return wall,{'provider':'Yytsi/ResNet34-UNet','checkpoint':settings.yytsi_checkpoint,
             'input_format':'raster_png','image_size':[width,height],
             'wall_fraction':round(float(np.mean(wall>0)),5),
             'wall_threshold':threshold,'multiscale':stats,
+            'input_padding':{'enabled':frame is not None,
+                             'pixels':frame.top if frame else 0},
             'warning':'Tiled predictions are model hypotheses; verify interior walls, furniture and annotations.'}
     except DetectorUnavailable:raise
     except (RuntimeError,ValueError,OSError,MemoryError) as exc:
