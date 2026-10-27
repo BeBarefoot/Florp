@@ -406,6 +406,81 @@ def get_fusion_reviews(bid:str):
                  'decision':e.decision,'candidate':e.candidate,
                  'input_manifest':e.input_manifest,'created_at':e.created_at.isoformat()} for e in events]
 
+class MergeFusionDraftBody(BaseModel):
+    """Apply previously recorded wall approvals to the latest saved geometry."""
+    preview_sha256: str
+    layout_version: int
+    candidate_ids: list[str]
+    geometry: Geometry
+
+@app.post('/blueprints/{bid}/fusion-draft/merge')
+def merge_reviewed_fusion_walls(bid:str,body:MergeFusionDraftBody):
+    """Read-only merge; never replace corrected walls, openings or stored layouts.
+
+    The comparison's old layout version is intentionally irrelevant. We only
+    require that the source image and CURRENT saved geometry have not changed.
+    Approvals must exist in the append-only fusion review history.
+    """
+    import hashlib
+    from .evidence_fusion import FusedCandidate
+    from .geometry import Wall
+    if len(body.candidate_ids)>500 or len(body.candidate_ids)!=len(set(body.candidate_ids)):
+        raise HTTPException(422,'Invalid or duplicate requested wall IDs')
+    with Session(engine) as session:
+        bp=session.get(Blueprint,bid)
+        if bp is None:raise HTTPException(404,'Blueprint not found')
+        preview=Path(bp.preview_path)
+        actual_hash=hashlib.sha256(preview.read_bytes()).hexdigest()
+        if body.preview_sha256!=actual_hash:
+            raise HTTPException(409,'Blueprint image changed; re-extract before applying reviews')
+        current=session.exec(select(Layout).where(Layout.blueprint_id==bid)
+                             .order_by(Layout.version.desc())).first()
+        if current is None:raise HTTPException(404,'No saved layout')
+        if body.layout_version!=current.version or body.geometry.model_dump()!=Geometry.model_validate(current.geometry).model_dump():
+            raise HTTPException(409,'Current saved geometry changed; reload before merging approvals')
+        reviews=list(session.exec(select(FusionCandidateReview).where(
+            FusionCandidateReview.blueprint_id==bid,
+            FusionCandidateReview.preview_sha256==actual_hash
+        ).order_by(FusionCandidateReview.created_at, FusionCandidateReview.id)).all())
+        latest={}
+        for review in reviews:latest[review.candidate_id]=review
+        updated=body.geometry.model_copy(deep=True)
+        old_ids={wall.id for wall in updated.walls}
+        added=0;already=0;ignored=0
+        for candidate_id in body.candidate_ids:
+            review=latest.get(candidate_id)
+            if review is None or review.decision!='accept':
+                ignored+=1
+                continue
+            if candidate_id in old_ids:
+                already+=1
+                continue
+            try:candidate=FusedCandidate.model_validate(review.candidate)
+            except ValueError:
+                ignored+=1
+                continue
+            if candidate.id!=candidate_id or any(
+                not(0<=p.x<=bp.width and 0<=p.y<=bp.height)
+                for p in (candidate.start,candidate.end)
+            ):
+                ignored+=1
+                continue
+            if candidate.start==candidate.end:
+                ignored+=1
+                continue
+            updated.walls.append(Wall(id=candidate.id,start=candidate.start,
+                                      end=candidate.end,inferred=True))
+            old_ids.add(candidate.id)
+            added+=1
+        if added:
+            updated.structure_reviewed=False
+            updated.warnings=list(dict.fromkeys(updated.warnings+[
+                'Reviewed wall labels merged into unsaved geometry; check positions before saving.'
+            ]))
+        return {'saved':False,'geometry':updated.model_dump(),
+                'added':added,'already_present':already,'ignored':ignored,
+                'layout_version':current.version}
+
 class OpeningReviewDraftBody(BaseModel):
     geometry: Geometry
     hint: dict
