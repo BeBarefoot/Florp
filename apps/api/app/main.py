@@ -170,6 +170,35 @@ def start_extraction_evaluation(bid:str,body:EvaluationStartBody):
         return {'id':row.id,'status':row.status,'provider':row.provider,
                 'baseline_walls':len(baseline.walls),'created_at':row.created_at}
 
+@app.get('/blueprints/{bid}/reviewed-geometry-export')
+def reviewed_geometry_export(bid:str):
+    """Portable draft + current review labels. Never claims independent ground truth."""
+    import hashlib
+    with Session(engine) as session:
+        bp=session.get(Blueprint,bid)
+        if bp is None:raise HTTPException(404,'Blueprint not found')
+        layout=session.exec(select(Layout).where(Layout.blueprint_id==bid)
+                            .order_by(Layout.version.desc())).first()
+        if layout is None:raise HTTPException(404,'No saved layout')
+        digest=hashlib.sha256(Path(bp.preview_path).read_bytes()).hexdigest()
+        rows=session.exec(select(FusionCandidateReview).where(
+            FusionCandidateReview.blueprint_id==bid,
+            FusionCandidateReview.preview_sha256==digest).order_by(
+            FusionCandidateReview.created_at,FusionCandidateReview.id)).all()
+        latest={}
+        for row in rows:latest[row.candidate_id]=row
+        labels=[{'candidate_id':row.candidate_id,'decision':row.decision,
+                 'candidate':row.candidate,'input_manifest':row.input_manifest}
+                for row in latest.values()]
+        return {'schema_version':1,'source_preview_sha256':digest,
+                'width_px':bp.width,'height_px':bp.height,
+                'layout_version':layout.version,'layout_verified':layout.verified,
+                'structure_reviewed':bool(layout.geometry.get('structure_reviewed',False)),
+                'geometry':layout.geometry,'review_labels':labels,
+                'source':'saved geometry + latest append-only human review decisions',
+                'ground_truth_status':'not independently validated',
+                'warning':'Approved candidate labels and a saved draft are not automatically complete training ground truth.'}
+
 @app.get('/blueprints/{bid}/evaluations')
 def list_extraction_evaluations(bid:str):
     with Session(engine) as session:
