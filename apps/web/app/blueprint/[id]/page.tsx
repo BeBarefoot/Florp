@@ -830,7 +830,7 @@ export default function Editor(){
  {view==='2d'&&<div className="notice" style={{marginBottom:12}}>
  {mode==='door'||mode==='window'?'Click near a wall to place a provisional opening. No manual scale entry required.':
  mode==='wall'?'Click two points to draw a wall; snapping is enabled.':
- 'Select an orange/cyan detection to review it, then choose Add opening or Dismiss. Your wall edits remain untouched.'}
+ selectedWall?'Drag the green endpoint handles on the selected wall. Save corrected draft when finished.':'Click any blue saved wall to select it and drag its green endpoints, or select an orange/cyan opening detection to review.'}
  </div>}
  {view==='2d'&&<details style={{marginBottom:12}}><summary>Research tools and model diagnostics (optional)</summary>
  <div className="row" style={{flexWrap:'wrap',marginTop:8}}>
@@ -861,7 +861,8 @@ export default function Editor(){
  <label><input type="checkbox" checked={showRaw} onChange={e=>setShowRaw(e.target.checked)}/> Raw lines ({evidence?.segments.length??0})</label></details>
  </div></details>}
  {view==='2d'&&<div className="row" style={{marginBottom:12}}>
- {(['wall','door','window'] as const).map(tool=><button key={tool} className={mode===tool?'':'secondary'} onClick={()=>{setMode(mode===tool?'edit':tool);setWallStart(null)}}>{tool==='wall'?'Draw missing wall':tool==='door'?'Add door':'Add window'}</button>)}
+ <button className={mode==='edit'?'':'secondary'} onClick={()=>{setMode('edit');setWallStart(null);setStatus('Click any saved wall on the floor plan, then drag either green endpoint handle. Save corrected draft to persist.')}}>Edit wall endpoints</button>
+  {(['wall','door','window'] as const).map(tool=><button key={tool} className={mode===tool?'':'secondary'} onClick={()=>{setMode(mode===tool?'edit':tool);setWallStart(null)}}>{tool==='wall'?'Draw missing wall':tool==='door'?'Add door':'Add window'}</button>)}
  </div>}
  {view==='2d'?<div className="annotation-workspace">
  <svg className="canvas" viewBox={reviewFocus&&unified?(()=>{
@@ -987,7 +988,7 @@ export default function Editor(){
   const x1=e.start.x+(e.end.x-e.start.x)*t,y1=e.start.y+(e.end.y-e.start.y)*t,x2=e.start.x+(e.end.x-e.start.x)*u,y2=e.start.y+(e.end.y-e.start.y)*u;
   return <line key={o.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke={o.kind==='door'?'#f97316':'#0284c7'} strokeDasharray={o.kind==='door'?'10 6':undefined} strokeWidth={Math.max(7,geometry.width_px/160)} pointerEvents="none"/>;
  })}
- {geometry.walls.filter(w=>w.id.startsWith('user-')||w.id.startsWith('model-')).map(w=><line key={w.id} x1={w.start.x} y1={w.start.y} x2={w.end.x} y2={w.end.y} stroke={selectedWall===w.id?"#16a34a":w.id.startsWith("model-")?"#0284c7":"#d97706"}
+ {geometry.walls.map(w=><line key={w.id} x1={w.start.x} y1={w.start.y} x2={w.end.x} y2={w.end.y} stroke={selectedWall===w.id?"#16a34a":w.id.startsWith('user-')?'#d97706':'#0284c7'}
  strokeWidth={Math.max(selectedWall===w.id?5:3,geometry.width_px/220)}
  pointerEvents={mode==='edit'?'stroke':'none'} style={{cursor:mode==='edit'?'pointer':'default'}}
  onClick={e=>{if(mode==='edit'){e.stopPropagation();setSelectedWall(w.id)}}}/>)}
@@ -1140,7 +1141,7 @@ export default function Editor(){
  <small>Selected {selectedWall}: drag the green endpoint handles in the plan. Changes appear in 3D.</small>
  <button className="secondary" onClick={()=>removeWall(selectedWall)}>Reject / delete selected wall</button>
  <button className="secondary" onClick={()=>setSelectedWall(null)}>Finish correction</button>
- </div>:<small>Click a blue model wall line to edit or remove it; drag its endpoint handles. This corrects the reconstructed geometry, not the original YOLO box.</small>}
+ </div>:<small>Choose Edit wall endpoints, click any stored wall on the plan (including reviewed YOLO and mask walls), and drag its green endpoint handles. Save corrected draft to persist.</small>}
  <small>Use Confirm wall positions after reviewing the proposed structure; physical measurements are a separate step.</small>
  <h2>Opening review</h2>
  <span className="pill">{geometry.openings.filter(o=>o.source_detection_id&&o.reviewed).length} reviewed · {geometry.openings.filter(o=>o.source_detection_id&&!o.reviewed).length} awaiting review · {geometry.openings.length} total in draft</span>
