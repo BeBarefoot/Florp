@@ -101,6 +101,10 @@ export default function Editor(){
  const [grayscale,setGrayscale]=useState(true),[showRaw,setShowRaw]=useState(false),[showSuggestions,setShowSuggestions]=useState(false);
  const [reviewScope,setReviewScope]=useState<'all'|'near'>('all');
  const [reviewLabels,setReviewLabels]=useState<Record<string,string>>({}),[selectedCandidate,setSelectedCandidate]=useState<Candidate|null>(null);
+ type ConnectivityChange={wall_id:string;endpoint:'start'|'end';original:Pt;proposed:Pt;distance_px:number;reason:string};
+ type ConnectivityProposal={geometry:Geometry;changes:ConnectivityChange[];before_components:number;after_components:number;before_dangling:number;after_dangling:number;warning:string;saved:false};
+ const [connectivity,setConnectivity]=useState<{source:string;proposal:ConnectivityProposal}|null>(null);
+ const [connectivityBusy,setConnectivityBusy]=useState(false);
  const [selectedWall,setSelectedWall]=useState<string|null>(null);
  const [selectedDetection,setSelectedDetection]=useState<number|null>(null);
  const [rejectedDetections,setRejectedDetections]=useState<string[]>([]);
@@ -636,6 +640,33 @@ export default function Editor(){
      warnings:geometry.warnings.filter(w=>!w.includes('Starter geometry'))});
    setStatus('Removed '+placeholders.length+' untouched starter walls from unsaved draft. Review the remaining walls before saving or scoring.');
  }
+ async function previewConnections(){
+   if(!geometry||!layout||connectivityBusy)return;
+   setConnectivityBusy(true);setStatus('');
+   try{
+     const source=JSON.stringify(geometry);
+     const proposal=await request<ConnectivityProposal>(`/blueprints/${id}/connectivity/preview`,{
+       method:'POST',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({geometry,tolerance_px:5})});
+     if(JSON.stringify(geometry)!==source)return;
+     setConnectivity({source,proposal});
+     setStatus(proposal.changes.length?
+       proposal.changes.length+' conservative endpoint adjustments proposed (NOT saved). Review cyan arrows on the 2D plan.':
+       'No unambiguous near-junction corrections found. Missing walls must be drawn from image evidence.');
+   }catch(error){setStatus(String(error))}
+   finally{setConnectivityBusy(false)}
+ }
+ function applyConnections(){
+   if(!geometry||!connectivity)return;
+   if(JSON.stringify(geometry)!==connectivity.source){
+     setConnectivity(null);setStatus('Geometry changed since connectivity preview. Preview again before applying.');return;
+   }
+   if(!connectivity.proposal.changes.length){setStatus('No endpoint corrections to apply.');return;}
+   if(!window.confirm('Apply '+connectivity.proposal.changes.length+
+     ' highlighted endpoint adjustments to the UNSAVED 2D/3D draft? This does not add missing walls or verify dimensions.'))return;
+   setGeometry(connectivity.proposal.geometry);setConnectivity(null);setSelectedWall(null);
+   setStatus('Connectivity adjustments applied to UNSAVED draft. Inspect all joints and click Save corrected draft.');
+ }
  function removeWall(id:string){if(!geometry)return;setSelectedWall(null);setGeometry({...geometry,structure_reviewed:false,walls:geometry.walls.filter(w=>w.id!==id),openings:geometry.openings.filter(o=>o.wall_id!==id)});setStatus('Draft wall removed. Save to persist changes.')}
  return <div className="app"><aside><h2>✦ Florp</h2><Link href="/">← Projects</Link>
  <hr style={{borderColor:'#354053',margin:'22px 0'}}/><p>Saved layout v{layout?.version??'–'} · {layout?.verified?'Verified':'Unverified'}</p>
@@ -683,6 +714,21 @@ export default function Editor(){
  {status&&<p className="notice">{status}</p>}
  {geometry&&<div className="grid" style={{gridTemplateColumns:'minmax(0,2fr) minmax(290px,1fr)'}}>
  <div className="panel"><h2>{view==='2d'?'Floor-plan overlay':'3D shell · same outline'}</h2>
+ {view==='2d'&&geometry.walls.length>0&&<div style={{border:'1px solid #cbd5e1',padding:10,borderRadius:10,marginBottom:12}}>
+ <div className="row" style={{justifyContent:'space-between'}}>
+ <strong>Connect reviewed wall endpoints</strong>
+ <button className="secondary" disabled={connectivityBusy||busy}
+ onClick={()=>void previewConnections()}>{connectivityBusy?'Analyzing…':'Preview connections'}</button>
+ </div>
+ {connectivity&&<div style={{marginTop:8}}>
+ <small>{connectivity.proposal.changes.length} proposed adjustments · structural groups {connectivity.proposal.before_components} → {connectivity.proposal.after_components} · loose endpoints {connectivity.proposal.before_dangling} → {connectivity.proposal.after_dangling}</small>
+ <div className="row" style={{marginTop:8}}>
+ <button disabled={connectivity.proposal.changes.length===0} onClick={applyConnections}>Apply preview to unsaved draft</button>
+ <button className="secondary" onClick={()=>setConnectivity(null)}>Discard preview</button>
+ </div>
+ <small>Dashed cyan arrows show short endpoint movements. Existing approved walls, openings and rooms are kept. No new partitions are invented.</small>
+ </div>}
+ </div>}
  {view==='2d'&&r2s&&<div className="notice" style={{marginBottom:12}}>
  <strong>Raster2Seq · {r2s.rooms.length} rooms · {r2s.opening_symbols.length} opening symbols</strong>
  <p>Orange dashed polygons = Raster2Seq rooms; orange/cyan small polygons = its door/window hypotheses. Compare with YOLO/Yytsi walls. This is a read-only overlay, not a verified 3D structure.</p>
@@ -920,6 +966,16 @@ export default function Editor(){
     onClick={e=>e.stopPropagation()}/>;
   })
  ))}
+ {connectivity&&JSON.stringify(geometry)===connectivity.source&&
+ connectivity.proposal.changes.map((c,i)=><g key={'connect-'+i} pointerEvents="none">
+ <line x1={c.original.x} y1={c.original.y} x2={c.proposed.x} y2={c.proposed.y}
+ stroke="#0891b2" strokeWidth={Math.max(3,geometry.width_px/300)}
+ strokeDasharray="4 3"/>
+ <circle cx={c.original.x} cy={c.original.y} r={Math.max(4,geometry.width_px/250)}
+ fill="#fff" stroke="#0891b2" strokeWidth="2"/>
+ <circle cx={c.proposed.x} cy={c.proposed.y} r={Math.max(4,geometry.width_px/250)}
+ fill="#0891b2" stroke="white" strokeWidth="2"/>
+ </g>)}
  {wallStart&&<circle cx={wallStart.x} cy={wallStart.y} r={Math.max(5,geometry.width_px/130)} fill="#d97706" pointerEvents="none"/>}
  </svg>
  <div className="annotation-inspector">
