@@ -265,3 +265,29 @@ stream, preserving image and inference provenance. The current model's
 preannotations are *not* ground truth. Accepted walls are put in the editable
 geometry only when **Apply accepted walls to draft** is selected; verified
 human reference is still a separate evaluation record.
+
+## 12. Reviewed-wall connectivity preview and source-linked export
+
+Once the approved wall candidates have been added and saved:
+
+1. In **Floor-plan overlay**, press **Preview connections**.
+2. Cyan markers indicate nearby endpoints that could be snapped to known wall
+   junctions. The summary displays disconnected structural groups and loose
+   endpoints before/after. This is a *topological hypothesis*, not an extra
+   wall detector.
+3. Inspect the locations in the source raster. Press **Apply preview to
+   unsaved draft** only if the endpoint movements are correct.
+4. Review in 2D and 3D, then **Save corrected draft**. The original saved
+   layout remains a version in project history.
+5. Under **Measure extraction quality**, download **Export saved walls +
+   labels JSON** for a reproducible artifact including latest reviewed wall/
+   opening labels, current saved geometry, source image SHA256, and model
+   manifest. The export explicitly states it is **not independently validated
+   ground truth**; unresolved opening positions and missing walls remain
+   separate tasks.
+
+The connectivity module moves endpoint coordinates by at most 5 source pixels
+by default and only for a geometrically unambiguous supported junction; it
+does not invent missing partitions or overwrite doors/windows. Larger gaps
+still need image-supported manual correction. The export stores review
+decisions for future fine-tuning, not model weights.
