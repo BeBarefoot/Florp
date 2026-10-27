@@ -179,3 +179,39 @@ def test_merge_reviewed_walls_after_layout_version_advances(tmp_path,monkeypatch
     with pytest.raises(HTTPException) as error:
         main.merge_reviewed_fusion_walls(bid,body)
     assert error.value.status_code==409
+
+def test_reviewed_geometry_export_is_source_bound_and_not_marked_ground_truth(tmp_path,monkeypatch):
+    from app.models import FusionCandidateReview
+    from app.geometry import Pt,Wall
+    from app.evidence_fusion import FusedCandidate
+    db=create_engine('sqlite://',connect_args={'check_same_thread':False},
+                     poolclass=StaticPool)
+    SQLModel.metadata.create_all(db)
+    monkeypatch.setattr(main,'engine',db)
+    path=tmp_path/'preview.png'
+    assert cv2.imwrite(str(path),np.full((200,400,3),255,dtype='uint8'))
+    digest=hashlib.sha256(path.read_bytes()).hexdigest()
+    draft=Geometry(width_px=400,height_px=200,walls=[
+        Wall(id='approved',start=Pt(x=10,y=20),end=Pt(x=180,y=20))])
+    candidate=FusedCandidate(id='approved',start=Pt(x=10,y=20),
+        end=Pt(x=180,y=20),sources=['yytsi_mask'],mask_support=.95,
+        category='yytsi_only')
+    with Session(db) as session:
+        project=Project(title='reviewed');session.add(project);session.flush()
+        bp=Blueprint(project_id=project.id,filename='plan.png',
+            local_path=str(path),preview_path=str(path),
+            width=400,height=200)
+        session.add(bp);session.flush()
+        session.add(Layout(blueprint_id=bp.id,version=3,geometry=draft.model_dump()))
+        session.add(FusionCandidateReview(blueprint_id=bp.id,
+            preview_sha256=digest,candidate_id='approved',
+            category='yytsi_only',decision='accept',candidate=candidate.model_dump()))
+        session.commit();bid=bp.id
+    result=main.reviewed_geometry_export(bid)
+    assert result['schema_version']==1
+    assert result['source_preview_sha256']==digest
+    assert result['layout_version']==3
+    assert result['geometry']==draft.model_dump()
+    assert len(result['review_labels'])==1
+    assert result['review_labels'][0]['decision']=='accept'
+    assert result['ground_truth_status']=='not independently validated'
