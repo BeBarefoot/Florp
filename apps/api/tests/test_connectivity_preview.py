@@ -132,3 +132,32 @@ def test_opening_association_is_read_only_and_keeps_unmatched_labels(tmp_path,mo
     with Session(db) as session:
         assert session.get(Layout,session.exec(
             __import__('sqlmodel').select(Layout.id)).first()).geometry==g.model_dump()
+
+
+def test_offset_l_corner_joins_at_axis_intersection_without_kinking_lines():
+    g=Geometry(width_px=300,height_px=200,walls=[
+        wall('horizontal',(20,80),(101,80)),
+        wall('vertical',(105,84),(105,160))])
+    original=g.model_dump()
+    r=preview_connectivity(g,tolerance_px=6)
+    assert r.geometry.walls[0].end==Pt(x=105,y=80)
+    assert r.geometry.walls[1].start==Pt(x=105,y=80)
+    assert len([c for c in r.changes if c.reason=='perpendicular corner'])==2
+    assert g.model_dump()==original
+
+def test_corner_join_respects_tolerance_and_opening_hosts():
+    g=Geometry(width_px=300,height_px=200,walls=[
+        wall('a',(20,80),(100,80)),wall('b',(107,88),(107,160))])
+    assert not any(c.reason=='perpendicular corner' for c in preview_connectivity(g,tolerance_px=5).changes)
+    g.walls[1].start=Pt(x=104,y=84)
+    g.openings=[Opening(id='window',kind='window',wall_id='b',
+                         offset_m=0,width_m=.3,height_m=1)]
+    r=preview_connectivity(g,tolerance_px=6)
+    assert r.geometry.walls[1]==g.walls[1]
+    assert not any(c.reason=='perpendicular corner' for c in r.changes)
+
+def test_parallel_nearby_endpoints_never_corner_join():
+    g=Geometry(width_px=300,height_px=200,walls=[
+        wall('a',(20,80),(100,80)),wall('b',(104,84),(180,84))])
+    r=preview_connectivity(g,tolerance_px=6)
+    assert not any(c.reason=='perpendicular corner' for c in r.changes)
