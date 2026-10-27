@@ -303,6 +303,61 @@ def propose_topology(bid: str):
         session.add(row);session.commit();session.refresh(row)
         return {'layout':row,'topology':audit_topology(proposal)}
 
+class OpeningAssociationPreviewBody(BaseModel):
+    geometry: Geometry
+
+@app.post('/blueprints/{bid}/openings/association-preview')
+def preview_reviewed_openings(bid:str,body:OpeningAssociationPreviewBody):
+    """Visual-only door/window host suggestions, no fabricated metric cutouts.
+
+    Reads latest classification per candidate from the saved review audit.
+    Physical openings require user-confirmed scale and geometry verification.
+    """
+    import hashlib
+    from .opening_review import OpeningHint, associate_opening
+    from .connectivity_preview import without_starter
+    with Session(engine) as session:
+        blueprint=session.get(Blueprint,bid)
+        if blueprint is None:raise HTTPException(404,'Blueprint not found')
+        if (body.geometry.width_px,body.geometry.height_px)!=(blueprint.width,blueprint.height):
+            raise HTTPException(422,'Geometry source dimensions mismatch')
+        digest=hashlib.sha256(Path(blueprint.preview_path).read_bytes()).hexdigest()
+        rows=session.exec(select(FusionCandidateReview).where(
+            FusionCandidateReview.blueprint_id==bid,
+            FusionCandidateReview.preview_sha256==digest).order_by(
+            FusionCandidateReview.created_at,FusionCandidateReview.id)).all()
+        latest={}
+        for row in rows:latest[row.candidate_id]=row
+        geometry=without_starter(body.geometry)
+        items=[]
+        for key,review in latest.items():
+            if review.decision not in ('door','window'):continue
+            candidate=review.candidate
+            a,b=candidate.get('start'),candidate.get('end')
+            if not isinstance(a,dict) or not isinstance(b,dict):continue
+            try:
+                x1,x2=sorted((float(a['x']),float(b['x'])))
+                y1,y2=sorted((float(a['y']),float(b['y'])))
+                if not all(0<=x<=blueprint.width for x in (x1,x2)) or not all(
+                    0<=y<=blueprint.height for y in (y1,y2)):continue
+                hint=OpeningHint(candidate_id=key,kind=review.decision,
+                    x1=x1,y1=y1,x2=x2,y2=y2,source_confidence=0.,
+                    reason='Human-classified visual opening evidence')
+                attached=associate_opening(geometry,hint,max_distance_px=12.)
+            except (ValueError,TypeError,KeyError):continue
+            items.append({'candidate_id':key,'kind':review.decision,
+                          'start':a,'end':b,'host_wall_id':attached.wall_id,
+                          'fraction':attached.fraction,
+                          'status':'proposed' if attached.wall_id else 'unresolved',
+                          'reason':attached.reason})
+        items.sort(key=lambda item:(item['status']!='proposed',item['candidate_id']))
+        return {'saved':False,'confirmed_metric_openings':len(body.geometry.openings),
+                'scale_confirmed':body.geometry.scale_source=='user_confirmed',
+                'proposed':sum(item['status']=='proposed' for item in items),
+                'unresolved':sum(item['status']=='unresolved' for item in items),
+                'items':items,
+                'warning':'Review each host wall and calibrate scale before creating 3D openings. No metric cutout was generated.'}
+
 class ConnectivityPreviewBody(BaseModel):
     geometry: Geometry
     tolerance_px: float = 5.0
