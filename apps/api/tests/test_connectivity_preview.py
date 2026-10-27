@@ -60,3 +60,33 @@ def test_pure_read_only_preview_has_no_metric_or_room_changes():
 def test_tolerance_is_bounded():
     with pytest.raises(ValueError):
         preview_connectivity(Geometry(width_px=100,height_px=100),20)
+
+def test_exact_starter_rectangle_removed_from_preview_not_saved():
+    from app.geometry import fallback_geometry
+    g=fallback_geometry(992,440)
+    g.walls.append(wall('reviewed-wall',(200,80),(200,220)))
+    result=preview_connectivity(g)
+    assert result.removed_starter_ids==['w0','w1','w2','w3']
+    assert [w.id for w in result.geometry.walls]==['reviewed-wall']
+    assert result.geometry.rooms==[]
+    assert len(g.walls)==5
+    assert g.rooms[0].id=='room-1'
+    assert result.geometry.structure_reviewed is False
+
+def test_keep_manually_edited_starter_id():
+    from app.geometry import fallback_geometry
+    g=fallback_geometry(992,440)
+    g.walls[0].start.x+=10
+    result=preview_connectivity(g)
+    assert 'w0' not in result.removed_starter_ids
+    assert any(w.id=='w0' for w in result.geometry.walls)
+
+def test_do_not_delete_opening_hosted_by_starter_wall():
+    from app.geometry import fallback_geometry
+    g=fallback_geometry(992,440)
+    g.openings.append(Opening(id='door-1',kind='door',wall_id='w0',
+        offset_m=.1,width_m=.6,height_m=2.1))
+    result=preview_connectivity(g)
+    assert 'w0' not in result.removed_starter_ids
+    assert any(w.id=='w0' for w in result.geometry.walls)
+    assert result.geometry.openings==g.openings
