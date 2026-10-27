@@ -130,3 +130,52 @@ def test_fusion_candidate_can_be_reclassified_as_door_or_window(tmp_path,monkeyp
         stored=list(session.exec(select(Layout).where(Layout.blueprint_id==bid)).all())
         assert len(stored)==1
         assert stored[0].geometry['openings']==[]
+
+import pytest
+
+def test_merge_reviewed_walls_after_layout_version_advances(tmp_path,monkeypatch):
+    from app.evidence_fusion import FusedCandidate
+    from app.geometry import Wall,Pt
+    from app.models import FusionCandidateReview
+    from fastapi import HTTPException
+    db=create_engine('sqlite://',connect_args={'check_same_thread':False},poolclass=StaticPool)
+    SQLModel.metadata.create_all(db)
+    monkeypatch.setattr(main,'engine',db)
+    image=tmp_path/'plan.png'
+    assert cv2.imwrite(str(image),np.full((200,400,3),255,dtype='uint8'))
+    digest=hashlib.sha256(image.read_bytes()).hexdigest()
+    preserved=Wall(id='user-wall',start=Pt(x=30,y=20),end=Pt(x=30,y=150))
+    original=Geometry(width_px=400,height_px=200,walls=[preserved])
+    candidate=FusedCandidate(id='mask-gap',start=Pt(x=30,y=100),end=Pt(x=250,y=100),
+        category='yytsi_only',sources=['yytsi_mask'],mask_support=1)
+    with Session(db) as session:
+        project=Project(title='test');session.add(project);session.flush()
+        blueprint=Blueprint(project_id=project.id,filename='plan.png',
+            local_path=str(image),preview_path=str(image),width=400,height=200)
+        session.add(blueprint);session.flush()
+        session.add(Layout(blueprint_id=blueprint.id,version=6,geometry=original.model_dump()))
+        session.add(FusionCandidateReview(blueprint_id=blueprint.id,
+            preview_sha256=digest,candidate_id=candidate.id,category='yytsi_only',
+            decision='accept',candidate=candidate.model_dump()))
+        session.commit()
+        bid=blueprint.id
+    body=main.MergeFusionDraftBody(preview_sha256=digest,layout_version=6,
+        geometry=original,candidate_ids=[candidate.id])
+    merged=main.merge_reviewed_fusion_walls(bid,body)
+    assert (merged['added'],merged['already_present'],merged['ignored'])==(1,0,0)
+    assert [w['id'] for w in merged['geometry']['walls']]==['user-wall','mask-gap']
+    assert original.walls==[preserved]
+    with Session(db) as session:
+        rows=list(session.exec(select(Layout).where(Layout.blueprint_id==bid)).all())
+        assert len(rows)==1 and rows[0].version==6
+        assert rows[0].geometry==original.model_dump()
+        session.add(Layout(blueprint_id=bid,version=7,geometry=merged['geometry']))
+        session.commit()
+    newer=main.merge_reviewed_fusion_walls(bid,main.MergeFusionDraftBody(
+        preview_sha256=digest,layout_version=7,
+        geometry=Geometry.model_validate(merged['geometry']),
+        candidate_ids=[candidate.id]))
+    assert (newer['added'],newer['already_present'])==(0,1)
+    with pytest.raises(HTTPException) as error:
+        main.merge_reviewed_fusion_walls(bid,body)
+    assert error.value.status_code==409
