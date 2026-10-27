@@ -291,3 +291,39 @@ by default and only for a geometrically unambiguous supported junction; it
 does not invent missing partitions or overwrite doors/windows. Larger gaps
 still need image-supported manual correction. The export stores review
 decisions for future fine-tuning, not model weights.
+
+## 12. Reviewed-geometry cleanup and opening-host preview
+
+Using the saved, reviewed 2D wall draft (no repeated model inference):
+
+1. Open the 2D editor and choose **Preview connections**.
+2. Florp identifies exact, untouched starter rectangle edges (`w0`–`w3`)
+   and proposes removing them **only in the preview**. Edited starter IDs
+   and walls hosting openings are preserved.
+3. Short, unambiguous, geometrically aligned loose endpoints may be snapped
+   to supported junctions. Cyan arrows show each proposed movement.
+4. Inspect the proposed wall count, structural groups, and loose endpoints.
+   Click **Apply preview to unsaved draft** only when the visible changes
+   match the drawing; then **Save corrected draft**. The geometry retains
+   its original source pixels and provisional metric status.
+5. Click **Preview opening hosts** to visualize approved door/window
+   labels from review history against your *current* wall geometry.
+   Cyan denotes a provisional nearby host; orange denotes unresolved
+   labels. No metric 3D openings are created until a real scale has been
+   confirmed and spans individually checked.
+6. Use **Export saved walls + labels JSON** after saving to keep a portable
+   audit artifact for future segmentation training/quality comparisons.
+
+**Limitations:** This pass does not invent whole missing wall spans, reconstruct
+enclosed room polygons from incomplete edges, certify wall thickness, or
+retrain YOLO/Yytsi. Ambiguous joins and openings remain unresolved for
+on-image review. The structural graph deliberately still reports disconnected
+components where evidence is insufficient. A saved draft is not automatically
+ground truth.
+
+Regression suites:
+```bash
+cd apps/api
+uv run pytest -q tests/test_connectivity_preview.py
+uv run pytest -q
+```
