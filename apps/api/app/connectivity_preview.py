@@ -12,6 +12,50 @@ from .geometry import Geometry, Pt
 from .structural_graph import build_structural_graph, _project
 
 
+def is_untouched_starter_wall(geometry: Geometry, wall) -> bool:
+    """Match all four exact fallback walls by geometry AND starter identity.
+
+    The starter warning alone is not sufficient: it may remain after edits.
+    A moved wall with an old ID is preserved.
+    """
+    if wall.id not in {'w0','w1','w2','w3'}:
+        return False
+    pad=min(geometry.width_px,geometry.height_px)*.12
+    x0,y0,x1,y1=pad,pad,geometry.width_px-pad,geometry.height_px-pad
+    edges=[((x0,y0),(x1,y0)),((x1,y0),(x1,y1)),
+           ((x1,y1),(x0,y1)),((x0,y1),(x0,y0))]
+    a,b=edges[int(wall.id[1])]
+    def eq(p,q):
+        return hypot(p.x-q[0],p.y-q[1])<.05
+    return (eq(wall.start,a) and eq(wall.end,b)) or (eq(wall.start,b) and eq(wall.end,a))
+
+
+def without_starter(geometry: Geometry) -> Geometry:
+    result=geometry.model_copy(deep=True)
+    removed={w.id for w in result.walls if is_untouched_starter_wall(result,w)}
+    if removed:
+        # We cannot remove walls supporting openings without an explicit
+        # reattachment operation. Such a case is left for user review.
+        protected={o.wall_id for o in result.openings}
+        removed-=protected
+        result.walls=[w for w in result.walls if w.id not in removed]
+    if not any(w.id.startswith('w') and is_untouched_starter_wall(result,w) for w in result.walls):
+        result.rooms=[r for r in result.rooms if not (
+            r.id=='room-1' and r.label=='Unverified room' and len(r.points)==4
+            and all(hypot(p.x-q.x,p.y-q.y)<.05
+                    for p,q in zip(r.points,[
+                        Pt(x=min(geometry.width_px,geometry.height_px)*.12,y=min(geometry.width_px,geometry.height_px)*.12),
+                        Pt(x=geometry.width_px-min(geometry.width_px,geometry.height_px)*.12,y=min(geometry.width_px,geometry.height_px)*.12),
+                        Pt(x=geometry.width_px-min(geometry.width_px,geometry.height_px)*.12,y=geometry.height_px-min(geometry.width_px,geometry.height_px)*.12),
+                        Pt(x=min(geometry.width_px,geometry.height_px)*.12,y=geometry.height_px-min(geometry.width_px,geometry.height_px)*.12)
+                    ]))) ]
+    if removed or len(result.rooms)!=len(geometry.rooms):
+        result.structure_reviewed=False
+        result.warnings=[w for w in result.warnings if not w.startswith('Starter geometry')]
+        result.warnings=list(dict.fromkeys(result.warnings+['Removed exact starter placeholders from proposed geometry; check actual exterior walls.']))
+    return result
+
+
 class EndpointChange(BaseModel):
     wall_id: str
     endpoint: str
@@ -28,6 +72,7 @@ class ConnectivityPreview(BaseModel):
     after_components: int
     before_dangling: int
     after_dangling: int
+    removed_starter_ids: list[str] = Field(default_factory=list)
     warning: str
 
 
@@ -45,19 +90,21 @@ def preview_connectivity(geometry: Geometry, tolerance_px: float = 5.) -> Connec
     if not 0 < tolerance_px <= 8:
         raise ValueError('tolerance_px must be > 0 and <= 8')
     original=geometry.model_copy(deep=True)
-    proposed=geometry.model_copy(deep=True)
+    proposed=without_starter(geometry)
+    removed_starter_ids=sorted({w.id for w in geometry.walls}-{w.id for w in proposed.walls})
     frozen={o.wall_id for o in geometry.openings}
     walls=proposed.walls
+    source=proposed.model_copy(deep=True)
     proposals=[]
     # Disallow drift caused by multiple sequential snap passes: each source
     # wall can have at most one moved endpoint, determined from the original.
-    for i, wall in enumerate(original.walls):
+    for i, wall in enumerate(source.walls):
         if wall.id in frozen:continue
         for endpoint in ('start','end'):
             p=getattr(wall,endpoint)
             opposite=getattr(wall,'end' if endpoint=='start' else 'start')
             choices=[]
-            for j, other in enumerate(original.walls):
+            for j, other in enumerate(source.walls):
                 if i==j:continue
                 for other_endpoint in ('start','end'):
                     q=getattr(other,other_endpoint)
@@ -96,15 +143,15 @@ def preview_connectivity(geometry: Geometry, tolerance_px: float = 5.) -> Connec
     for i,items in by_wall.items():
         if len(items)!=1:continue
         _,endpoint,q,d,reason=items[0]
-        before=getattr(original.walls[i],endpoint)
-        candidate=original.walls[i].model_copy(update={endpoint:q})
+        before=getattr(source.walls[i],endpoint)
+        candidate=source.walls[i].model_copy(update={endpoint:q})
         if _distance(candidate.start,candidate.end)<3:continue
         setattr(walls[i],endpoint,Pt(x=round(q.x,3),y=round(q.y,3)))
         changes.append(EndpointChange(wall_id=walls[i].id,endpoint=endpoint,
             original=before,proposed=getattr(walls[i],endpoint),
             distance_px=d,reason=reason))
     # No new rooms are inferred; existing room polygons remain unchanged.
-    if changes:
+    if changes or removed_starter_ids:
         proposed.structure_reviewed=False
         proposed.warnings=list(dict.fromkeys(proposed.warnings+[
             'Connectivity adjustment is provisional; confirm wall junctions before saving.'
@@ -116,4 +163,5 @@ def preview_connectivity(geometry: Geometry, tolerance_px: float = 5.) -> Connec
         after_components=after.disconnected_components,
         before_dangling=before.dangling_nodes,
         after_dangling=after.dangling_nodes,
+        removed_starter_ids=removed_starter_ids,
         warning='Only near-aligned junctions are proposed; unobserved wall spans, rooms, scale and opening anchors are unchanged.')
