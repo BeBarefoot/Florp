@@ -105,6 +105,9 @@ export default function Editor(){
  type ConnectivityProposal={geometry:Geometry;changes:ConnectivityChange[];before_components:number;after_components:number;before_dangling:number;after_dangling:number;removed_starter_ids:string[];warning:string;saved:false};
  const [connectivity,setConnectivity]=useState<{source:string;proposal:ConnectivityProposal}|null>(null);
  const [connectivityBusy,setConnectivityBusy]=useState(false);
+ type OpeningMatch={candidate_id:string;kind:'door'|'window';start:Pt;end:Pt;host_wall_id:string|null;fraction:number|null;status:'proposed'|'unresolved';reason:string};
+ const [association,setAssociation]=useState<{source:string;items:OpeningMatch[];proposed:number;unresolved:number}|null>(null);
+ const [associationBusy,setAssociationBusy]=useState(false);
  const [selectedWall,setSelectedWall]=useState<string|null>(null);
  const [selectedDetection,setSelectedDetection]=useState<number|null>(null);
  const [rejectedDetections,setRejectedDetections]=useState<string[]>([]);
@@ -650,6 +653,21 @@ export default function Editor(){
      warnings:geometry.warnings.filter(w=>!w.includes('Starter geometry'))});
    setStatus('Removed '+placeholders.length+' untouched starter walls from unsaved draft. Review the remaining walls before saving or scoring.');
  }
+ async function previewOpeningAssociations(){
+   if(!geometry||associationBusy)return;
+   setAssociationBusy(true);
+   try{
+     const source=JSON.stringify(geometry);
+     const result=await request<{items:OpeningMatch[];proposed:number;unresolved:number}>(`/blueprints/${id}/openings/association-preview`,{
+       method:'POST',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({geometry})});
+     if(source!==JSON.stringify(geometry))return;
+     setAssociation({source,...result});
+     setStatus(result.proposed+' visual opening-to-wall matches proposed, '+result.unresolved+
+       ' unresolved. These are NOT metric 3D openings.');
+   }catch(error){setStatus(String(error))}
+   finally{setAssociationBusy(false)}
+ }
  async function previewConnections(){
    if(!geometry||!layout||connectivityBusy)return;
    setConnectivityBusy(true);setStatus('');
@@ -740,6 +758,17 @@ export default function Editor(){
  <button className="secondary" onClick={()=>setConnectivity(null)}>Discard preview</button>
  </div>
  <small>Dashed cyan arrows show short endpoint movements. Existing approved walls, openings and rooms are kept. No new partitions are invented.</small>
+ </div>}
+ </div>}
+ {view==='2d'&&geometry.walls.length>0&&<div style={{border:'1px solid #cbd5e1',padding:10,borderRadius:10,marginBottom:12}}>
+ <div className="row" style={{justifyContent:'space-between'}}>
+ <strong>Reviewed doors and windows</strong>
+ <button className="secondary" disabled={associationBusy} onClick={()=>void previewOpeningAssociations()}>
+ {associationBusy?'Checking…':'Preview opening hosts'}</button>
+ </div>
+ {association&&<div style={{marginTop:6}}>
+ <small>{association.proposed} provisional host matches · {association.unresolved} unresolved. Cyan = proposed; orange = needs review. Nothing saved or cut in 3D.</small>
+ <button className="secondary" onClick={()=>setAssociation(null)}>Hide opening preview</button>
  </div>}
  </div>}
  {view==='2d'&&r2s&&<div className="notice" style={{marginBottom:12}}>
@@ -989,6 +1018,11 @@ export default function Editor(){
  <circle cx={c.proposed.x} cy={c.proposed.y} r={Math.max(4,geometry.width_px/250)}
  fill="#0891b2" stroke="white" strokeWidth="2"/>
  </g>)}
+ {association&&JSON.stringify(geometry)===association.source&&association.items.map((item,i)=>
+ <line key={'opening-assoc-'+i} x1={item.start.x} y1={item.start.y}
+ x2={item.end.x} y2={item.end.y} pointerEvents="none"
+ stroke={item.status==='proposed'?'#06b6d4':'#f97316'}
+ strokeWidth={Math.max(6,geometry.width_px/210)} strokeDasharray="7 3"/>)}
  {wallStart&&<circle cx={wallStart.x} cy={wallStart.y} r={Math.max(5,geometry.width_px/130)} fill="#d97706" pointerEvents="none"/>}
  </svg>
  <div className="annotation-inspector">
