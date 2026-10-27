@@ -274,6 +274,24 @@ def propose_topology(bid: str):
         session.add(row);session.commit();session.refresh(row)
         return {'layout':row,'topology':audit_topology(proposal)}
 
+class ConnectivityPreviewBody(BaseModel):
+    geometry: Geometry
+    tolerance_px: float = 5.0
+
+@app.post('/blueprints/{bid}/connectivity/preview')
+def preview_wall_connectivity(bid:str,body:ConnectivityPreviewBody):
+    """Pure geometry proposal; no changes to a layout, review or training data."""
+    from .connectivity_preview import preview_connectivity
+    with Session(engine) as session:
+        blueprint=session.get(Blueprint,bid)
+        if blueprint is None:raise HTTPException(404,'Blueprint not found')
+        if (body.geometry.width_px,body.geometry.height_px)!=(blueprint.width,blueprint.height):
+            raise HTTPException(422,'Draft dimensions mismatch the source image')
+        if not body.geometry.walls:raise HTTPException(422,'No stored walls to connect')
+        try:proposal=preview_connectivity(body.geometry,body.tolerance_px)
+        except ValueError as exc:raise HTTPException(422,str(exc)) from exc
+        return {'saved':False,**proposal.model_dump()}
+
 @app.get('/blueprints/{bid}/structural-graph')
 def inspect_structural_graph(bid: str):
     from .structural_graph import build_structural_graph
