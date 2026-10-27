@@ -144,6 +144,16 @@ export default function Editor(){
    finally{setModelBusy(false)}
  }
 
+ async function downloadReviewedGeometry(){
+   try{
+     const data=await request<unknown>(`/blueprints/${id}/reviewed-geometry-export`);
+     const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+     const url=URL.createObjectURL(blob);
+     const link=document.createElement('a');
+     link.href=url;link.download=`florp-reviewed-geometry-${id}.json`;
+     link.click();URL.revokeObjectURL(url);
+   }catch(error){setStatus('Reviewed dataset export failed: '+String(error))}
+ }
  async function downloadEvaluation(recordId:string){
    try{
      const data=await request<unknown>(`/blueprints/${id}/evaluations/${recordId}`);
@@ -684,6 +694,8 @@ export default function Editor(){
  </details>
  <div className="stack" style={{marginTop:16,borderTop:'1px solid #475569',paddingTop:12}}>
  <strong>3 · Measure extraction quality</strong>
+ <button className="secondary" disabled={!layout} onClick={()=>void downloadReviewedGeometry()}>
+ Export saved walls + labels JSON</button>
  <small>Keep a model snapshot, correct the drawing, then score it against your reviewed geometry.</small>
  <button className="secondary" disabled={!unified||evaluationBusy} onClick={()=>void captureBaseline()}>
  Save uncorrected model baseline</button>
