@@ -150,6 +150,86 @@ def preview_connectivity(geometry: Geometry, tolerance_px: float = 5.) -> Connec
         changes.append(EndpointChange(wall_id=walls[i].id,endpoint=endpoint,
             original=before,proposed=getattr(walls[i],endpoint),
             distance_px=d,reason=reason))
+    # Recover an L corner when two *free* endpoints terminate near the
+    # intersection of their own axes. Snapping one endpoint to the other
+    # would introduce a kink; move both to the mathematical corner instead.
+    # This pass never touches opening hosts or endpoints already moved above.
+    from .structural_graph import _crossing
+    occupied={(c.wall_id,c.endpoint) for c in changes}
+    used=set()
+    corner_choices=[]
+    for i,a in enumerate(source.walls):
+        if a.id in frozen:
+            continue
+        for j in range(i+1,len(source.walls)):
+            b=source.walls[j]
+            if b.id in frozen:
+                continue
+            ax=a.end.x-a.start.x; ay=a.end.y-a.start.y
+            bx=b.end.x-b.start.x; by=b.end.y-b.start.y
+            norm=hypot(ax,ay)*hypot(bx,by)
+            if norm<1:
+                continue
+            # Only near-perpendicular wall axes. Parallel/thickness pairs
+            # must never become a corner.
+            if abs(ax*bx+ay*by)/norm>.25:
+                continue
+            determinant=ax*by-ay*bx
+            if abs(determinant)<1e-9:
+                continue
+            ox=b.start.x-a.start.x; oy=b.start.y-a.start.y
+            t=(ox*by-oy*bx)/determinant
+            u=(ox*ay-oy*ax)/determinant
+            corner=Pt(x=a.start.x+t*ax,y=a.start.y+t*ay)
+            for ea in ('start','end'):
+                pa=getattr(a,ea)
+                if (a.id,ea) in occupied:
+                    continue
+                da=_distance(pa,corner)
+                if da>tolerance_px or da<.05:
+                    continue
+                for eb in ('start','end'):
+                    pb=getattr(b,eb)
+                    if (b.id,eb) in occupied:
+                        continue
+                    db=_distance(pb,corner)
+                    if db>tolerance_px:
+                        continue
+                    # Require both source axes to end near the same corner;
+                    # reject a diagonal proximity unsupported by either axis.
+                    if _distance(corner,getattr(a,'end' if ea=='start' else 'start'))<3:
+                        continue
+                    if _distance(corner,getattr(b,'end' if eb=='start' else 'start'))<3:
+                        continue
+                    corner_choices.append((round(da+db,6),i,ea,j,eb,corner,da,db))
+    corner_choices.sort(key=lambda item:(item[0],item[1],item[3]))
+    # Mutually competing candidate corners remain unresolved.
+    counts={}
+    for _,i,ea,j,eb,*_ in corner_choices:
+        counts[(i,ea)]=counts.get((i,ea),0)+1
+        counts[(j,eb)]=counts.get((j,eb),0)+1
+    for _,i,ea,j,eb,p,da,db in corner_choices:
+        if counts[(i,ea)]!=1 or counts[(j,eb)]!=1:
+            continue
+        if (i,ea) in used or (j,eb) in used:
+            continue
+        # Preserve a wall's unmodified opposite endpoint and any earlier snap.
+        if any(c.wall_id in (walls[i].id,walls[j].id) for c in changes):
+            continue
+        target=Pt(x=round(p.x,3),y=round(p.y,3))
+        before_a=getattr(walls[i],ea)
+        before_b=getattr(walls[j],eb)
+        setattr(walls[i],ea,target.model_copy(deep=True))
+        setattr(walls[j],eb,target.model_copy(deep=True))
+        changes.extend([
+            EndpointChange(wall_id=walls[i].id,endpoint=ea,original=before_a,
+                           proposed=target,distance_px=round(da,3),
+                           reason='perpendicular corner'),
+            EndpointChange(wall_id=walls[j].id,endpoint=eb,original=before_b,
+                           proposed=target,distance_px=round(db,3),
+                           reason='perpendicular corner')
+        ])
+        used.update(((i,ea),(j,eb)))
     # No new rooms are inferred; existing room polygons remain unchanged.
     if changes or removed_starter_ids:
         proposed.structure_reviewed=False
