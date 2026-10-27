@@ -351,22 +351,35 @@ export default function Editor(){
  }
  async function applyUnified(){
    if(!unified||!layout||!geometry)return;
-   if(layout.version!==unified.base_layout_version){
-     setStatus('Saved layout changed since comparison. Run comparison again.');return;
-   }
    if(geometry!==layout.geometry){
-     setStatus('Unsaved edits exist. Save them or compare again before applying.');return;
+     setStatus('You have unsaved geometry edits. Save the draft first, then apply the approved wall labels; your corrections will be preserved.');
+     return;
    }
-   if(!window.confirm('Load the fused wall proposal into your UNSAVED editor draft? This does not approve its geometry. Previous saved version remains unchanged.'))return;
    const selected=unified.candidates.filter(c=>fusionDecisions[c.id]==='accept');
-   if(!selected.length){setStatus('Accept at least one candidate before applying a wall draft.');return;}
-   const walls:Wall[]=selected.map(c=>({id:c.id,start:c.start,end:c.end,
-     thickness_m:.15,height_m:2.8,inferred:true}));
-   const draft={...unified.proposal,walls,rooms:[],openings:[],structure_reviewed:false};
-   const openings=await applyReviewedOpenings(draft);
-   setGeometry(openings.geometry);
-   setSelectedWall(null);
-   setStatus(selected.length+' accepted walls loaded into UNSAVED draft. '+(openings.messages.length?openings.messages.join('; '):'Reviewed openings placed where a unique host wall was found. Confirm measurements.'));
+   if(!selected.length){
+     setStatus('No walls are accepted yet. Select Wall on the correct line segments before applying.');return;
+   }
+   if(!window.confirm('Add '+selected.length+' approved wall segments to the current UNSAVED draft? Existing walls, room boundaries and openings will be preserved. Review in 2D before saving.'))return;
+   setBusy(true);
+   try{
+     const merged=await request<{saved:false;geometry:Geometry;added:number;already_present:number;ignored:number;layout_version:number}>(
+       `/blueprints/${id}/fusion-draft/merge`,{
+       method:'POST',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({
+         preview_sha256:unified.input_manifest.source_preview_sha256,
+         layout_version:layout.version,geometry,candidate_ids:selected.map(c=>c.id)
+       })});
+     if(merged.added===0&&merged.already_present===0){
+       setStatus('No approved wall labels could be merged. Re-run extraction and review the new proposals.');return;
+     }
+     const openings=await applyReviewedOpenings(merged.geometry);
+     setGeometry(openings.geometry);setSelectedWall(null);setView('2d');
+     setStatus(merged.added+' approved walls added to your UNSAVED draft ('+
+       merged.already_present+' already present, '+merged.ignored+' skipped). Geometry now has '+
+       openings.geometry.walls.length+' walls. Review them and click Save corrected draft. '+
+       openings.messages.join('; '));
+   }catch(error){setStatus(String(error))}
+   finally{setBusy(false)}
  }
  async function trySegmentation(){
    if(!window.confirm('Run experimental local wall segmentation? This creates a new draft and may replace all unreviewed wall proposals. Existing saved versions remain available.'))return;
