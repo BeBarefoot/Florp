@@ -90,3 +90,45 @@ def test_do_not_delete_opening_hosted_by_starter_wall():
     assert 'w0' not in result.removed_starter_ids
     assert any(w.id=='w0' for w in result.geometry.walls)
     assert result.geometry.openings==g.openings
+
+def test_opening_association_is_read_only_and_keeps_unmatched_labels(tmp_path,monkeypatch):
+    import hashlib
+    import cv2
+    import numpy as np
+    from sqlmodel import SQLModel,Session,create_engine
+    from sqlalchemy.pool import StaticPool
+    from app import main
+    from app.models import Project,Blueprint,Layout,FusionCandidateReview
+    from app.geometry import fallback_geometry
+    db=create_engine('sqlite://',connect_args={'check_same_thread':False},
+                     poolclass=StaticPool)
+    SQLModel.metadata.create_all(db)
+    monkeypatch.setattr(main,'engine',db)
+    image=tmp_path/'source.png'
+    assert cv2.imwrite(str(image),np.full((200,300,3),255,dtype='uint8'))
+    digest=hashlib.sha256(image.read_bytes()).hexdigest()
+    g=fallback_geometry(300,200)
+    g.walls.append(wall('reviewed',(20,100),(260,100)))
+    with Session(db) as session:
+        project=Project(title='Opening review');session.add(project);session.flush()
+        blueprint=Blueprint(project_id=project.id,filename='source.png',
+                            preview_path=str(image),local_path=str(image),width=300,height=200)
+        session.add(blueprint);session.flush()
+        session.add(Layout(blueprint_id=blueprint.id,version=1,geometry=g.model_dump()))
+        for i,start,end in [(0,(100,100),(140,100)),(1,(100,20),(140,20))]:
+            session.add(FusionCandidateReview(
+                blueprint_id=blueprint.id,preview_sha256=digest,
+                candidate_id=f'opening-{i}',decision='door',category='yytsi_only',
+                candidate={'id':f'opening-{i}','start':{'x':start[0],'y':start[1]},
+                           'end':{'x':end[0],'y':end[1]}}))
+        session.commit()
+        bid=blueprint.id
+    result=main.preview_reviewed_openings(bid,main.OpeningAssociationPreviewBody(geometry=g))
+    assert result['saved'] is False
+    assert result['proposed']==1
+    assert result['unresolved']==1
+    assert result['items'][0]['host_wall_id']=='reviewed'
+    assert all(item['status'] in ('proposed','unresolved') for item in result['items'])
+    with Session(db) as session:
+        assert session.get(Layout,session.exec(
+            __import__('sqlmodel').select(Layout.id)).first()).geometry==g.model_dump()
