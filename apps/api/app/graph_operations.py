@@ -46,9 +46,13 @@ def apply_operation(source: CanonicalPlan, op: GraphOperation) -> CanonicalPlan:
         projected = Pt(x=a.x+t*dx, y=a.y+t*dy)
         if not .01<t<.99 or hypot(projected.x-op.point.x, projected.y-op.point.y)>1:
             raise ValueError('Split point must lie inside the wall centerline')
-        new_node_id = 'node-'+uuid4().hex
+        existing = [n for n in candidate.nodes if hypot(n.point.x-projected.x,n.point.y-projected.y)<.01]
+        if len(existing)>1:
+            raise ValueError('Ambiguous coincident junction at split point')
+        new_node_id = existing[0].id if existing else 'node-'+uuid4().hex
         new_wall_id = 'wall-'+uuid4().hex
-        candidate.nodes.append(PlanNode(id=new_node_id, point=projected))
+        if not existing:
+            candidate.nodes.append(PlanNode(id=new_node_id, point=projected))
         second = w.model_copy(deep=True)
         second.id = new_wall_id
         second.start_node_id = new_node_id
