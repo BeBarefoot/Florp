@@ -1097,3 +1097,71 @@ class RenderRequest(BaseModel):
 def request_render(bid:str,body:RenderRequest):
     # Image generation requires a client-produced depth map; the API will not fabricate one.
     raise HTTPException(501,'Depth capture and render submission are scheduled for the next milestone; no synthetic render is generated.')
+
+class RestoreCanonicalBody(BaseModel):
+    target_revision_id: str
+
+
+def _current_graph(session: Session, bid: str, revision_id: str):
+    """Common optimistic concurrency guard for canonical mutations."""
+    if not session.get(Blueprint,bid):
+        raise HTTPException(404,'Blueprint not found')
+    latest=session.exec(select(PlanGraphRevision).where(
+        PlanGraphRevision.blueprint_id==bid).order_by(PlanGraphRevision.version.desc())).first()
+    if latest is None or latest.id!=revision_id:
+        raise HTTPException(409,'Stale revision; reload the latest canonical graph')
+    layout=session.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
+    if layout is None or layout.id!=latest.source_layout_id:
+        raise HTTPException(409,'Legacy layout changed; re-import the canonical plan')
+    return latest
+
+
+def _append_graph(session: Session, latest: PlanGraphRevision, graph: dict, operation: dict):
+    from sqlalchemy.exc import IntegrityError
+    row=PlanGraphRevision(blueprint_id=latest.blueprint_id,
+        source_layout_id=latest.source_layout_id,source_layout_version=latest.source_layout_version,
+        version=latest.version+1,parent_revision_id=latest.id,operation=operation,graph=graph)
+    session.add(row)
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(409,'Concurrent revision update; refresh') from exc
+    session.refresh(row)
+    return row
+
+
+@app.get('/blueprints/{bid}/canonical-plan/revisions/{revision_id}/geometry')
+def canonical_geometry(bid: str, revision_id: str):
+    """Read-only projection of one immutable revision for both 2D and 3D."""
+    from .plan_graph import CanonicalPlan
+    from .graph_adapter import to_geometry
+    with Session(engine) as session:
+        revision=session.get(PlanGraphRevision,revision_id)
+        if revision is None or revision.blueprint_id!=bid:
+            raise HTTPException(404,'Revision not found')
+        try:
+            geometry=to_geometry(CanonicalPlan.model_validate(revision.graph))
+        except ValueError as exc:
+            raise HTTPException(422,str(exc)) from exc
+        return {'revision_id':revision.id,'geometry':geometry.model_dump(mode='json')}
+
+
+@app.post('/blueprints/{bid}/canonical-plan/revisions/{revision_id}/restore')
+def restore_canonical_revision(bid: str, revision_id: str, body: RestoreCanonicalBody):
+    """Undo/restore by appending a snapshot, never deleting revision history."""
+    from .plan_graph import CanonicalPlan
+    from .graph_validation import require_valid
+    with Session(engine) as session:
+        latest=_current_graph(session,bid,revision_id)
+        target=session.get(PlanGraphRevision,body.target_revision_id)
+        if target is None or target.blueprint_id!=bid:
+            raise HTTPException(404,'Target revision not found')
+        if target.source_layout_id!=latest.source_layout_id or target.version>=latest.version:
+            raise HTTPException(409,'Restore requires an earlier revision from the same source layout')
+        try:
+            require_valid(CanonicalPlan.model_validate(target.graph))
+        except ValueError as exc:
+            raise HTTPException(422,str(exc)) from exc
+        return _append_graph(session,latest,target.graph,
+            {'kind':'restore','target_revision_id':target.id})
