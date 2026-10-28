@@ -13,6 +13,7 @@ from .geometry import Geometry, Wall, Opening, Room, Pt
 from .structural_graph import build_structural_graph
 from .plan_graph import CanonicalPlan, PlanNode, PlanWall, PlanRoom, BoundaryEdge, PlanOpening
 from .graph_validation import require_valid
+from .connectivity_preview import without_starter
 
 
 def derive_faces(plan: CanonicalPlan) -> list[PlanRoom]:
@@ -56,6 +57,10 @@ def derive_faces(plan: CanonicalPlan) -> list[PlanRoom]:
 
 
 def from_geometry(geometry: Geometry) -> CanonicalPlan:
+    # Starter rectangles are placeholders, not architectural evidence.
+    source_geometry = geometry
+    geometry = without_starter(geometry)
+    excluded_starter_ids = sorted({w.id for w in source_geometry.walls} - {w.id for w in geometry.walls})
     graph = build_structural_graph(geometry)
     nodes = [PlanNode(id=n.id, point=n.position.model_copy(deep=True))
              for n in graph.nodes]
@@ -77,7 +82,8 @@ def from_geometry(geometry: Geometry) -> CanonicalPlan:
                          px_per_meter=geometry.px_per_meter, scale_source=geometry.scale_source,
                          nodes=nodes, walls=walls, legacy_rooms=[r.model_copy(deep=True) for r in geometry.rooms],
                          warnings=list(geometry.warnings),
-                         provenance={'adapter':'legacy-geometry-v1', 'source':'stored wall axes'})
+                         provenance={'adapter':'legacy-geometry-v1', 'source':'stored wall axes',
+                                     'excluded_starter_ids':','.join(excluded_starter_ids)})
     graph_nodes = {n.id: n.position for n in graph.nodes}
     for opening in geometry.openings:
         source = original.get(opening.wall_id)
