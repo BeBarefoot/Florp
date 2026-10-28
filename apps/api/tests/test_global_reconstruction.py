@@ -106,10 +106,11 @@ def test_real_regression_remains_unchanged_without_evidence():
         Wall(id=wid,start=Pt(x=x1,y=y1),end=Pt(x=x2,y=y2))
         for wid,x1,y1,x2,y2 in data['walls']])
     plan=from_geometry(geometry);before=plan.model_dump()
-    # Existing import splits two source walls into sub-3px edges. Do not
-    # silently delete source evidence to make the validator accept this case.
-    with pytest.raises(ValueError,match='shorter than 3 pixels'):
-        propose_reconstruction(plan,Image.new('L',(plan.width_px,plan.height_px),255))
+    # Short nonzero source subdivisions are retained, not deleted or snapped.
+    result=propose_reconstruction(plan,Image.new('L',(plan.width_px,plan.height_px),255))
+    assert not result['candidates']
+    assert {w.source_wall_id for w in plan.walls}=={w.id for w in geometry.walls}
+    assert len(to_geometry(plan).walls)==len(plan.walls)
     assert plan.model_dump()==before
 
 

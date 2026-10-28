@@ -203,3 +203,21 @@ def test_crossing_wall_can_be_added_after_explicit_split():
                          start=Pt(x=100,y=100),end=Pt(x=100,y=160)))
     joint = next(n.id for n in branch.nodes if n.point==Pt(x=100,y=100))
     assert sum(joint in (w.start_node_id,w.end_node_id) for w in branch.walls)==3
+
+
+def test_short_source_subdivisions_survive_import_without_allowing_collapsed_edges():
+    g=Geometry(width_px=300,height_px=200,walls=[
+        wall('host',(10,100),(200,100)),wall('branch',(12,100),(12,180))])
+    plan=from_geometry(g)
+    assert validate_plan(plan)==[]
+    host=[w for w in plan.walls if w.source_wall_id=='host']
+    assert len(host)==2
+    assert len(to_geometry(plan).walls)==3
+    before=plan.model_dump()
+    # User drawing/movement still refuses newly created short walls.
+    with pytest.raises(ValueError,match='short wall'):
+        apply_operation(plan,GraphOperation(kind='add_wall',start=Pt(x=30,y=30),end=Pt(x=31,y=30)))
+    tiny=host[0]
+    nodes={n.id:n for n in plan.nodes}
+    nodes[tiny.end_node_id].point=nodes[tiny.start_node_id].point.model_copy()
+    assert any('zero-length' in issue for issue in validate_plan(plan))

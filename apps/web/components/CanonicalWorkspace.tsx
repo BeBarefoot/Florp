@@ -6,7 +6,7 @@ import {API,request,Geometry,Pt} from '../lib/api';
 const Viewer=dynamic(()=>import('./Viewer3D'),{ssr:false});
 type Graph={width_px:number;height_px:number;nodes:{id:string;point:Pt}[];walls:{id:string;start_node_id:string;end_node_id:string}[];rooms:{id:string;verified:boolean}[];pending_openings:unknown[]};
 export type Revision={id:string;version:number;parent_revision_id:string|null;graph:Graph};
-export default function CanonicalWorkspace({bid,layoutVersion}:{bid:string;layoutVersion:number}){
+export default function CanonicalWorkspace({bid,layoutVersion,hasUnsavedChanges,onUseDraft}:{bid:string;layoutVersion:number;hasUnsavedChanges:boolean;onUseDraft:(g:Geometry)=>void}){
  const [revision,setRevision]=useState<Revision|null>(null),[stale,setStale]=useState(false);
  const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[selected,setSelected]=useState<string|null>(null);
  const [projection,setProjection]=useState<Geometry|null>(null),[view,setView]=useState<'2d'|'3d'>('2d');
@@ -29,18 +29,30 @@ export default function CanonicalWorkspace({bid,layoutVersion}:{bid:string;layou
   catch(e){setMessage(String(e));if(String(e).includes('409:'))setStale(true);}
   finally{setBusy(false);}
  }
+ async function useInDraft(){
+  if(!revision||hasUnsavedChanges)return;
+  setBusy(true);setMessage('');
+  try{
+   const result=await request<{geometry:Geometry}>(`/blueprints/${bid}/canonical-plan/revisions/${revision.id}/draft`,{method:'POST'});
+   onUseDraft(result.geometry);
+   setMessage('Graph loaded into the main 2D/3D draft. Save the corrected draft to keep it.');
+  }catch(e){setMessage(String(e));if(String(e).includes('409:'))setStale(true);}
+  finally{setBusy(false);}
+ }
  const base=`/blueprints/${bid}/canonical-plan/revisions`;
  const nodes=new Map(revision?.graph.nodes.map(n=>[n.id,n.point]));
  const disabled=busy||stale;
- return <details className="card"><summary>Canonical graph workspace (experimental)</summary>
-  <p>Saved graph revisions share junctions. Changes stay in this workspace; existing drafts remain available. Closed faces are unverified hypotheses, not floors.</p>
+ return <details className="card" open><summary>Repair connected geometry</summary>
+  <p>Repair walls as connected geometry, then use the result in the main 2D/3D draft. Existing saved versions remain available. Proposed room faces are not verified floors.</p>
   <div className="toolbar">
    <button disabled={busy} onClick={()=>void load()}>Reload graph</button>
    {(!revision||stale)&&<button disabled={busy} onClick={()=>void mutate(base,{expected_layout_version:layoutVersion})}>Initialize from saved layout v{layoutVersion}</button>}
    {revision&&<><span>Revision {revision.version} · {revision.graph.walls.length} walls · {revision.graph.rooms.length} proposed faces · {revision.graph.pending_openings.length} pending openings</span>
     <button disabled={disabled||!revision.parent_revision_id} onClick={()=>void mutate(`${base}/${revision.id}/restore`,{target_revision_id:revision.parent_revision_id})}>Undo last revision</button>
+    <button disabled={disabled||hasUnsavedChanges||!projection} onClick={()=>void useInDraft()}>Use repaired graph in main 2D/3D draft</button>
     <button disabled={!projection} onClick={()=>setView(view==='2d'?'3d':'2d')}>{view==='2d'?'Preview graph in 3D':'Show graph in 2D'}</button></>}
   </div>
+  {hasUnsavedChanges&&<p>Save your main draft edits before importing repaired geometry.</p>}
   {stale&&<p role="alert">Saved layout changed. Reinitialize before editing this graph.</p>}
   {message&&<p role="status">{message}</p>}
   {revision&&view==='2d'&&<>

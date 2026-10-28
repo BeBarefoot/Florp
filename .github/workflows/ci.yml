@@ -28,3 +28,16 @@ jobs:
           npm install --no-audit --no-fund
           npx tsc --noEmit
           npm run build
+  browser-workflow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check review-to-draft browser flows
+        working-directory: apps/web
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          npm run test:ui

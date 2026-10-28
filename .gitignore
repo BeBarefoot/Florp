@@ -20,3 +20,8 @@ apps/api/training-data/
 *.pth
 *.onnx
 models/
+
+# Browser test output and incremental typecheck cache
+apps/web/test-results/
+apps/web/playwright-report/
+*.tsbuildinfo

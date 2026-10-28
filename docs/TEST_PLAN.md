@@ -55,3 +55,13 @@ failures, fixes and rerun outcomes. Separate executed tests from unavailable UI,
 model, licensing and real-plan evaluation. A green CI run does not satisfy the
 empirical accuracy or correction-time release gates. Include remaining limits
 in the PR description and docs/VALIDATION_RESULTS.md.
+
+## Browser regression coverage: review-to-draft handoff
+
+`cd apps/web && npm ci && npx playwright install chromium && npm run test:ui`
+starts a local Next dev server. Four browser tests use controlled API responses
+(no external models): opening-only review application and saved payload, graph
+handoff and unsaved-edit protection, stale graph rejection, and visible unresolved
+opening status. Backend HTTP tests independently exercise the actual projection
+and host-reassociation handlers. These are workflow tests, not model accuracy or
+photorealistic 3D visual-quality tests. CI runs this as a separate browser job.

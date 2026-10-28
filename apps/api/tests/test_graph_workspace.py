@@ -80,3 +80,59 @@ def test_projection_refuses_unresolved_opening(workspace):
     response=c.get(f"{root}/{initial['id']}/geometry")
     assert response.status_code==422
     assert 'pending' in response.json()['detail']
+
+
+def test_main_draft_projection_is_read_only_and_rejects_stale_graph(workspace):
+    c,db,bid,root,initial,g=workspace
+    projected=c.post(f"{root}/{initial['id']}/draft")
+    assert projected.status_code==200
+    assert projected.json()['saved'] is False
+    assert projected.json()['geometry']['openings']==[o.model_dump() for o in g.openings]
+    with Session(db) as s:
+        assert len(s.exec(select(Layout)).all())==1
+        assert len(s.exec(select(PlanGraphRevision)).all())==1
+    edited=c.post(f"{root}/{initial['id']}/operations",json={'kind':'remove_wall','wall_id':'b'}).json()
+    assert c.post(f"{root}/{initial['id']}/draft").status_code==409
+    with Session(db) as s:
+        s.add(Layout(blueprint_id=bid,version=2,geometry=g.model_dump()));s.commit()
+    assert c.post(f"{root}/{edited['id']}/draft").status_code==409
+
+
+def test_opening_review_reassociates_stale_model_host(workspace):
+    c,db,bid,root,initial,g=workspace
+    hint={'candidate_id':'detected-window','kind':'window','x1':50,'x2':70,'y1':16,'y2':24,
+          'source_confidence':.9,'wall_id':'deleted-proposal-wall','fraction':.9,'reason':'old match'}
+    # Use clear geometry so the existing fixture window does not overlap the hint.
+    g.openings=[]
+    response=c.post(f'/blueprints/{bid}/opening-review/draft',json={'geometry':g.model_dump(),'hint':hint})
+    assert response.status_code==200
+    result=response.json()
+    assert result['status']=='added'
+    assert result['hint']['wall_id']=='a'
+    assert result['geometry']['openings'][0]['wall_id']=='a'
+    hint.update(x1=50,x2=70,y1=150,y2=158,wall_id='a')
+    unresolved=c.post(f'/blueprints/{bid}/opening-review/draft',json={'geometry':g.model_dump(),'hint':hint}).json()
+    assert unresolved['status']=='unresolved'
+    assert unresolved['geometry']['openings']==[]
+
+
+def test_real_34_wall_fixture_can_initialize_and_project_without_losing_fragments(workspace):
+    import json
+    from pathlib import Path
+    c,db,bid,root,initial,g=workspace
+    data=json.loads((Path(__file__).parent/'fixtures/reviewed_34_wall_snapshot.json').read_text())
+    real=Geometry(width_px=data['width_px'],height_px=data['height_px'],walls=[
+        Wall(id=wid,start=Pt(x=x1,y=y1),end=Pt(x=x2,y=y2)) for wid,x1,y1,x2,y2 in data['walls']])
+    with Session(db) as s:
+        s.add(Layout(blueprint_id=bid,version=2,geometry=real.model_dump()));s.commit()
+    response=c.post(root,json={'expected_layout_version':2})
+    assert response.status_code==200
+    revision=response.json()
+    assert {w['source_wall_id'] for w in revision['graph']['walls']}=={w.id for w in real.walls}
+    projection=c.post(f"{root}/{revision['id']}/draft")
+    assert projection.status_code==200
+    assert len(projection.json()['geometry']['walls'])==len(revision['graph']['walls'])
+    assert projection.json()['geometry']['rooms']==[]
+    with Session(db) as s:
+        assert len(s.exec(select(Layout)).all())==2
+        assert s.exec(select(Layout).where(Layout.version==2)).one().geometry==real.model_dump()

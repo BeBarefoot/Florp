@@ -25,8 +25,10 @@ def validate_plan(plan: CanonicalPlan) -> list[str]:
         elif w.start_node_id == w.end_node_id or hypot(
             nodes[w.start_node_id].point.x - nodes[w.end_node_id].point.x,
             nodes[w.start_node_id].point.y - nodes[w.end_node_id].point.y,
-        ) < 3:
-            issues.append(f'Wall {w.id} is shorter than 3 pixels')
+        ) < .001:
+            # Edges are subdivisions of source walls. A real intersection can
+            # leave a short but nonzero fragment; discarding it loses evidence.
+            issues.append(f'Wall {w.id} has zero-length geometry')
     by_host: dict[str, list] = {}
     for o in plan.openings:
         if o.wall_id not in walls:
