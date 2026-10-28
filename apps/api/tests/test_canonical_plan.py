@@ -170,3 +170,16 @@ def test_stale_legacy_room_polygons_never_override_graph_floors():
     assert len(converted.rooms) == 1
     assert converted.rooms[0].id.startswith('face-')
     assert len(converted.rooms[0].points) == 4
+
+def test_split_at_existing_endpoint_reuses_shared_junction():
+    plan=CanonicalPlan(width_px=300,height_px=200,nodes=[
+        PlanNode(id='a',point=Pt(x=10,y=100)),
+        PlanNode(id='b',point=Pt(x=190,y=100)),
+        PlanNode(id='joint',point=Pt(x=100,y=100)),
+        PlanNode(id='c',point=Pt(x=100,y=160))],
+      walls=[PlanWall(id='horizontal',start_node_id='a',end_node_id='b'),
+             PlanWall(id='branch',start_node_id='joint',end_node_id='c')])
+    result=apply_operation(plan,GraphOperation(
+        kind='split_wall',wall_id='horizontal',point=Pt(x=100,y=100)))
+    assert len(result.nodes)==4
+    assert len([w for w in result.walls if 'joint' in (w.start_node_id,w.end_node_id)])==3
