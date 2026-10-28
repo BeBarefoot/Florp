@@ -6,11 +6,13 @@ All comparisons are bound to an identical source-image SHA256 and pixel frame.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from collections import Counter
 from pathlib import Path
 from math import hypot
 from pydantic import BaseModel, Field
+from PIL import Image
 from shapely.geometry import Polygon
 from .plan_graph import CanonicalPlan
 from .graph_validation import require_valid
@@ -169,6 +171,7 @@ def compare_topology(truth:TopologyCase, prediction:TopologyCase, tolerance_px:f
 
 def main():
     parser=argparse.ArgumentParser(description='Evaluate canonical floor-plan topology against confirmed gold')
+    parser.add_argument('--image',type=Path,required=True)
     parser.add_argument('--truth',type=Path,required=True)
     parser.add_argument('--prediction',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
@@ -176,6 +179,12 @@ def main():
     args=parser.parse_args()
     gold=TopologyCase.model_validate_json(args.truth.read_text())
     candidate=TopologyCase.model_validate_json(args.prediction.read_text())
+    with Image.open(args.image) as source:
+        dimensions=source.size
+        source.verify()
+    actual_hash=hashlib.sha256(args.image.read_bytes()).hexdigest()
+    if actual_hash!=gold.source_preview_sha256 or dimensions!=(gold.plan.width_px,gold.plan.height_px):
+        parser.error('Gold reference does not match actual source image hash and dimensions')
     report=compare_topology(gold,candidate,args.tolerance_px)
     args.output.parent.mkdir(parents=True,exist_ok=True)
     args.output.write_text(json.dumps(report,indent=2)+'\n')
