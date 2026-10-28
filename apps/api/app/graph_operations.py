@@ -159,9 +159,12 @@ def apply_operation(source: CanonicalPlan, op: GraphOperation) -> CanonicalPlan:
     # Only initialize room hypotheses when no room exists yet.
     if op.kind == 'add_wall' and not any(room.verified for room in candidate.rooms):
         candidate.rooms = derive_faces(candidate)
+    # Validate fundamental geometry before geometric intersection diagnostics:
+    # a collapsed wall should report its actual zero-length cause.
+    require_valid(candidate)
     if op.kind == 'add_wall':
         _check_intersections(candidate, {candidate.walls[-1].id})
     elif op.kind == 'move_junction':
         _check_intersections(candidate, {w.id for w in candidate.walls
                                          if op.node_id in (w.start_node_id,w.end_node_id)})
-    return require_valid(candidate)
+    return candidate
