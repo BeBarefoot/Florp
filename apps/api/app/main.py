@@ -1165,3 +1165,67 @@ def restore_canonical_revision(bid: str, revision_id: str, body: RestoreCanonica
             raise HTTPException(422,str(exc)) from exc
         return _append_graph(session,latest,target.graph,
             {'kind':'restore','target_revision_id':target.id})
+
+class ReconstructionBody(BaseModel):
+    max_gap_px: float = 80
+    min_support: float = .8
+
+
+class AcceptReconstructionBody(ReconstructionBody):
+    preview_token: str
+    candidate_ids: list[str]
+
+
+def _reconstruction_preview(session: Session, bid: str, revision_id: str, body: ReconstructionBody):
+    from hashlib import sha256
+    import json
+    from .plan_graph import CanonicalPlan
+    from .global_reconstruction import propose_reconstruction
+    latest=_current_graph(session,bid,revision_id)
+    bp=session.get(Blueprint,bid)
+    try:
+        raw=Path(bp.preview_path).read_bytes()
+        with Image.open(io.BytesIO(raw)) as image:
+            result=propose_reconstruction(CanonicalPlan.model_validate(latest.graph),image,
+                max_gap_px=body.max_gap_px,min_support=body.min_support)
+    except (OSError,ValueError) as exc:
+        raise HTTPException(422,str(exc)) from exc
+    image_sha=sha256(raw).hexdigest()
+    token=sha256(json.dumps({'revision':latest.id,'source_sha256':image_sha,
+        'max_gap_px':body.max_gap_px,'min_support':body.min_support,
+        'result':result},sort_keys=True).encode()).hexdigest()
+    return latest,{**result,'saved':False,'revision_id':latest.id,
+        'source_sha256':image_sha,'preview_token':token,
+        'parameters':{'max_gap_px':body.max_gap_px,'min_support':body.min_support}}
+
+
+@app.post('/blueprints/{bid}/canonical-plan/revisions/{revision_id}/reconstruction/preview')
+def preview_graph_reconstruction(bid: str, revision_id: str, body: ReconstructionBody):
+    with Session(engine) as session:
+        return _reconstruction_preview(session,bid,revision_id,body)[1]
+
+
+@app.post('/blueprints/{bid}/canonical-plan/revisions/{revision_id}/reconstruction/accept')
+def accept_graph_reconstruction(bid: str, revision_id: str, body: AcceptReconstructionBody):
+    from .plan_graph import CanonicalPlan
+    from .global_reconstruction import apply_candidates
+    with Session(engine) as session:
+        latest,preview=_reconstruction_preview(session,bid,revision_id,body)
+        if body.preview_token!=preview['preview_token']:
+            raise HTTPException(409,'Source image or proposal changed; preview again')
+        ids=body.candidate_ids
+        available={c['id']:c for c in preview['candidates']}
+        if not ids or len(ids)!=len(set(ids)) or not set(ids)<=available.keys():
+            raise HTTPException(422,'Select a nonempty set of distinct current candidate IDs')
+        chosen=[c for c in preview['candidates'] if c['id'] in ids]
+        endpoints=[n for c in chosen for n in (c['start_node_id'],c['end_node_id'])]
+        if len(endpoints)!=len(set(endpoints)):
+            raise HTTPException(422,'Selected candidates compete for a dangling junction')
+        try:
+            result=apply_candidates(CanonicalPlan.model_validate(latest.graph),chosen)
+        except ValueError as exc:
+            raise HTTPException(422,str(exc)) from exc
+        return _append_graph(session,latest,result.model_dump(mode='json'),{
+            'kind':'accept_reconstruction','source_sha256':preview['source_sha256'],
+            'preview_token':preview['preview_token'],'parameters':preview['parameters'],
+            'candidates':chosen})

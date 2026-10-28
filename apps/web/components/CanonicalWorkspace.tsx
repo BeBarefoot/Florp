@@ -1,6 +1,7 @@
 'use client';
 import {useEffect,useState} from 'react';
 import dynamic from 'next/dynamic';
+import ReconstructionReview from './ReconstructionReview';
 import {API,request,Geometry,Pt} from '../lib/api';
 const Viewer=dynamic(()=>import('./Viewer3D'),{ssr:false});
 type Graph={width_px:number;height_px:number;nodes:{id:string;point:Pt}[];walls:{id:string;start_node_id:string;end_node_id:string}[];rooms:{id:string;verified:boolean}[];pending_openings:unknown[]};
@@ -56,5 +57,6 @@ export default function CanonicalWorkspace({bid,layoutVersion}:{bid:string;layou
    </form>}
   </>}
   {revision&&view==='3d'&&projection&&<Viewer geometry={projection}/>}
+  {revision&&<ReconstructionReview bid={bid} revision={revision} disabled={disabled} onAccepted={setRevision}/>}
  </details>;
 }
