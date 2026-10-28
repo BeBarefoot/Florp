@@ -183,3 +183,23 @@ def test_split_at_existing_endpoint_reuses_shared_junction():
         kind='split_wall',wall_id='horizontal',point=Pt(x=100,y=100)))
     assert len(result.nodes)==4
     assert len([w for w in result.walls if 'joint' in (w.start_node_id,w.end_node_id)])==3
+
+def test_crossing_added_wall_requires_explicit_junction():
+    plan = from_geometry(Geometry(width_px=300,height_px=200,
+                                  walls=[wall('host',(10,100),(190,100))]))
+    before = plan.model_dump()
+    with pytest.raises(ValueError,match='cross without a shared junction'):
+        apply_operation(plan,GraphOperation(kind='add_wall',
+            start=Pt(x=100,y=40),end=Pt(x=100,y=160)))
+    assert plan.model_dump()==before
+
+
+def test_crossing_wall_can_be_added_after_explicit_split():
+    plan = from_geometry(Geometry(width_px=300,height_px=200,
+                                  walls=[wall('host',(10,100),(190,100))]))
+    split = apply_operation(plan,GraphOperation(kind='split_wall',
+                                             wall_id='host',point=Pt(x=100,y=100)))
+    branch = apply_operation(split,GraphOperation(kind='add_wall',
+                         start=Pt(x=100,y=100),end=Pt(x=100,y=160)))
+    joint = next(n.id for n in branch.nodes if n.point==Pt(x=100,y=100))
+    assert sum(joint in (w.start_node_id,w.end_node_id) for w in branch.walls)==3
