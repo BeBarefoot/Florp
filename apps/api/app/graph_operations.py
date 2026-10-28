@@ -161,6 +161,12 @@ def apply_operation(source: CanonicalPlan, op: GraphOperation) -> CanonicalPlan:
         candidate.rooms = derive_faces(candidate)
     # Validate fundamental geometry before geometric intersection diagnostics:
     # a collapsed wall should report its actual zero-length cause.
+    if op.kind == 'move_junction':
+        for wall in candidate.walls:
+            if op.node_id in (wall.start_node_id, wall.end_node_id):
+                a, b = nodes[wall.start_node_id].point, nodes[wall.end_node_id].point
+                if hypot(a.x-b.x, a.y-b.y) < 3:
+                    raise ValueError(f'Wall {wall.id} is shorter than 3 pixels after move')
     require_valid(candidate)
     if op.kind == 'add_wall':
         _check_intersections(candidate, {candidate.walls[-1].id})

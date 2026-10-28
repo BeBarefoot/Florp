@@ -103,3 +103,17 @@ The UI starts with no repairs selected and overlays proposals on the source imag
 Conflicting selections fail atomically. Source SHA, settings and selected evidence
 are stored with the accepted revision. See VALIDATION_RESULTS.md for tested scope
 and the existing short-edge import blocker on the non-gold real-plan snapshot.
+
+### Main editor handoff and short source subdivisions
+
+`POST .../{revision}/draft` returns the current graph as an **unsaved** main-editor
+geometry projection after checking both revision and source layout freshness.
+The UI's **Use repaired graph in main 2D/3D draft** action refuses to overwrite
+unsaved edits. Saving uses the existing versioned layout workflow. Pending opening
+anchors still block projection, and old room polygons are not resurrected as floors.
+
+Canonical edges are source-wall subdivisions: a legitimate intersection can leave
+a nonzero fragment shorter than three pixels. These fragments are retained, while
+zero-length edges remain invalid. User add/move commands retain their three-pixel
+minimum. This resolves the real 34-wall fixture's prior canonical import failure
+without changing its source coordinates or discarding provenance.

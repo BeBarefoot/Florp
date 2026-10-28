@@ -375,10 +375,11 @@ export default function Editor(){
      return;
    }
    const selected=unified.candidates.filter(c=>fusionDecisions[c.id]==='accept');
-   if(!selected.length){
-     setStatus('No walls are accepted yet. Select Wall on the correct line segments before applying.');return;
+   const openingCount=unified.opening_hints.filter(h=>openingDecisions[h.candidate_id]==='accept').length;
+   if(!selected.length&&!openingCount){
+     setStatus('Classify walls or openings first, then apply them to the draft.');return;
    }
-   if(!window.confirm('Add '+selected.length+' approved wall segments to the current UNSAVED draft? Existing walls, room boundaries and openings will be preserved. Review in 2D before saving.'))return;
+   if(!window.confirm('Apply '+selected.length+' reviewed walls and '+openingCount+' classified openings to the current UNSAVED draft? Existing walls, room boundaries and openings will be preserved. Review in 2D before saving.'))return;
    setBusy(true);
    try{
      const merged=await request<{saved:false;geometry:Geometry;added:number;already_present:number;ignored:number;layout_version:number}>(
@@ -388,14 +389,14 @@ export default function Editor(){
          preview_sha256:unified.input_manifest.source_preview_sha256,
          layout_version:layout.version,geometry,candidate_ids:selected.map(c=>c.id)
        })});
-     if(merged.added===0&&merged.already_present===0){
+     if(selected.length>0&&merged.added===0&&merged.already_present===0){
        setStatus('No approved wall labels could be merged. Re-run extraction and review the new proposals.');return;
      }
      const openings=await applyReviewedOpenings(merged.geometry);
      setGeometry(openings.geometry);setSelectedWall(null);setView('2d');
      setStatus(merged.added+' approved walls added to your UNSAVED draft ('+
        merged.already_present+' already present, '+merged.ignored+' skipped). Geometry now has '+
-       openings.geometry.walls.length+' walls. Review them and click Save corrected draft. '+
+       openings.geometry.walls.length+' walls and '+openings.geometry.openings.length+' physical openings. Review them and click Save corrected draft. '+
        openings.messages.join('; '));
    }catch(error){setStatus(String(error))}
    finally{setBusy(false)}
@@ -723,7 +724,9 @@ export default function Editor(){
  {geometry&&layout&&<p className="notice">{geometry===layout.geometry?'All changes saved':'● Unsaved edits — Save draft when ready'}</p>}
  <div className="stack">
  <button disabled={modelBusy||busy} onClick={()=>void compareUnified()}>1 · Extract and compare</button>
- <button className="secondary" disabled={busy} onClick={()=>save(false)}>2 · Save corrected draft</button>
+ <button disabled={!unified||busy||modelBusy||fusionSaving} onClick={()=>void applyUnified()}>2 · Apply reviewed walls + openings</button>
+ <button className="secondary" disabled={busy} onClick={()=>save(false)}>3 · Save corrected draft</button>
+ {unified&&<small>Review decisions are labels until applied. The draft currently contains {geometry?.walls.length||0} walls and {geometry?.openings.length||0} physical openings.</small>}
  <button className="secondary" disabled={busy} onClick={()=>save(false,true)}>Confirm reviewed walls</button>
  </div>
  <details style={{marginTop:12}}><summary>Advanced geometry actions</summary>
@@ -733,7 +736,7 @@ export default function Editor(){
  </div><small>Metric verification requires a confirmed reference dimension.</small>
  </details>
  <div className="stack" style={{marginTop:16,borderTop:'1px solid #475569',paddingTop:12}}>
- <strong>3 · Measure extraction quality</strong>
+ <strong>4 · Measure extraction quality</strong>
  <button className="secondary" disabled={!layout} onClick={()=>void downloadReviewedGeometry()}>
  Export saved walls + labels JSON</button>
  <small>Keep a model snapshot, correct the drawing, then score it against your reviewed geometry.</small>
@@ -760,12 +763,13 @@ export default function Editor(){
  </div>)}
  </details>
  </div></aside>
- <main><CanonicalWorkspace bid={id} layoutVersion={layout?.version||1}/><header><div><h1>Geometry studio</h1><p className="muted">2D and 3D display the same draft walls.</p></div>
+ <main>{layout&&geometry&&<CanonicalWorkspace bid={id} layoutVersion={layout.version} hasUnsavedChanges={geometry!==layout.geometry} onUseDraft={g=>{setGeometry(g);setView('2d');setSelectedWall(null);setStatus('Repaired graph loaded into the main 2D/3D draft. Save corrected draft to persist.');}}/>}<header><div><h1>Geometry studio</h1><p className="muted">2D and 3D display the same draft walls.</p></div>
  <div className="row"><button className={view==='2d'?'':'secondary'} onClick={()=>setView('2d')}>2D editor</button>
  <button className={view==='3d'?'':'secondary'} onClick={()=>setView('3d')}>3D shell</button></div></header>
  {status&&<p className="notice">{status}</p>}
  {geometry&&<div className="grid" style={{gridTemplateColumns:'minmax(0,2fr) minmax(290px,1fr)'}}>
- <div className="panel"><h2>{view==='2d'?'Floor-plan overlay':'3D shell · same outline'}</h2>
+ <div className="panel"><h2>{view==='2d'?'Floor-plan overlay':'3D shell · draft geometry'}</h2>
+ {unified&&<p className="notice">{Object.values(fusionDecisions).filter(d=>d==='accept').length} walls accepted · {Object.values(openingDecisions).filter(d=>d==='accept').length} openings classified. Main draft: {geometry.walls.length} walls · {geometry.openings.length} physical openings. Apply reviewed walls + openings to update this view; unresolved opening hosts still need correction.</p>}
  {view==='2d'&&geometry.walls.length>0&&<div style={{border:'1px solid #cbd5e1',padding:10,borderRadius:10,marginBottom:12}}>
  <div className="row" style={{justifyContent:'space-between'}}>
  <strong>Connect reviewed wall endpoints</strong>
@@ -1089,7 +1093,7 @@ export default function Editor(){
  <p style={{fontSize:13}}>Detector confidence {Math.round(currentOpening.source_confidence*100)}%. {currentOpening.reason}</p>
  <p style={{fontSize:13}}>Decision: <strong>{openingDecisions[currentOpening.candidate_id]||'Pending'}</strong></p>
  <div className="row" style={{flexWrap:'wrap',gap:5}}>
- <button disabled={fusionSaving} onClick={()=>void reviewDetectedOpening('accept')}>Confirm {currentOpening.kind}</button>
+ <button disabled={fusionSaving} onClick={()=>void reviewDetectedOpening('accept')}>Classify as {currentOpening.kind}</button>
  <button className="secondary" disabled={fusionSaving} onClick={()=>void reviewDetectedOpening('reject')}>Not opening</button>
  <button className="secondary" disabled={fusionSaving} onClick={()=>void reviewDetectedOpening('unsure')}>Unsure</button>
  </div>
@@ -1104,7 +1108,7 @@ export default function Editor(){
  </div>
  <label style={{display:'block',marginTop:12}}><input type="checkbox" checked={reviewFocus} onChange={e=>setReviewFocus(e.target.checked)}/> Zoom to selected item</label>
  <small style={{display:'block',margin:'8px 0'}}>Select geometry on the plan. Shortcuts: ← / → navigate, 1 wall/confirm, 2 door, 3 window, 4 reject, 5 unsure, F zoom. Shortcuts are inactive while typing.</small>
- <button disabled={busy||modelBusy||fusionSaving} onClick={()=>void applyUnified()}>Apply accepted walls to draft</button>
+ <button disabled={busy||modelBusy||fusionSaving} onClick={()=>void applyUnified()}>Apply reviewed walls + openings to draft</button>
  <small style={{display:'block',marginTop:8}}>Review decisions are saved separately. Applying changes only your unsaved 2D/3D draft.</small>
  </>}
  </div></div>:<Viewer geometry={geometry}/>}

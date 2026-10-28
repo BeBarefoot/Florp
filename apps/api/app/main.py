@@ -683,8 +683,9 @@ def draft_reviewed_opening(bid:str,body:OpeningReviewDraftBody):
     with Session(engine) as session:
         if not session.get(Blueprint,bid):raise HTTPException(404,'Blueprint not found')
     hint=OpeningHint.model_validate(body.hint)
-    if hint.wall_id is None:
-        hint=associate_opening(body.geometry,hint)
+    # Comparison-time hosts may no longer exist or may have moved. Recompute
+    # against the actual draft, never trust a stale model-proposal host ID.
+    hint=associate_opening(body.geometry,hint.model_copy(update={'wall_id':None,'fraction':None}))
     updated,status=create_opening(body.geometry,hint)
     return {'geometry':updated.model_dump(),'status':status,'hint':hint.model_dump()}
 
@@ -1229,3 +1230,19 @@ def accept_graph_reconstruction(bid: str, revision_id: str, body: AcceptReconstr
             'kind':'accept_reconstruction','source_sha256':preview['source_sha256'],
             'preview_token':preview['preview_token'],'parameters':preview['parameters'],
             'candidates':chosen})
+
+
+@app.post('/blueprints/{bid}/canonical-plan/revisions/{revision_id}/draft')
+def canonical_draft(bid: str, revision_id: str):
+    """Project the CURRENT graph into an unsaved main-editor draft."""
+    from .plan_graph import CanonicalPlan
+    from .graph_adapter import to_geometry
+    with Session(engine) as session:
+        revision=_current_graph(session,bid,revision_id)
+        try:
+            geometry=to_geometry(CanonicalPlan.model_validate(revision.graph))
+        except ValueError as exc:
+            raise HTTPException(422,str(exc)) from exc
+        return {'saved':False,'revision_id':revision.id,
+                'source_layout_version':revision.source_layout_version,
+                'geometry':geometry.model_dump(mode='json')}

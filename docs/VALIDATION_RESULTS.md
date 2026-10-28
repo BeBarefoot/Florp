@@ -72,3 +72,38 @@ No source edges or evidence were silently deleted to make a test pass.
 - Real source raster/model QA, browser interaction QA, ten-plan gold benchmarking,
   >=90% wall metrics and correction-time targets are not validated here.
 - Neither PR changes production defaults or automatically merges into main.
+
+## Review-to-visible-geometry correction (after the user's screenshots)
+
+The screenshots exposed a workflow gap: classification did not update geometry,
+Save draft did not apply labels, and graph revisions could not feed the main
+editor. The attached evaluation was only an unscored 21-wall baseline (17
+components, 34 loose endpoints, no openings), not the 36-wall current draft.
+
+Changes:
+- Expose Apply reviewed walls + openings as the primary second step; distinguish
+  classified detections from physical openings and allow opening-only application.
+- Reassociate opening hints against the actual current draft instead of using
+  stale model-proposal host IDs. Unresolved/ambiguous hosts remain unresolved.
+- Show connected-geometry repair openly, and explicitly project a current graph
+  revision into the main unsaved 2D/3D draft with stale/unsaved-edit guards.
+- Resolve the previous 34-wall import blocker without deleting any source edges:
+  canonical graph edges are subdivisions, so nonzero sub-3px fragments are valid.
+  The 3px rule remains on user drawing/movement; zero-length edges are invalid.
+  Existing legacy metric verification still reports very short walls for review.
+
+Validation:
+- 198 backend tests passed; Python compilation passed.
+- Four Playwright browser tests passed against controlled API responses, covering
+  opening-only apply/save, graph handoff, unsaved/stale protection, and explicit
+  unresolved status. Actual backend routes have separate HTTP regression tests.
+- Frontend typecheck and production build passed.
+- Browser setup initially failed due to a truncated Chromium download. Playwright
+  is pinned to 1.56.1; the download mirror succeeded and all four tests ran.
+- No live-model rerun or complete-source reconstruction accuracy claim. Original
+  source raster and current reviewed geometry are needed to measure the current
+  screenshot case; the provided baseline is not its latest corrected geometry.
+
+The earlier short-edge blocker is now resolved. Remaining architectural inference,
+opening-host ambiguity, full-room reconstruction and gold-plan release gates are
+not solved merely by making these workflows accessible.
