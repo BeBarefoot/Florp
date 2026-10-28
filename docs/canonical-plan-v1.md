@@ -82,3 +82,24 @@ automatically modify the legacy floor plan, UI, 3D model, or training labels.
 
 Run `cd apps/api && uv run pytest -q tests/test_canonical_plan.py tests/test_canonical_plan_api.py`
 and the full CI suite.
+
+## Rebuild workspace and reconstruction additions
+
+The blueprint page now exposes an opt-in **Canonical graph workspace**. Initialize
+from the current saved layout, select a junction and edit its coordinates, undo
+with append-only restoration, and view the same graph projection in 2D/3D.
+Projection still refuses unresolved opening anchors and omits provisional floors.
+
+- `GET /blueprints/{id}/canonical-plan/revisions/{revision}/geometry`
+- `POST .../{revision}/restore` with `{"target_revision_id":"earlier-id"}`
+- `POST .../{revision}/reconstruction/preview` with optional `max_gap_px` (6–200,
+  default 80) and `min_support` (0.5–1, default 0.8)
+- `POST .../{revision}/reconstruction/accept` with those same parameters,
+  `preview_token` and a nonempty `candidate_ids` selection
+
+Preview is read-only. Accept recomputes candidates against the current source
+raster; changed image, parameters, layout or revision rejects stale acceptance.
+The UI starts with no repairs selected and overlays proposals on the source image.
+Conflicting selections fail atomically. Source SHA, settings and selected evidence
+are stored with the accepted revision. See VALIDATION_RESULTS.md for tested scope
+and the existing short-edge import blocker on the non-gold real-plan snapshot.
