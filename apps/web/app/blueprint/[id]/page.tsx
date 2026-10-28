@@ -2,6 +2,7 @@
 import {useEffect,useMemo,useState} from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import CanonicalWorkspace from '../../../components/CanonicalWorkspace';
 import {useParams} from 'next/navigation';
 import {API,request,Geometry,Layout,Pt,Wall,Opening} from '../../../lib/api';
 import {editableEdges,snapPoint,openingPlacement,segmentDistance} from '../../../lib/geometryEditing';
@@ -759,7 +760,7 @@ export default function Editor(){
  </div>)}
  </details>
  </div></aside>
- <main><header><div><h1>Geometry studio</h1><p className="muted">2D and 3D display the same draft walls.</p></div>
+ <main><CanonicalWorkspace bid={id} layoutVersion={layout?.version||1}/><header><div><h1>Geometry studio</h1><p className="muted">2D and 3D display the same draft walls.</p></div>
  <div className="row"><button className={view==='2d'?'':'secondary'} onClick={()=>setView('2d')}>2D editor</button>
  <button className={view==='3d'?'':'secondary'} onClick={()=>setView('3d')}>3D shell</button></div></header>
  {status&&<p className="notice">{status}</p>}
