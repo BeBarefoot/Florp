@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from PIL import Image
 import fitz
 from .config import settings
-from .models import Project, Blueprint, Layout, Render, WallAnnotation, ModelWallCorrection, FusionCandidateReview, ExtractionEvaluation
+from .models import Project, Blueprint, Layout, Render, WallAnnotation, ModelWallCorrection, FusionCandidateReview, ExtractionEvaluation, PlanGraphRevision
 from .geometry import Geometry, fallback_geometry, validate_geometry
 from .providers import extract_geometry, ProviderUnavailable, ProviderAuthenticationError, ProviderConfigurationError, ProviderOutputError
 from .evidence import inspect_plan
@@ -75,7 +75,7 @@ def delete_project(pid:str):
         plans=list(s.exec(select(Blueprint).where(Blueprint.project_id==pid)).all())
         ids=[bp.id for bp in plans]
         for bid in ids:
-            for table in (Render,ModelWallCorrection,WallAnnotation,FusionCandidateReview,ExtractionEvaluation,Layout):
+            for table in (Render,ModelWallCorrection,WallAnnotation,FusionCandidateReview,ExtractionEvaluation,PlanGraphRevision,Layout):
                 for row in s.exec(select(table).where(table.blueprint_id==bid)).all():
                     s.delete(row)
         for bp in plans:s.delete(bp)
@@ -375,6 +375,95 @@ def preview_wall_connectivity(bid:str,body:ConnectivityPreviewBody):
         try:proposal=preview_connectivity(body.geometry,body.tolerance_px)
         except ValueError as exc:raise HTTPException(422,str(exc)) from exc
         return {'saved':False,**proposal.model_dump()}
+
+
+class CreateCanonicalPlanBody(BaseModel):
+    expected_layout_version: int
+
+@app.post('/blueprints/{bid}/canonical-plan/preview')
+def preview_canonical_plan(bid: str):
+    """Read-only conversion; never writes canonical or legacy data."""
+    from .graph_adapter import from_geometry
+    from .graph_validation import validate_plan
+    with Session(engine) as session:
+        if not session.get(Blueprint,bid):raise HTTPException(404,'Blueprint not found')
+        layout=session.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
+        if layout is None:raise HTTPException(404,'No layout')
+        plan=from_geometry(Geometry.model_validate(layout.geometry))
+        return {'saved':False,'source_layout_version':layout.version,
+                'graph':plan.model_dump(mode='json'),'validation_issues':validate_plan(plan)}
+
+@app.post('/blueprints/{bid}/canonical-plan/revisions')
+def create_canonical_revision(bid: str, body: CreateCanonicalPlanBody):
+    """Explicit opt-in snapshot derived server-side from current saved layout."""
+    from .graph_adapter import from_geometry
+    from .graph_validation import require_valid
+    from sqlalchemy.exc import IntegrityError
+    with Session(engine) as session:
+        if not session.get(Blueprint,bid):raise HTTPException(404,'Blueprint not found')
+        layout=session.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
+        if not layout:raise HTTPException(404,'No layout')
+        if layout.version!=body.expected_layout_version:
+            raise HTTPException(409,'Saved layout changed; refresh canonical plan preview')
+        latest=session.exec(select(PlanGraphRevision).where(
+            PlanGraphRevision.blueprint_id==bid).order_by(PlanGraphRevision.version.desc())).first()
+        if latest and latest.source_layout_id==layout.id:
+            raise HTTPException(409,'Canonical revision for this layout already exists; use operations')
+        plan=from_geometry(Geometry.model_validate(layout.geometry))
+        try:require_valid(plan)
+        except ValueError as exc:raise HTTPException(422,str(exc)) from exc
+        revision=PlanGraphRevision(blueprint_id=bid,source_layout_id=layout.id,
+            source_layout_version=layout.version,version=latest.version+1 if latest else 1,
+            parent_revision_id=latest.id if latest else None,
+            operation={'kind':'import_legacy'},graph=plan.model_dump(mode='json'))
+        session.add(revision)
+        try:session.commit()
+        except IntegrityError as exc:
+            session.rollback();raise HTTPException(409,'Concurrent revision update; refresh') from exc
+        session.refresh(revision)
+        return revision
+
+@app.get('/blueprints/{bid}/canonical-plan/revisions/latest')
+def latest_canonical_revision(bid: str):
+    with Session(engine) as session:
+        if not session.get(Blueprint,bid):raise HTTPException(404,'Blueprint not found')
+        revision=session.exec(select(PlanGraphRevision).where(
+            PlanGraphRevision.blueprint_id==bid).order_by(PlanGraphRevision.version.desc())).first()
+        if not revision:raise HTTPException(404,'No canonical plan revision yet')
+        layout=session.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
+        return {'revision':revision,'stale':not layout or layout.id!=revision.source_layout_id}
+
+@app.post('/blueprints/{bid}/canonical-plan/revisions/{revision_id}/operations')
+def edit_canonical_revision(bid: str,revision_id: str,operation: dict):
+    """Atomic append-only graph edit. Legacy layout/3D is never overwritten."""
+    from .plan_graph import CanonicalPlan
+    from .graph_operations import GraphOperation, apply_operation
+    from pydantic import ValidationError
+    from sqlalchemy.exc import IntegrityError
+    with Session(engine) as session:
+        if not session.get(Blueprint,bid):raise HTTPException(404,'Blueprint not found')
+        latest=session.exec(select(PlanGraphRevision).where(
+            PlanGraphRevision.blueprint_id==bid).order_by(PlanGraphRevision.version.desc())).first()
+        if latest is None or latest.id!=revision_id:
+            raise HTTPException(409,'Stale revision; reload the latest canonical graph')
+        layout=session.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
+        if layout is None or layout.id!=latest.source_layout_id:
+            raise HTTPException(409,'Legacy layout changed; re-import the canonical plan')
+        try:
+            command=GraphOperation.model_validate(operation)
+            next_plan=apply_operation(CanonicalPlan.model_validate(latest.graph),command)
+        except (ValueError,ValidationError) as exc:
+            raise HTTPException(422,str(exc)) from exc
+        row=PlanGraphRevision(blueprint_id=bid,source_layout_id=latest.source_layout_id,
+            source_layout_version=latest.source_layout_version,version=latest.version+1,
+            parent_revision_id=latest.id,operation=command.model_dump(mode='json',exclude_none=True),
+            graph=next_plan.model_dump(mode='json'))
+        session.add(row)
+        try:session.commit()
+        except IntegrityError as exc:
+            session.rollback();raise HTTPException(409,'Concurrent revision update; refresh') from exc
+        session.refresh(row)
+        return row
 
 @app.get('/blueprints/{bid}/structural-graph')
 def inspect_structural_graph(bid: str):
