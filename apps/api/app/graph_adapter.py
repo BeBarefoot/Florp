@@ -130,8 +130,11 @@ def to_geometry(plan: CanonicalPlan, *, include_derived_rooms: bool = False) -> 
                   thickness_m=w.thickness_m, height_m=w.height_m, inferred=w.inferred)
              for w in plan.walls]
     openings = [Opening(**o.model_dump()) for o in plan.openings]
-    rooms = [r.model_copy(deep=True) for r in plan.legacy_rooms]
-    if include_derived_rooms and not rooms:
+    # Legacy room polygons are preserved as reference evidence, not as
+    # authoritative floors: exporting them after graph edits would silently
+    # recreate stale 3D geometry.
+    rooms = []
+    if include_derived_rooms:
         for face in plan.rooms:
             boundary = []
             by_wall = {w.id: w for w in plan.walls}
