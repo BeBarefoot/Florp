@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections import Counter
 from math import hypot
+from shapely.geometry import Polygon
 from .plan_graph import CanonicalPlan
 
 
@@ -55,6 +56,7 @@ def validate_plan(plan: CanonicalPlan) -> list[str]:
         # a polygon predicted from pixels alone cannot pass this check.
         first = previous = None
         touched = set()
+        polygon_points = []
         for ref in room.boundary:
             w = walls.get(ref.wall_id)
             if not w:
@@ -66,11 +68,19 @@ def validate_plan(plan: CanonicalPlan) -> list[str]:
             elif previous != a:
                 issues.append(f'Room {room.id} has disconnected boundary')
                 break
+            if a not in nodes:
+                issues.append(f'Room {room.id} references missing junction')
+                break
+            polygon_points.append((nodes[a].point.x,nodes[a].point.y))
             previous = b
             touched.add(ref.wall_id)
         else:
             if previous != first or len(touched) < 3:
                 issues.append(f'Room {room.id} is not a closed wall cycle')
+            elif len(polygon_points) >= 3:
+                polygon = Polygon(polygon_points)
+                if not polygon.is_valid or polygon.area < 4:
+                    issues.append(f'Room {room.id} has invalid or self-intersecting floor geometry')
     return issues
 
 
