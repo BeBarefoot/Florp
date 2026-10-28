@@ -105,6 +105,7 @@ export default function Editor(){
  type ConnectivityProposal={geometry:Geometry;changes:ConnectivityChange[];before_components:number;after_components:number;before_dangling:number;after_dangling:number;removed_starter_ids:string[];warning:string;saved:false};
  const [connectivity,setConnectivity]=useState<{source:string;proposal:ConnectivityProposal}|null>(null);
  const [connectivityBusy,setConnectivityBusy]=useState(false);
+ const [selectedJunction,setSelectedJunction]=useState<number|null>(null);
  type OpeningMatch={candidate_id:string;kind:'door'|'window';start:Pt;end:Pt;host_wall_id:string|null;fraction:number|null;status:'proposed'|'unresolved';reason:string};
  const [association,setAssociation]=useState<{source:string;items:OpeningMatch[];proposed:number;unresolved:number}|null>(null);
  const [associationBusy,setAssociationBusy]=useState(false);
@@ -677,7 +678,7 @@ export default function Editor(){
        method:'POST',headers:{'Content-Type':'application/json'},
        body:JSON.stringify({geometry,tolerance_px:5})});
      if(JSON.stringify(geometry)!==source)return;
-     setConnectivity({source,proposal});
+     setConnectivity({source,proposal});setSelectedJunction(null);
      setStatus(proposal.changes.length?
        proposal.changes.length+' endpoint adjustments and '+proposal.removed_starter_ids.length+' starter placeholders proposed for removal (NOT saved). Review on the 2D plan.':
        'No unambiguous near-junction corrections found. Missing walls must be drawn from image evidence.');
@@ -695,6 +696,25 @@ export default function Editor(){
      ' exact starter placeholders from the UNSAVED 2D/3D draft? This does not add missing walls or verify dimensions.'))return;
    setGeometry(connectivity.proposal.geometry);setConnectivity(null);setSelectedWall(null);
    setStatus('Connectivity adjustments applied to UNSAVED draft. Inspect all joints and click Save corrected draft.');
+ }
+ function applySelectedJunction(index:number){
+  if(!geometry||!connectivity||JSON.stringify(geometry)!==connectivity.source)return;
+  const change=connectivity.proposal.changes[index];if(!change)return;
+  const group=change.reason==='perpendicular corner'
+    ?connectivity.proposal.changes.filter(c=>c.reason===change.reason&&dist(c.proposed,change.proposed)<.01)
+    :[change];
+  if(change.reason==='perpendicular corner'&&group.length!==2){
+   setStatus('Incomplete corner proposal; no geometry changed.');return;
+  }
+  setGeometry({...geometry,structure_reviewed:false,walls:geometry.walls.map(w=>{
+   const updates=group.filter(c=>c.wall_id===w.id);
+   if(!updates.length)return w;
+   const modified={...w};
+   for(const c of updates)modified[c.endpoint]={...c.proposed};
+   return modified;
+  })});
+  setConnectivity(null);setSelectedJunction(null);
+  setStatus('Selected junction applied to UNSAVED draft. Save corrected draft, then preview remaining junctions.');
  }
  function removeWall(id:string){if(!geometry)return;setSelectedWall(null);setGeometry({...geometry,structure_reviewed:false,walls:geometry.walls.filter(w=>w.id!==id),openings:geometry.openings.filter(o=>o.wall_id!==id)});setStatus('Draft wall removed. Save to persist changes.')}
  return <div className="app"><aside><h2>✦ Florp</h2><Link href="/">← Projects</Link>
@@ -754,6 +774,15 @@ export default function Editor(){
  {connectivity&&<div style={{marginTop:8}}>
  <small>{connectivity.proposal.changes.length} proposed adjustments · {connectivity.proposal.removed_starter_ids.length} starter placeholders to remove · structural groups {connectivity.proposal.before_components} → {connectivity.proposal.after_components} · loose endpoints {connectivity.proposal.before_dangling} → {connectivity.proposal.after_dangling}</small>
  <div className="row" style={{marginTop:8}}>
+ {selectedJunction!==null&&connectivity.proposal.changes[selectedJunction]&&<div role="status" style={{marginTop:8,padding:10,border:'2px solid #0891b2',borderRadius:8}}>
+   <strong>Selected junction: {connectivity.proposal.changes[selectedJunction].wall_id}</strong>
+   <div><small>{connectivity.proposal.changes[selectedJunction].reason} · {connectivity.proposal.changes[selectedJunction].distance_px.toFixed(1)}px</small></div>
+   <div className="row" style={{marginTop:6}}>
+    <button onClick={()=>applySelectedJunction(selectedJunction)}>Apply this junction</button>
+    <button className="secondary" onClick={()=>setSelectedJunction(null)}>Keep unchanged</button>
+   </div>
+  </div>}
+  <small>Click a cyan endpoint marker on the plan to inspect one junction. Perpendicular corner endpoints move together.</small>
  <button disabled={connectivity.proposal.changes.length===0&&connectivity.proposal.removed_starter_ids.length===0} onClick={applyConnections}>Apply preview to unsaved draft</button>
  <button className="secondary" onClick={()=>setConnectivity(null)}>Discard preview</button>
  </div>
@@ -830,7 +859,7 @@ export default function Editor(){
  {view==='2d'&&<div className="notice" style={{marginBottom:12}}>
  {mode==='door'||mode==='window'?'Click near a wall to place a provisional opening. No manual scale entry required.':
  mode==='wall'?'Click two points to draw a wall; snapping is enabled.':
- 'Select an orange/cyan detection to review it, then choose Add opening or Dismiss. Your wall edits remain untouched.'}
+ selectedWall?'Drag the green endpoint handles on the selected wall. Save corrected draft when finished.':'Click any blue saved wall to select it and drag its green endpoints, or select an orange/cyan opening detection to review.'}
  </div>}
  {view==='2d'&&<details style={{marginBottom:12}}><summary>Research tools and model diagnostics (optional)</summary>
  <div className="row" style={{flexWrap:'wrap',marginTop:8}}>
@@ -861,7 +890,8 @@ export default function Editor(){
  <label><input type="checkbox" checked={showRaw} onChange={e=>setShowRaw(e.target.checked)}/> Raw lines ({evidence?.segments.length??0})</label></details>
  </div></details>}
  {view==='2d'&&<div className="row" style={{marginBottom:12}}>
- {(['wall','door','window'] as const).map(tool=><button key={tool} className={mode===tool?'':'secondary'} onClick={()=>{setMode(mode===tool?'edit':tool);setWallStart(null)}}>{tool==='wall'?'Draw missing wall':tool==='door'?'Add door':'Add window'}</button>)}
+ <button className={mode==='edit'?'':'secondary'} onClick={()=>{setMode('edit');setWallStart(null);setStatus('Click any saved wall on the floor plan, then drag either green endpoint handle. Save corrected draft to persist.')}}>Edit wall endpoints</button>
+  {(['wall','door','window'] as const).map(tool=><button key={tool} className={mode===tool?'':'secondary'} onClick={()=>{setMode(mode===tool?'edit':tool);setWallStart(null)}}>{tool==='wall'?'Draw missing wall':tool==='door'?'Add door':'Add window'}</button>)}
  </div>}
  {view==='2d'?<div className="annotation-workspace">
  <svg className="canvas" viewBox={reviewFocus&&unified?(()=>{
@@ -987,7 +1017,7 @@ export default function Editor(){
   const x1=e.start.x+(e.end.x-e.start.x)*t,y1=e.start.y+(e.end.y-e.start.y)*t,x2=e.start.x+(e.end.x-e.start.x)*u,y2=e.start.y+(e.end.y-e.start.y)*u;
   return <line key={o.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke={o.kind==='door'?'#f97316':'#0284c7'} strokeDasharray={o.kind==='door'?'10 6':undefined} strokeWidth={Math.max(7,geometry.width_px/160)} pointerEvents="none"/>;
  })}
- {geometry.walls.filter(w=>w.id.startsWith('user-')||w.id.startsWith('model-')).map(w=><line key={w.id} x1={w.start.x} y1={w.start.y} x2={w.end.x} y2={w.end.y} stroke={selectedWall===w.id?"#16a34a":w.id.startsWith("model-")?"#0284c7":"#d97706"}
+ {geometry.walls.map(w=><line key={w.id} x1={w.start.x} y1={w.start.y} x2={w.end.x} y2={w.end.y} stroke={selectedWall===w.id?"#16a34a":w.id.startsWith('user-')?'#d97706':'#0284c7'}
  strokeWidth={Math.max(selectedWall===w.id?5:3,geometry.width_px/220)}
  pointerEvents={mode==='edit'?'stroke':'none'} style={{cursor:mode==='edit'?'pointer':'default'}}
  onClick={e=>{if(mode==='edit'){e.stopPropagation();setSelectedWall(w.id)}}}/>)}
@@ -1009,14 +1039,16 @@ export default function Editor(){
   })
  ))}
  {connectivity&&JSON.stringify(geometry)===connectivity.source&&
- connectivity.proposal.changes.map((c,i)=><g key={'connect-'+i} pointerEvents="none">
+ connectivity.proposal.changes.map((c,i)=><g key={'connect-'+i}>
  <line x1={c.original.x} y1={c.original.y} x2={c.proposed.x} y2={c.proposed.y}
  stroke="#0891b2" strokeWidth={Math.max(3,geometry.width_px/300)}
- strokeDasharray="4 3"/>
+ strokeDasharray="4 3" pointerEvents="none"/>
  <circle cx={c.original.x} cy={c.original.y} r={Math.max(4,geometry.width_px/250)}
- fill="#fff" stroke="#0891b2" strokeWidth="2"/>
+ fill="#fff" stroke="#0891b2" strokeWidth="2" pointerEvents="none"/>
  <circle cx={c.proposed.x} cy={c.proposed.y} r={Math.max(4,geometry.width_px/250)}
- fill="#0891b2" stroke="white" strokeWidth="2"/>
+ fill={selectedJunction===i?'#16a34a':'#0891b2'} stroke="white" strokeWidth="2" pointerEvents="none"/>
+ <circle cx={c.proposed.x} cy={c.proposed.y} r={Math.max(12,geometry.width_px/80)} fill="transparent" stroke="transparent" style={{cursor:'pointer'}}
+  onClick={e=>{e.stopPropagation();setSelectedJunction(i);setMode('edit')}}><title>Review {c.reason} for {c.wall_id}</title></circle>
  </g>)}
  {association&&JSON.stringify(geometry)===association.source&&association.items.map((item,i)=>
  <line key={'opening-assoc-'+i} x1={item.start.x} y1={item.start.y}
@@ -1140,7 +1172,7 @@ export default function Editor(){
  <small>Selected {selectedWall}: drag the green endpoint handles in the plan. Changes appear in 3D.</small>
  <button className="secondary" onClick={()=>removeWall(selectedWall)}>Reject / delete selected wall</button>
  <button className="secondary" onClick={()=>setSelectedWall(null)}>Finish correction</button>
- </div>:<small>Click a blue model wall line to edit or remove it; drag its endpoint handles. This corrects the reconstructed geometry, not the original YOLO box.</small>}
+ </div>:<small>Choose Edit wall endpoints, click any stored wall on the plan (including reviewed YOLO and mask walls), and drag its green endpoint handles. Save corrected draft to persist.</small>}
  <small>Use Confirm wall positions after reviewing the proposed structure; physical measurements are a separate step.</small>
  <h2>Opening review</h2>
  <span className="pill">{geometry.openings.filter(o=>o.source_detection_id&&o.reviewed).length} reviewed · {geometry.openings.filter(o=>o.source_detection_id&&!o.reviewed).length} awaiting review · {geometry.openings.length} total in draft</span>
