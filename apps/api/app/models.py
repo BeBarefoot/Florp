@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Optional
 from sqlmodel import SQLModel, Field
-from sqlalchemy import Column, JSON
+from sqlalchemy import Column, JSON, UniqueConstraint
 from uuid import uuid4
 
 def uid(): return str(uuid4())
@@ -83,3 +83,16 @@ class ExtractionEvaluation(SQLModel,table=True):
     status: str = 'baseline'
     created_at: datetime = Field(default_factory=now)
     completed_at: Optional[datetime] = None
+
+class PlanGraphRevision(SQLModel, table=True):
+    """Append-only canonical plan snapshots; never overwrite Layout.geometry."""
+    __table_args__ = (UniqueConstraint('blueprint_id','version',name='uq_plan_revision_blueprint_version'),)
+    id: str = Field(default_factory=uid,primary_key=True)
+    blueprint_id: str = Field(index=True,foreign_key='blueprint.id')
+    source_layout_id: str
+    source_layout_version: int
+    version: int
+    parent_revision_id: Optional[str] = None
+    operation: dict = Field(default_factory=dict,sa_type=JSON)
+    graph: dict = Field(default_factory=dict,sa_type=JSON)
+    created_at: datetime = Field(default_factory=now)
