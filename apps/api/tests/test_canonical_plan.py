@@ -124,8 +124,9 @@ def test_invalid_edits_do_not_change_original_plan():
     p = next(n.point for n in plan.nodes if n.id == target.end_node_id)
     with pytest.raises(ValueError,match='shorter than 3 pixels'):
         apply_operation(plan,GraphOperation(kind='move_junction',node_id=target.start_node_id,point=p))
-    with pytest.raises(ValueError,match='room boundary'):
-        apply_operation(plan,GraphOperation(kind='remove_wall',wall_id=target.id))
+    removed = apply_operation(plan,GraphOperation(kind='remove_wall',wall_id=target.id))
+    assert target.id not in {w.id for w in removed.walls}
+    assert removed.rooms == []
     assert plan.model_dump() == snapshot
 
 
@@ -140,3 +141,19 @@ def test_opening_attachment_requires_confirmed_scale():
 def test_starting_placeholder_does_not_become_verified_room_evidence():
     plan = from_geometry(fallback_geometry(992,440))
     assert plan.rooms == []
+
+def test_verified_room_boundary_is_protected():
+    plan = from_geometry(square())
+    plan.rooms[0].verified = True
+    with pytest.raises(ValueError,match='verified room boundary'):
+        apply_operation(plan,GraphOperation(kind='remove_wall',wall_id=plan.walls[0].id))
+
+
+def test_add_wall_completes_room_without_auto_bridging_gap():
+    g = square()
+    g.walls.pop()
+    plan = from_geometry(g)
+    added = apply_operation(plan,GraphOperation(kind='add_wall',
+                 start=Pt(x=50,y=250),end=Pt(x=50,y=50)))
+    assert len(added.rooms)==1
+    assert len(added.walls)==4
