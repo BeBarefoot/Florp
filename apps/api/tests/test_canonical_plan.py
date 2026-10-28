@@ -157,3 +157,16 @@ def test_add_wall_completes_room_without_auto_bridging_gap():
                  start=Pt(x=50,y=250),end=Pt(x=50,y=50)))
     assert len(added.rooms)==1
     assert len(added.walls)==4
+
+def test_stale_legacy_room_polygons_never_override_graph_floors():
+    from app.geometry import Room
+    g = square()
+    g.rooms = [Room(id='legacy-unverified',points=[
+        Pt(x=60,y=60),Pt(x=100,y=60),Pt(x=100,y=100)])]
+    plan = from_geometry(g)
+    assert len(plan.legacy_rooms) == 1
+    assert to_geometry(plan).rooms == []
+    converted = to_geometry(plan,include_derived_rooms=True)
+    assert len(converted.rooms) == 1
+    assert converted.rooms[0].id.startswith('face-')
+    assert len(converted.rooms[0].points) == 4
