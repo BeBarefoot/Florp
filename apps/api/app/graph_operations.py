@@ -25,6 +25,34 @@ class GraphOperation(BaseModel):
     opening: PlanOpening | None = None
 
 
+
+def _check_intersections(plan: CanonicalPlan, affected: set[str]) -> None:
+    """Reject newly edited edges that cross without sharing an actual node."""
+    from shapely.geometry import LineString
+    node_map={n.id:n.point for n in plan.nodes}
+    segments={}
+    for w in plan.walls:
+        a=node_map[w.start_node_id];b=node_map[w.end_node_id]
+        segments[w.id]=(w,LineString([(a.x,a.y),(b.x,b.y)]))
+    for wid in affected:
+        if wid not in segments:
+            continue
+        w, segment=segments[wid]
+        for other_id,(other,other_segment) in segments.items():
+            if other_id==wid:
+                continue
+            overlap=segment.intersection(other_segment)
+            if overlap.is_empty:
+                continue
+            if overlap.geom_type not in ('Point','MultiPoint'):
+                raise ValueError(f'Walls {wid}, {other_id} overlap without an explicit reconciliation')
+            shared={w.start_node_id,w.end_node_id}&{other.start_node_id,other.end_node_id}
+            points=[overlap] if overlap.geom_type=='Point' else list(overlap.geoms)
+            for point in points:
+                if not any(hypot(node_map[n].x-point.x,node_map[n].y-point.y)<.01 for n in shared):
+                    raise ValueError(f'Walls {wid}, {other_id} cross without a shared junction; split first')
+
+
 def apply_operation(source: CanonicalPlan, op: GraphOperation) -> CanonicalPlan:
     candidate = source.model_copy(deep=True)
     nodes = {n.id: n for n in candidate.nodes}
@@ -131,4 +159,9 @@ def apply_operation(source: CanonicalPlan, op: GraphOperation) -> CanonicalPlan:
     # Only initialize room hypotheses when no room exists yet.
     if op.kind == 'add_wall' and not any(room.verified for room in candidate.rooms):
         candidate.rooms = derive_faces(candidate)
+    if op.kind == 'add_wall':
+        _check_intersections(candidate, {candidate.walls[-1].id})
+    elif op.kind == 'move_junction':
+        _check_intersections(candidate, {w.id for w in candidate.walls
+                                         if op.node_id in (w.start_node_id,w.end_node_id)})
     return require_valid(candidate)
