@@ -84,9 +84,13 @@ def apply_operation(source: CanonicalPlan, op: GraphOperation) -> CanonicalPlan:
             raise ValueError('remove_wall requires a known wall_id')
         if any(o.wall_id == op.wall_id for o in candidate.openings):
             raise ValueError('Cannot remove a wall hosting an opening')
-        if any(ref.wall_id == op.wall_id for room in candidate.rooms for ref in room.boundary):
-            raise ValueError('Cannot remove a room boundary without explicit room reconciliation')
+        if any(room.verified and any(ref.wall_id == op.wall_id for ref in room.boundary)
+               for room in candidate.rooms):
+            raise ValueError('Cannot remove a verified room boundary without explicit room reconciliation')
         candidate.walls = [w for w in candidate.walls if w.id != op.wall_id]
+        # Only provisional faces are recomputed; never silently discard a
+        # confirmed room or a hosted door/window.
+        candidate.rooms = derive_faces(candidate)
     elif op.kind == 'add_wall':
         if op.start is None or op.end is None:
             raise ValueError('add_wall requires start and end points')
@@ -121,6 +125,6 @@ def apply_operation(source: CanonicalPlan, op: GraphOperation) -> CanonicalPlan:
         candidate.openings.append(op.opening.model_copy(deep=True))
     # Preserve confirmed room references rather than silently re-polygonizing.
     # Only initialize room hypotheses when no room exists yet.
-    if not candidate.rooms and op.kind == 'add_wall':
+    if op.kind == 'add_wall' and not any(room.verified for room in candidate.rooms):
         candidate.rooms = derive_faces(candidate)
     return require_valid(candidate)
