@@ -107,3 +107,32 @@ Validation:
 The earlier short-edge blocker is now resolved. Remaining architectural inference,
 opening-host ambiguity, full-room reconstruction and gold-plan release gates are
 not solved merely by making these workflows accessible.
+
+## 2026-10-29: editor correction and training foundation
+
+Base main: `5da0347921692d5f69ee95a33b801099d902e29c`.
+
+- Backend: `uv run pytest -q` — **214 passed**, one existing Starlette/httpx
+  deprecation warning. Includes the user's v4 export as a non-gold regression
+  fixture, placeholder cleanup with immutable history, mask dataset validation,
+  leakage/tamper rejection, span/length metrics and synthetic release gates.
+- Python: `uv run python -m compileall -q app scripts tests` — passed.
+- Frontend: `npx tsc --noEmit` and `npm run build` — passed.
+- Playwright: `npm run test:ui` — **7 passed**. Five browser workflows cover
+  opening application, repaired graph handoff, stale handoff, unresolved openings,
+  collapsed research controls and draft undo/redo. Two pure tests cover shared
+  junction protection and grouped history. Browser API responses are mocked;
+  backend behavior is covered separately by pytest.
+- Inspected the generated browser screenshot: drawing and contextual review
+  appear before collapsed repair/scale sections. Synthetic drawing only; not an
+  inference result for the uploaded plan.
+- Initial browser execution was blocked by a missing Chromium executable; after
+  installation all flows passed. An initial TypeScript narrowing error in the
+  new history reducer was fixed before the successful final checks.
+- `git diff --check` — passed.
+
+Not validated: a newly trained checkpoint, GPU/MPS training, real-image inference
+on the original uploaded plan, held-out extraction accuracy, production load,
+security/deployment readiness. The provided exports lack the source raster and
+independent gold masks. No measured accuracy improvement or production readiness
+is claimed. See PRODUCTION_2D_PROCEDURE.md for commands and remaining gates.

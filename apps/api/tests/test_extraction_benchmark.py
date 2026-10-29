@@ -105,3 +105,20 @@ def test_missing_opening_evidence_is_unscored(tmp_path):
     img=image(tmp_path)
     result=compare(prediction(img),prediction(img,'model'))
     assert result['openings'] is None
+
+
+def test_length_coverage_penalizes_tiny_fragment_of_long_wall():
+    from app.extraction_benchmark import wall_length_coverage,Segment,Point
+    truth=[Segment(start=Point(x=0,y=0),end=Point(x=100,y=0))]
+    predicted=[Segment(start=Point(x=0,y=0),end=Point(x=10,y=0))]
+    score=wall_length_coverage(truth,predicted,1)
+    assert score['precision']==1
+    assert score['recall']<.12
+
+
+def test_opening_span_score_rejects_short_window_with_matching_center():
+    from app.extraction_benchmark import PlanPrediction,OpeningLabel,Point,compare
+    base=dict(provider='test',image_sha256='a'*64,width_px=200,height_px=200)
+    truth=PlanPrediction(**base,openings=[OpeningLabel(kind='window',start=Point(x=20,y=20),end=Point(x=120,y=20))])
+    pred=PlanPrediction(**base,openings=[OpeningLabel(kind='window',start=Point(x=50,y=20),end=Point(x=90,y=20))])
+    assert compare(truth,pred,3)['opening_spans']['recall']==0

@@ -1,3 +1,5 @@
+import {draftHistory,emptyHistory} from '../lib/draftHistory';
+import {moveSharedJunction} from '../lib/geometryEditing';
 import {test,expect,Page} from '@playwright/test';
 const geometry={width_px:300,height_px:200,px_per_meter:50,scale_source:'user_confirmed',structure_reviewed:false,rooms:[],warnings:[],openings:[] as any[],walls:[{id:'a',start:{x:20,y:20},end:{x:220,y:20},thickness_m:.15,height_m:2.8,inferred:true}]};
 const opening={id:'opening-1',source_detection_id:'window-1',kind:'window',wall_id:'a',offset_m:1,width_m:1,height_m:1,sill_m:1,inferred:true};
@@ -51,6 +53,8 @@ test('opening-only classifications must be applied before they enter the saved d
 
 test('repaired graph feeds the main draft and protects unsaved changes',async({page})=>{
  const state=await api(page,{graph:true});
+ await page.getByText('Repair walls, gaps and opening hosts',{exact:true}).click();
+ await page.getByText('Repair connected geometry',{exact:true}).click();
  const use=page.getByRole('button',{name:'Use repaired graph in main 2D/3D draft',exact:true});
  await expect(use).toBeEnabled();await use.click();
  await expect(use).toBeDisabled();
@@ -63,6 +67,8 @@ test('repaired graph feeds the main draft and protects unsaved changes',async({p
 
 test('stale graph handoff does not overwrite the main draft',async({page})=>{
  const state=await api(page,{graph:true,stale:true});
+ await page.getByText('Repair walls, gaps and opening hosts',{exact:true}).click();
+ await page.getByText('Repair connected geometry',{exact:true}).click();
  await page.getByRole('button',{name:'Use repaired graph in main 2D/3D draft',exact:true}).click();
  await expect(page.getByText(/409: Saved layout changed/)).toBeVisible();
  await page.getByRole('button',{name:'3 · Save corrected draft',exact:true}).click();
@@ -80,4 +86,46 @@ test('unresolved classifications remain visibly unresolved rather than fake cuto
  await expect(page.getByText(/window window-1: unresolved/)).toBeVisible();
  await expect(page.getByText(/Main draft: 1 walls · 0 physical openings/)).toBeVisible();
  expect(state.applied).toBe(true);
+});
+
+test('shared endpoint editing moves all incident walls and protects hosted openings',async()=>{
+ const connected={...geometry,walls:[...geometry.walls,{...geometry.walls[0],id:'b',start:{x:220,y:20},end:{x:220,y:180}}]};
+ const moved=moveSharedJunction(connected as any,'a','end',{x:230,y:20});
+ expect(moved.walls[0].end).toEqual({x:230,y:20});
+ expect(moved.walls[1].start).toEqual({x:230,y:20});
+ expect(connected.walls[0].end).toEqual({x:220,y:20});
+ expect(()=>moveSharedJunction({...connected,openings:[opening]} as any,'a','end',{x:230,y:20})).toThrow(/openings/);
+ expect(()=>moveSharedJunction(connected as any,'a','end',{x:20,y:20})).toThrow(/collapse/);
+});
+
+
+test('draft undo groups drag frames and redo is invalidated by a new edit',()=>{
+ const first=geometry as any, second={...first,structure_reviewed:false},third={...second,walls:[]};
+ let h=draftHistory(emptyHistory,{type:'reset',value:first});
+ h=draftHistory(h,{type:'begin'});
+ h=draftHistory(h,{type:'set',value:second});h=draftHistory(h,{type:'set',value:third});
+ h=draftHistory(h,{type:'end'});
+ expect(h.past).toEqual([first]);
+ h=draftHistory(h,{type:'undo'});expect(h.present).toBe(first);
+ h=draftHistory(h,{type:'redo'});expect(h.present).toBe(third);
+ h=draftHistory(h,{type:'undo'});h=draftHistory(h,{type:'set',value:second});
+ expect(h.future).toHaveLength(0);
+ h=draftHistory(h,{type:'reset',value:third});expect(h.past).toHaveLength(0);
+});
+
+test('editor starts on the plan with research controls collapsed and reversible draft application',async({page})=>{
+ await api(page);
+ await expect(page.getByRole('heading',{name:'Plan editor',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Save uncorrected model baseline',exact:true})).not.toBeVisible();
+ await expect(page.getByRole('button',{name:'Reload graph',exact:true})).not.toBeVisible();
+ await page.getByRole('button',{name:'1 · Extract and compare',exact:true}).click();
+ await page.getByRole('button',{name:'Openings (1)',exact:true}).click();
+ await page.getByRole('button',{name:'Classify as window',exact:true}).click();
+ await page.getByRole('button',{name:'2 · Apply reviewed walls + openings',exact:true}).click();
+ await expect(page.getByText(/Main draft: 1 walls · 1 physical openings/)).toBeVisible();
+ await page.getByRole('button',{name:'Undo draft edit',exact:true}).click();
+ await expect(page.getByText(/Main draft: 1 walls · 0 physical openings/)).toBeVisible();
+ await page.getByRole('button',{name:'Redo draft edit',exact:true}).click();
+ await expect(page.getByText(/Main draft: 1 walls · 1 physical openings/)).toBeVisible();
+ await page.screenshot({path:'test-results/editor-clean-flow.png',fullPage:true});
 });
