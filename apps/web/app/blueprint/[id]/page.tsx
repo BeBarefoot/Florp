@@ -386,11 +386,18 @@ export default function Editor(){
        setStatus('No approved wall labels could be merged. Re-run extraction and review the new proposals.');return;
      }
      const openings=await applyReviewedOpenings(merged.geometry);
-     setGeometry(openings.geometry);setSelectedWall(null);setView('2d');
+     let corrected=openings.geometry, autoNote='';
+     try{
+       const auto=await request<{geometry:Geometry;changes:{wall_id:string}[];remaining_loose_endpoints:number}>(`/blueprints/${id}/connectivity/automatic`,{
+         method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({geometry:corrected,
+           opening_boxes:unified.opening_hints.map(h=>[h.x1,h.y1,h.x2,h.y2])})});
+       if(auto.geometry&&Array.isArray(auto.changes)){corrected=auto.geometry;autoNote=` Automatically adjusted ${auto.changes.length} short, image-supported endpoints; ${auto.remaining_loose_endpoints} loose endpoints remain. Undo restores the prior draft.`;}
+     }catch{autoNote=' Automatic endpoint repair was unavailable; the reviewed draft is preserved.';}
+     setGeometry(corrected);setSelectedWall(null);setView('2d');
      setStatus(merged.added+' approved walls added to your UNSAVED draft ('+
        merged.already_present+' already present, '+merged.ignored+' skipped). Geometry now has '+
        openings.geometry.walls.length+' walls and '+openings.geometry.openings.length+' physical openings. Review them and click Save corrected draft. '+
-       openings.messages.join('; '));
+       openings.messages.join('; ')+autoNote);
    }catch(error){setStatus(String(error))}
    finally{setBusy(false)}
  }

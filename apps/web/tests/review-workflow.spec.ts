@@ -3,7 +3,7 @@ import {moveSharedJunction} from '../lib/geometryEditing';
 import {test,expect,Page} from '@playwright/test';
 const geometry={width_px:300,height_px:200,px_per_meter:50,scale_source:'user_confirmed',structure_reviewed:false,rooms:[],warnings:[],openings:[] as any[],walls:[{id:'a',start:{x:20,y:20},end:{x:220,y:20},thickness_m:.15,height_m:2.8,inferred:true}]};
 const opening={id:'opening-1',source_detection_id:'window-1',kind:'window',wall_id:'a',offset_m:1,width_m:1,height_m:1,sill_m:1,inferred:true};
-async function api(page:Page,{graph=false,stale=false,unresolved=false,rooms=false,partitionOpening=false}={}){
+async function api(page:Page,{graph=false,stale=false,unresolved=false,rooms=false,partitionOpening=false,autoConnect=false}={}){
  const state={saved:[] as any[],mergedIds:null as null|string[],applied:false};
  const projected={...geometry,openings:[opening],walls:[...geometry.walls,{...geometry.walls[0],id:'b',start:{x:220,y:20},end:{x:220,y:180}}]};
  const roomGeometry={...geometry,walls:[
@@ -36,6 +36,7 @@ async function api(page:Page,{graph=false,stale=false,unresolved=false,rooms=fal
    input_manifest:{source_preview_sha256:'a'.repeat(64)},comparison:{agreed_candidates:0,yytsi_only_candidates:0,yolo_only_candidates:0,topology:{disconnected_components:1,dangling_endpoints:2}},
    geometry_review:{suggestions:[],explanation:'',auto_applied:false},detections:null,segmentation:{provider:'test'},yolo_error:null,mask_overlay_png_base64:'',saved:false});
   if(path.endsWith('/fusion-draft/merge')){state.mergedIds=route.request().postDataJSON().candidate_ids;return reply({saved:false,geometry,added:0,already_present:0,ignored:0,layout_version:1});}
+  if(path.endsWith('/connectivity/automatic')&&autoConnect){const g=route.request().postDataJSON().geometry;return reply({geometry:{...g,walls:[...g.walls,{...g.walls[0],id:'joined'}]},changes:[{wall_id:'joined'}],remaining_loose_endpoints:2});}
   if(path.endsWith('/opening-review/draft')){state.applied=true;return reply({geometry:unresolved?geometry:{...geometry,openings:[opening]},status:unresolved?'unresolved':'added'});}
   if(path.endsWith('/fusion-reviews'))return reply(method==='GET'?[]:{id:'review'});
   return reply([]);
@@ -167,4 +168,18 @@ test('room merge cannot silently delete a hosted opening',async({page})=>{
  await api(page,{rooms:true,partitionOpening:true});
  await page.getByRole('button',{name:'Review room region 1',exact:true}).click();
  await expect(page.getByRole('button',{name:'Remove shared partition 2',exact:true})).toBeDisabled();
+});
+
+
+test('reviewed draft receives automatic connectivity corrections',async({page})=>{
+ const state=await api(page,{autoConnect:true});
+ await page.getByRole('button',{name:'1 · Extract and compare',exact:true}).click();
+ await page.getByRole('button',{name:'Openings (1)',exact:true}).click();
+ await page.getByRole('button',{name:'Classify as window',exact:true}).click();
+ await page.getByRole('button',{name:'2 · Apply reviewed walls + openings',exact:true}).click();
+ await expect(page.getByText(/Automatically adjusted 1 short/)).toBeVisible();
+ await page.getByRole('button',{name:'3 · Save corrected draft',exact:true}).click();
+ await expect.poll(()=>state.saved.length).toBe(1);
+ expect(state.saved[0].geometry.walls).toHaveLength(2);
+ expect(state.saved[0].geometry.openings).toHaveLength(1);
 });

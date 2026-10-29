@@ -161,3 +161,18 @@ occupied-pixel comparison. Complete backend suite: **222 passed**, one existing
 Starlette warning; Python compilation and diff checks passed. Real checkpoint
 inference remains unexecuted. Native masks may use more memory on large rasters;
 profile the target corpus before production rollout. Yytsi is unchanged.
+
+## Automatic image-supported endpoint mitigation
+
+Applying reviewed extraction candidates now also tries short (at most four source
+pixels), ink-supported endpoint joins on the unsaved draft. It excludes detected
+opening boxes, manually drawn walls, opening hosts, previously connected junctions,
+confirmed structure and existing room polygons. Each accepted group must reduce
+loose endpoints or components without increasing either or wall crossings. User
+undo reverses the application. This is a heuristic, not proof of a true wall;
+review remains necessary. Long missing runs and undetected openings require other
+reconstruction work. No real-plan accuracy change is claimed.
+
+Backend: 220 tests passed; source-image support, opening evidence and preservation
+regressions included. Frontend typecheck and production build passed. Browser
+workflow uses a mocked API; real model inference was not run.
