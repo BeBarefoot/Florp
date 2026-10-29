@@ -120,10 +120,10 @@ def from_geometry(geometry: Geometry) -> CanonicalPlan:
     return plan
 
 
-def to_geometry(plan: CanonicalPlan, *, include_derived_rooms: bool = False) -> Geometry:
+def to_geometry(plan: CanonicalPlan, *, include_derived_rooms: bool = False, draft_preview: bool = False) -> Geometry:
     """Explicit export. Refuse ambiguous source opening anchors rather than losing them."""
     require_valid(plan)
-    if plan.pending_openings:
+    if plan.pending_openings and not draft_preview:
         raise ValueError('Cannot export: pending legacy opening anchors need reconciliation')
     nodes = {n.id: n.point for n in plan.nodes}
     walls = [Wall(id=w.id, start=nodes[w.start_node_id], end=nodes[w.end_node_id],
@@ -145,4 +145,4 @@ def to_geometry(plan: CanonicalPlan, *, include_derived_rooms: bool = False) -> 
     return Geometry(width_px=plan.width_px, height_px=plan.height_px,
                     px_per_meter=plan.px_per_meter, scale_source=plan.scale_source,
                     structure_reviewed=False, walls=walls, openings=openings,
-                    rooms=rooms, warnings=list(plan.warnings))
+                    rooms=rooms, warnings=list(plan.warnings) + (["Draft preview: unresolved openings are preserved in the graph but not rendered"] if plan.pending_openings else []))

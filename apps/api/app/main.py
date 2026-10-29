@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sqlmodel import SQLModel, Session, create_engine, select
 from pydantic import BaseModel
-from PIL import Image
+from PIL import Image, ImageOps
 import fitz
 from .config import settings
 from .models import Project, Blueprint, Layout, Render, WallAnnotation, ModelWallCorrection, FusionCandidateReview, ExtractionEvaluation, PlanGraphRevision
@@ -32,7 +32,13 @@ if settings.database_url.startswith('sqlite:///'):
     Path(settings.database_url.removeprefix('sqlite:///')).parent.mkdir(parents=True,exist_ok=True)
 engine=create_engine(settings.database_url,connect_args={'check_same_thread':False} if settings.database_url.startswith('sqlite') else {})
 SQLModel.metadata.create_all(engine)
-app=FastAPI(title='Florp API',version='0.1.0')
+from contextlib import asynccontextmanager
+@asynccontextmanager
+async def lifespan(application):
+    from .dataset_workspace import recover_restore
+    recover_restore()
+    yield
+app=FastAPI(title='Florp API',version='0.1.0',lifespan=lifespan)
 app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origins.split(','),allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
 
 @app.get('/models/status')
@@ -103,7 +109,7 @@ async def upload(pid:str,file:UploadFile=File(...)):
             image=Image.open(io.BytesIO(pix.tobytes('png'))).convert('RGB')
         except Exception:raise HTTPException(422,'Could not read PDF')
     else:
-        try:image=Image.open(io.BytesIO(contents)).convert('RGB')
+        try:image=ImageOps.exif_transpose(Image.open(io.BytesIO(contents))).convert('RGB')
         except Exception:raise HTTPException(415,'Only PDF and common images are supported')
     if image.width*image.height>45_000_000:raise HTTPException(413,'Image pixel count too large')
     bp=Blueprint(project_id=pid,filename=(file.filename or 'plan')[:255],local_path='',preview_path='',width=image.width,height=image.height)
@@ -1115,7 +1121,7 @@ def _append_graph(session: Session, latest: PlanGraphRevision, graph: dict, oper
 
 
 @app.get('/blueprints/{bid}/canonical-plan/revisions/{revision_id}/geometry')
-def canonical_geometry(bid: str, revision_id: str):
+def canonical_geometry(bid: str, revision_id: str, draft_preview: bool = False):
     """Read-only projection of one immutable revision for both 2D and 3D."""
     from .plan_graph import CanonicalPlan
     from .graph_adapter import to_geometry
@@ -1124,7 +1130,7 @@ def canonical_geometry(bid: str, revision_id: str):
         if revision is None or revision.blueprint_id!=bid:
             raise HTTPException(404,'Revision not found')
         try:
-            geometry=to_geometry(CanonicalPlan.model_validate(revision.graph))
+            geometry=to_geometry(CanonicalPlan.model_validate(revision.graph), draft_preview=draft_preview)
         except ValueError as exc:
             raise HTTPException(422,str(exc)) from exc
         return {'revision_id':revision.id,'geometry':geometry.model_dump(mode='json')}
@@ -1246,3 +1252,31 @@ def plan_quality(bid: str, body: PlanQualityBody):
             .order_by(FusionCandidateReview.created_at,FusionCandidateReview.id)).all()
         latest={r.candidate_id:{'candidate_id':r.candidate_id,'decision':r.decision} for r in rows}
         return assess_plan(body.geometry,list(latest.values()))
+
+from .dataset_workspace import router as dataset_router
+app.include_router(dataset_router)
+
+class ResolvePendingOpening(BaseModel):
+    opening_id: str
+    replacement: dict | None = None
+    reason: str
+
+@app.post('/blueprints/{bid}/canonical-plan/revisions/{revision_id}/resolve-opening')
+def resolve_pending_opening(bid:str, revision_id:str, body:ResolvePendingOpening):
+    from .plan_graph import CanonicalPlan,PlanOpening
+    from .graph_validation import require_valid
+    with Session(engine) as session:
+        latest=_current_graph(session,bid,revision_id)
+        plan=CanonicalPlan.model_validate(latest.graph)
+        original=next((o for o in plan.pending_openings if o.id==body.opening_id),None)
+        if original is None:raise HTTPException(404,'Pending opening not found')
+        if not body.reason.strip():raise HTTPException(422,'A resolution reason is required')
+        try:
+            if body.replacement is not None:
+                replacement=PlanOpening.model_validate(body.replacement)
+                if replacement.id!=original.id:raise ValueError('Replacement must preserve the original ID')
+                plan.openings.append(replacement)
+            plan.pending_openings=[o for o in plan.pending_openings if o.id!=original.id]
+            require_valid(plan)
+        except ValueError as e:raise HTTPException(422,str(e)) from e
+        return _append_graph(session,latest,plan.model_dump(mode='json'),{'kind':'resolve_opening','original':original.model_dump(),'replacement':body.replacement,'reason':body.reason})

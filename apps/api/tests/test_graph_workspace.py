@@ -154,3 +154,20 @@ def test_legacy_placeholder_hidden_on_read_and_cleaned_on_save_without_rewriting
     with Session(db) as s:
         assert len(s.get(Layout,old_id).geometry['walls'])==5
         assert s.get(Layout,old_id).verified is True
+
+
+def test_pending_preview_and_explicit_resolution(workspace):
+    c,db,bid,root,initial,g=workspace
+    with Session(db) as s:
+        row=s.get(PlanGraphRevision,initial['id']);graph=dict(row.graph)
+        pending=g.openings[0].model_dump();pending['id']='unmatched'
+        graph['pending_openings']=[pending];row.graph=graph;s.add(row);s.commit()
+    url=f"{root}/{initial['id']}"
+    assert c.get(url+'/geometry').status_code==422
+    assert c.get(url+'/geometry?draft_preview=true').status_code==200
+    assert c.post(url+'/draft').status_code==422
+    resolved=c.post(url+'/resolve-opening',json={'opening_id':'unmatched','reason':'False duplicate detection','replacement':None})
+    assert resolved.status_code==200,resolved.text
+    assert resolved.json()['operation']['original']['id']=='unmatched'
+    assert resolved.json()['graph']['pending_openings']==[]
+    assert c.post(f"{root}/{resolved.json()['id']}/draft").status_code==200

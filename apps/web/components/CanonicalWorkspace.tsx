@@ -4,13 +4,14 @@ import dynamic from 'next/dynamic';
 import ReconstructionReview from './ReconstructionReview';
 import {API,request,Geometry,Pt} from '../lib/api';
 const Viewer=dynamic(()=>import('./Viewer3D'),{ssr:false});
-type Graph={width_px:number;height_px:number;nodes:{id:string;point:Pt}[];walls:{id:string;start_node_id:string;end_node_id:string}[];rooms:{id:string;verified:boolean}[];pending_openings:unknown[]};
+type Graph={width_px:number;height_px:number;nodes:{id:string;point:Pt}[];walls:{id:string;start_node_id:string;end_node_id:string}[];rooms:{id:string;verified:boolean}[];pending_openings:{id:string;kind:string;wall_id:string;offset_m:number;width_m:number;height_m:number;sill_m:number}[]};
 export type Revision={id:string;version:number;parent_revision_id:string|null;graph:Graph};
 export default function CanonicalWorkspace({bid,layoutVersion,hasUnsavedChanges,onUseDraft}:{bid:string;layoutVersion:number;hasUnsavedChanges:boolean;onUseDraft:(g:Geometry)=>void}){
  const [revision,setRevision]=useState<Revision|null>(null),[stale,setStale]=useState(false);
  const [busy,setBusy]=useState(false),[message,setMessage]=useState(''),[selected,setSelected]=useState<string|null>(null);
  const [projection,setProjection]=useState<Geometry|null>(null),[view,setView]=useState<'2d'|'3d'>('2d');
  const [x,setX]=useState(''),[y,setY]=useState('');
+ const [host,setHost]=useState(''),[reason,setReason]=useState('');
  async function load(){
   setBusy(true);setProjection(null);
   try{const r=await request<{revision:Revision;stale:boolean}>(`/blueprints/${bid}/canonical-plan/revisions/latest`);setRevision(r.revision);setStale(r.stale);setMessage('');}
@@ -20,7 +21,7 @@ export default function CanonicalWorkspace({bid,layoutVersion,hasUnsavedChanges,
  useEffect(()=>{void load();},[bid,layoutVersion]);
  useEffect(()=>{
   let active=true;setProjection(null);setSelected(null);
-  if(revision)request<{geometry:Geometry}>(`/blueprints/${bid}/canonical-plan/revisions/${revision.id}/geometry`).then(r=>{if(active)setProjection(r.geometry)}).catch(e=>{if(active)setMessage(String(e))});
+  if(revision)request<{geometry:Geometry}>(`/blueprints/${bid}/canonical-plan/revisions/${revision.id}/geometry?draft_preview=true`).then(r=>{if(active)setProjection(r.geometry)}).catch(e=>{if(active)setMessage(String(e))});
   return()=>{active=false};
  },[bid,revision]);
  async function mutate(path:string,body:unknown){
@@ -55,6 +56,7 @@ export default function CanonicalWorkspace({bid,layoutVersion,hasUnsavedChanges,
   {hasUnsavedChanges&&<p>Save your main draft edits before importing repaired geometry.</p>}
   {stale&&<p role="alert">Saved layout changed. Reinitialize before editing this graph.</p>}
   {message&&<p role="status">{message}</p>}
+  {revision&&revision.graph.pending_openings.length>0&&<section className="notice"><h3>Resolve opening anchors</h3><p>Draft walls remain visible. Unresolved openings stay preserved and block applying this graph.</p><label>Host wall<select value={host} onChange={e=>setHost(e.target.value)}><option value="">Choose host</option>{revision.graph.walls.map(w=><option key={w.id} value={w.id}>{w.id}</option>)}</select></label><label>Resolution reason<input value={reason} onChange={e=>setReason(e.target.value)}/></label>{revision.graph.pending_openings.map(o=><div key={o.id}><strong>{o.kind} · {o.id}</strong><p>Legacy span: offset {o.offset_m} m, width {o.width_m} m. Attach only if this span is correct for the chosen host.</p><button disabled={disabled||!host||!reason.trim()} onClick={()=>void mutate(`${base}/${revision.id}/resolve-opening`,{opening_id:o.id,replacement:{...o,wall_id:host},reason})}>Attach to chosen host</button><button disabled={disabled||!reason.trim()} onClick={()=>void mutate(`${base}/${revision.id}/resolve-opening`,{opening_id:o.id,replacement:null,reason})}>Dismiss false opening</button></div>)}</section>}
   {revision&&view==='2d'&&<>
    <p>Select a junction, then enter its source-image coordinates. Every incident wall moves together.</p>
    <svg aria-label="Canonical wall graph" viewBox={`0 0 ${revision.graph.width_px} ${revision.graph.height_px}`} style={{width:'100%',maxHeight:600,background:'#eef2f6'}}>
