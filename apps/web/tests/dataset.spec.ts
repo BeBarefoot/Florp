@@ -61,3 +61,33 @@ test('nearby warnings share a marker and all issue types remain selectable',asyn
  await page.getByRole('button',{name:'Complex walls',exact:true}).click();
  await expect(page.getByText('Object 2 · selected')).toBeVisible();
 });
+
+test('snapshot readiness explains drafts and missing splits',async({page})=>{
+ await page.route('http://localhost:8000/**',async route=>{
+  const path=new URL(route.request().url()).pathname;
+  const value=path==='/dataset/cases'?[{id:'plan',name:'draft.png',width_px:300,height_px:200,annotation:{revision:1,group_id:'g',split:'train',reviewer:'',independent_reviewer:'',complete:false,rights_confirmed:false,objects:[],status:'draft'}}]:[];
+  return route.fulfill({contentType:'application/json',headers:{'Access-Control-Allow-Origin':'*'},body:JSON.stringify(value)});
+ });
+ await page.goto('/dataset');await page.getByText('4. Dataset Snapshots').click();
+ await expect(page.getByText('0 of 1 plans ready')).toBeVisible();
+ await expect(page.getByText(/Review a plan from the Annotation Queue/)).toBeVisible();
+ await expect(page.getByText(/Train 0 · Validation 0 · Test 0/)).toBeVisible();
+});
+
+test('import opens the plan only after it is visible in the queue',async({page})=>{
+ let imported=false;
+ await page.route('http://localhost:8000/**',async route=>{
+  const path=new URL(route.request().url()).pathname;
+  const reply=(body:unknown)=>route.fulfill({contentType:'application/json',headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET, POST, OPTIONS'},body:JSON.stringify(body)});
+  if(route.request().method()==='OPTIONS')return reply({});
+  if(path==='/dataset/import'){imported=true;return reply({case_ids:['new-plan'],pages:1,status:'completed'})}
+  if(path==='/dataset/cases')return reply(imported?[{id:'new-plan',name:'plan.png',width_px:300,height_px:200,annotation:null}]:[]);
+  if(path.endsWith('/preview'))return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"/>'});
+  return reply([]);
+ });
+ await page.goto('/dataset');
+ await page.locator('input[type=file]').first().setInputFiles({name:'plan.png',mimeType:'image/png',buffer:Buffer.from('fixture')});
+ await expect(page.getByRole('button',{name:'plan.png · unlabeled'})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'plan.png'})).toBeVisible();
+ await expect(page.getByRole('status')).toContainText('Imported 1 plan');
+});
