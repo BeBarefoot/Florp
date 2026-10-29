@@ -695,54 +695,6 @@ def draft_reviewed_opening(bid:str,body:OpeningReviewDraftBody):
     updated,status=create_opening(body.geometry,hint)
     return {'geometry':updated.model_dump(),'status':status,'hint':hint.model_dump()}
 
-@app.get('/extraction/raster2seq/status')
-def raster2seq_status():
-    from .raster2seq_adapter import Raster2SeqUnavailable
-    root=Path(settings.raster2seq_root).expanduser()
-    python_bin=Path(settings.raster2seq_python).expanduser()
-    ready=bool(settings.raster2seq_enabled and root.is_dir()
-               and (root/'predict.py').is_file() and python_bin.is_file())
-    return {'enabled':settings.raster2seq_enabled,'configured':ready,
-            'device':settings.raster2seq_device,
-            'checkpoint':settings.raster2seq_checkpoint,
-            'license':'Checkpoint CC BY-NC 4.0; evaluation only unless separately licensed',
-            'reason':None if ready else
-              'Set RASTER2SEQ_ENABLED=true, RASTER2SEQ_ROOT and RASTER2SEQ_PYTHON to isolated Linux/CUDA environment'}
-
-@app.post('/blueprints/{bid}/compare-raster2seq')
-def compare_raster2seq(bid:str):
-    """Run independent room-polygon model; never write project or geometry."""
-    import hashlib
-    from .raster2seq_adapter import Raster2SeqUnavailable,run_raster2seq
-    if not settings.raster2seq_enabled:
-        raise HTTPException(424,'Raster2Seq disabled; configure isolated noncommercial evaluation runtime')
-    with Session(engine) as session:
-        bp=session.get(Blueprint,bid)
-        if bp is None:raise HTTPException(404,'Blueprint not found')
-        current=session.exec(select(Layout).where(Layout.blueprint_id==bid)
-                             .order_by(Layout.version.desc())).first()
-        if current is None:raise HTTPException(404,'No saved layout')
-        preview=Path(bp.preview_path)
-        if not preview.is_file():raise HTTPException(404,'Blueprint preview missing')
-        digest=hashlib.sha256(preview.read_bytes()).hexdigest()
-        try:
-            rooms,metadata=run_raster2seq(preview,
-                root=Path(settings.raster2seq_root),
-                python_exec=Path(settings.raster2seq_python),
-                device=settings.raster2seq_device,
-                checkpoint=settings.raster2seq_checkpoint,
-                timeout_seconds=settings.raster2seq_timeout_seconds)
-        except Raster2SeqUnavailable as exc:raise HTTPException(424,str(exc)) from exc
-        except ValueError as exc:raise HTTPException(422,str(exc)) from exc
-        interior=[room.model_dump() for room in rooms if room.category_id not in (9,10)]
-        symbols=[{'kind':'window' if room.category_id==9 else 'door',
-                  'points':room.points} for room in rooms if room.category_id in (9,10)]
-        return {'saved':False,'image_sha256':digest,'base_layout_version':current.version,
-                'width_px':bp.width,'height_px':bp.height,
-                'rooms':interior,'opening_symbols':symbols,
-                'metadata':metadata,
-                'note':'Unverified room and opening-symbol polygons; no calibrated scale, wall thickness or 3D cutouts'}
-
 @app.post('/blueprints/{bid}/compare-extraction')
 def compare_extraction(bid:str):
     """Read-only side-by-side model comparison; does not create a layout version.
