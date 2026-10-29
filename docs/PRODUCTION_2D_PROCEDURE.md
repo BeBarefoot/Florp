@@ -313,11 +313,25 @@ The unfinished rendering assistant is removed from this extraction workflow.
 5. Save the corrected draft, then independently verify the structure.
 
 This is a simplification of the existing editor, not the full mockup implementation.
-Room-first selection, split/merge interactions, unified graph/draft persistence,
-and spatial conflict navigation remain required
-before claiming the full research UX is delivered. Existing graph revision undo
+The follow-up spatial review adds selectable enclosed regions, boundary editing,
+shared-partition removal, and loose-endpoint navigation. These are provisional
+regions, not semantic room classification. Unified graph/draft persistence and
+spatial review of all reconstruction alternatives remain required before claiming
+the full research UX is delivered. Existing graph revision undo
 remains available under Repair connected geometry.
 
 Main draft undo/redo now covers local geometry edits, with each endpoint drag
 grouped as one action. Saving or loading a server layout resets local history;
 saved versions remain immutable. Graph revision undo remains a separate scope.
+
+
+### Room and gap review (spatial follow-up)
+
+Open **Rooms & gaps** to select a shaded enclosed region or an amber endpoint.
+Select a room boundary in the adjacent inspector and drag its green handles.
+Use **Draw partition in this region** to split a region using the existing
+snapping wall tool. Use **Remove shared partition** to combine adjacent review
+regions; this is disabled if the wall hosts an opening, or if any part of its
+source wall is exterior/unshared. Undo restores the partition. Derived regions
+refresh from the current draft after edits and are not automatically approved
+or exported as physical floors. **Model candidates** returns to detection review.

@@ -3,10 +3,14 @@ import {moveSharedJunction} from '../lib/geometryEditing';
 import {test,expect,Page} from '@playwright/test';
 const geometry={width_px:300,height_px:200,px_per_meter:50,scale_source:'user_confirmed',structure_reviewed:false,rooms:[],warnings:[],openings:[] as any[],walls:[{id:'a',start:{x:20,y:20},end:{x:220,y:20},thickness_m:.15,height_m:2.8,inferred:true}]};
 const opening={id:'opening-1',source_detection_id:'window-1',kind:'window',wall_id:'a',offset_m:1,width_m:1,height_m:1,sill_m:1,inferred:true};
-async function api(page:Page,{graph=false,stale=false,unresolved=false}={}){
+async function api(page:Page,{graph=false,stale=false,unresolved=false,rooms=false,partitionOpening=false}={}){
  const state={saved:[] as any[],mergedIds:null as null|string[],applied:false};
  const projected={...geometry,openings:[opening],walls:[...geometry.walls,{...geometry.walls[0],id:'b',start:{x:220,y:20},end:{x:220,y:180}}]};
- let layout={id:'layout',blueprint_id:'test',version:1,verified:false,geometry};
+ const roomGeometry={...geometry,walls:[
+  {id:'top',start:{x:10,y:10},end:{x:290,y:10}},{id:'right',start:{x:290,y:10},end:{x:290,y:190}},
+  {id:'bottom',start:{x:290,y:190},end:{x:10,y:190}},{id:'left',start:{x:10,y:190},end:{x:10,y:10}},
+  {id:'partition',start:{x:150,y:10},end:{x:150,y:190}}].map(w=>({...geometry.walls[0],...w})),openings:partitionOpening?[{...opening,wall_id:'partition'}]:[]};
+ let layout={id:'layout',blueprint_id:'test',version:1,verified:false,geometry:rooms?roomGeometry:geometry};
  await page.route('http://localhost:8000/**',async route=>{
   const path=new URL(route.request().url()).pathname;
   const method=route.request().method();
@@ -16,6 +20,12 @@ async function api(page:Page,{graph=false,stale=false,unresolved=false}={}){
   if(path.endsWith('/layout')){
    if(method==='POST'){const body=route.request().postDataJSON();state.saved.push(body);layout={...layout,version:layout.version+1,geometry:body.geometry};}
    return reply(layout);
+  }
+  if(path.endsWith('/quality')&&rooms){
+   const draft=route.request().postDataJSON().geometry;
+   const split=draft.walls.some((w:any)=>w.id==='partition');
+   const face=(id:string,x0:number,x1:number,ids:string[])=>({id,points:[{x:x0,y:10},{x:x1,y:10},{x:x1,y:190},{x:x0,y:190}],source_wall_ids:ids,shared_source_wall_ids:split?['partition']:[],verified:false});
+   return reply({structural_issues:[],metric_issues:['Review structure'],ready_for_metric_scene:false,loose_endpoints:[],room_faces:split?[face('left-face',10,150,['top','partition','bottom','left']),face('right-face',150,290,['top','right','bottom','partition'])]:[face('combined',10,290,['top','right','bottom','left'])]});
   }
   if(path.endsWith('/evidence'))return reply({scale_suggestions:[],segments:[],candidates:[],labels:[],vector_pdf:false,ocr_available:false});
   if(path.endsWith('/canonical-plan/revisions/latest'))return graph?reply({stale:false,revision:{id:'revision',version:2,parent_revision_id:'parent',graph:{...projected,nodes:[{id:'n1',point:{x:20,y:20}},{id:'n2',point:{x:220,y:20}},{id:'n3',point:{x:220,y:180}}],walls:[{id:'a',start_node_id:'n1',end_node_id:'n2'},{id:'b',start_node_id:'n2',end_node_id:'n3'}],pending_openings:[]}}}):reply({detail:'No canonical plan revision yet'},404);
@@ -90,6 +100,7 @@ test('unresolved classifications remain visibly unresolved rather than fake cuto
 
 test('shared endpoint editing moves all incident walls and protects hosted openings',async()=>{
  const connected={...geometry,walls:[...geometry.walls,{...geometry.walls[0],id:'b',start:{x:220,y:20},end:{x:220,y:180}}]};
+ expect(moveSharedJunction(connected as any,'a','end',{x:220,y:20})).toBe(connected);
  const moved=moveSharedJunction(connected as any,'a','end',{x:230,y:20});
  expect(moved.walls[0].end).toEqual({x:230,y:20});
  expect(moved.walls[1].start).toEqual({x:230,y:20});
@@ -128,4 +139,32 @@ test('editor starts on the plan with research controls collapsed and reversible 
  await page.getByRole('button',{name:'Redo draft edit',exact:true}).click();
  await expect(page.getByText(/Main draft: 1 walls · 1 physical openings/)).toBeVisible();
  await page.screenshot({path:'test-results/editor-clean-flow.png',fullPage:true});
+});
+
+
+test('room-first review selects on plan, removes a shared partition and undoes it',async({page})=>{
+ const state=await api(page,{rooms:true});
+ const region=page.getByRole('button',{name:'Review room region 1',exact:true});
+ await expect(region).toBeVisible();await region.focus();await region.press('Enter');
+ await expect(page.getByText('Selected enclosed region',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Boundary 2 · shared partition',exact:true}).click();
+ await expect(page.getByText('Selected boundary',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Remove shared partition 2',exact:true}).click();
+ await expect(page.getByText('1 enclosed regions · 0 loose endpoints',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Undo draft edit',exact:true}).click();
+ await expect(page.getByText('2 enclosed regions · 0 loose endpoints',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'3 · Save corrected draft',exact:true}).click();
+ await expect.poll(()=>state.saved.length).toBe(1);expect(state.saved[0].geometry.walls).toHaveLength(5);
+ await expect(page.getByText('2 enclosed regions · 0 loose endpoints',{exact:true})).toBeVisible();
+ await region.click();
+ await page.screenshot({path:'test-results/room-first-review.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ await expect(page.getByText('Selected enclosed region',{exact:true})).toBeVisible();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+});
+
+test('room merge cannot silently delete a hosted opening',async({page})=>{
+ await api(page,{rooms:true,partitionOpening:true});
+ await page.getByRole('button',{name:'Review room region 1',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Remove shared partition 2',exact:true})).toBeDisabled();
 });

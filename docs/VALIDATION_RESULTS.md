@@ -136,3 +136,18 @@ on the original uploaded plan, held-out extraction accuracy, production load,
 security/deployment readiness. The provided exports lack the source raster and
 independent gold masks. No measured accuracy improvement or production readiness
 is claimed. See PRODUCTION_2D_PROCEDURE.md for commands and remaining gates.
+
+## 2026-10-29: spatial room and gap review follow-up
+
+- Backend: **216 passed**, same Starlette deprecation warning. New tests cover
+  adjacent region boundaries, recomputation after partition removal, open contours,
+  and refusing whole-source deletion when a source wall is only partly shared.
+- Frontend typecheck and production build passed. Python compilation passed.
+- Playwright/history suite: **9 passed**. Added keyboard room selection, contextual
+  boundary selection, partition removal with undo and save, hosted-opening
+  protection, and a 390px viewport overflow check. APIs remain mocked in browser
+  tests; topology calculations run against real Python geometry in backend tests.
+- Inspected the generated room-review screenshot with the selected region and
+  adjacent boundary inspector. Fixture is synthetic, not a measured extraction.
+- No-op endpoint movement preserves the existing draft object and room faces.
+- Existing empirical/training and production-readiness limitations still apply.
