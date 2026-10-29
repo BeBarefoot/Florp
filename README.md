@@ -2,6 +2,16 @@
 
 **Status:** working local-first **Milestone 1 engineering scaffold**, not a completed photorealistic generation product. No secret tokens are included.
 
+## Deterministic color-plan service
+
+A separate local CPU service now extracts red block-wall and blue concrete
+footprints, calibrates scale, and exports PNG/SVG/DXF with an exact 50cm metric
+bounding margin. It does not change the existing editor or saved projects.
+See [setup, API, bounds contract and accuracy limits](services/deterministic-blueprint/README.md)
+and [measured validation results](docs/deterministic-engine/VALIDATION.md).
+This is a measured extraction baseline; photographed-plan accuracy still needs
+independent ground truth, and ambiguous output is explicitly flagged for review.
+
 ## Current 2D workflow
 
 Extract → review model candidates → apply reviewed walls/openings → inspect
