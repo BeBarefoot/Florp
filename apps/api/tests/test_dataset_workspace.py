@@ -215,3 +215,57 @@ def test_reimport_after_project_deletion_recreates_plan(workspace,monkeypatch):
     assert second_id!=first_id
     assert any(case['id']==second_id for case in c.get('/dataset/cases').json())
     assert send().json()['case_ids']==[second_id]
+
+def test_false_finding_preserved_but_excluded_from_geometry_and_training(workspace):
+    c,ids=workspace;b=body();b.update(complete=False,objects=[{'kind':'wall','polygon':[[10,10],[80,10],[80,15],[10,15]]},{'kind':'window','polygon':[[20,10],[30,10],[30,15],[20,15]]}],excluded_objects=[1],reviewed_objects=[1])
+    result=c.put('/dataset/cases/'+ids[0],json=b)
+    assert result.status_code==200,result.text
+    record=result.json();assert len(record['objects'])==2 and record['excluded_objects']==[1]
+    assert record['reconstruction']['pixel_openings']==[]
+    assert c.get('/dataset/cases/'+ids[0]).json()['annotation']['excluded_objects']==[1]
+    assert c.put('/dataset/cases/'+ids[0],json={**b,'expected_revision':1,'excluded_objects':[4]}).status_code==422
+
+def test_older_editor_cannot_silently_erase_review_decisions(workspace):
+    c,ids=workspace;b=body();b.update(complete=False,objects=[{'kind':'wall','polygon':[[10,10],[80,10],[80,15],[10,15]]}],excluded_objects=[0],reviewed_objects=[0])
+    assert c.put('/dataset/cases/'+ids[0],json=b).status_code==200
+    legacy={k:v for k,v in b.items() if k not in ('excluded_objects','reviewed_objects')};legacy['expected_revision']=1
+    response=c.put('/dataset/cases/'+ids[0],json=legacy);assert response.status_code==200
+    assert response.json()['excluded_objects']==[0]
+    legacy['expected_revision']=2;legacy['objects']=[]
+    assert c.put('/dataset/cases/'+ids[0],json=legacy).status_code==409
+
+def test_false_findings_do_not_enter_training_snapshot(workspace):
+    c,ids=workspace
+    for i,bid in enumerate(ids):
+        b=body('building-'+str(i),['train','val','test'][i]);b['objects'].append({'kind':'window','polygon':[[10,10],[20,10],[20,15],[10,15]]});b['excluded_objects']=[1];b['reviewed_objects']=[1]
+        result=c.put('/dataset/cases/'+bid,json=b);assert result.status_code==200,result.text
+    snapshot=c.post('/dataset/snapshots');assert snapshot.status_code==200,snapshot.text
+    z=zipfile.ZipFile(io.BytesIO(c.get('/dataset/snapshots/'+snapshot.json()['id']+'/download').content))
+    assert all(line.startswith('0 ') for line in z.read('labels/train/'+ids[0]+'.txt').decode().splitlines())
+    with zipfile.ZipFile(io.BytesIO(z.read('source-annotations.zip'))) as source:
+        stored=json.loads(source.read('cases/'+ids[0]+'/annotation.json'))
+        assert stored['excluded_objects']==[1] and len(stored['objects'])==2
+
+def test_calibrated_opening_width_and_room_dimensions_share_saved_scale(workspace):
+    c,ids=workspace;b=body();b.update(complete=False,px_per_meter=10,objects=[
+      {'kind':'wall','polygon':[[10,10],[90,10],[90,16],[10,16]]},
+      {'kind':'wall','polygon':[[84,16],[90,70],[84,70],[84,16]]},
+      {'kind':'wall','polygon':[[10,64],[84,64],[84,70],[10,70]]},
+      {'kind':'wall','polygon':[[10,16],[16,16],[16,64],[10,64]]},
+      {'kind':'window','polygon':[[35,10],[55,10],[55,16],[35,16]]}])
+    # Correct the repeated endpoint in the right-wall polygon.
+    b['objects'][1]['polygon']=[[84,16],[90,16],[90,70],[84,70]]
+    result=c.put('/dataset/cases/'+ids[0],json=b);assert result.status_code==200,result.text
+    reconstruction=result.json()['reconstruction'];opening=reconstruction['pixel_openings'][0]
+    assert opening['width_px']==20
+    assert reconstruction['geometry']['px_per_meter']==10
+    assert reconstruction['geometry']['openings'][0]['width_m']==2
+    assert reconstruction['geometry']['rooms']
+
+def test_explicit_undo_restores_excluded_object(workspace):
+    c,ids=workspace;b=body();b.update(complete=False,objects=[{'kind':'wall','polygon':[[10,10],[80,10],[80,15],[10,15]]}],excluded_objects=[0],reviewed_objects=[0])
+    assert c.put('/dataset/cases/'+ids[0],json=b).status_code==200
+    b.update(expected_revision=1,excluded_objects=[],reviewed_objects=[])
+    result=c.put('/dataset/cases/'+ids[0],json=b);assert result.status_code==200
+    assert result.json()['excluded_objects']==[]
+    assert len(result.json()['reconstruction']['geometry']['walls'])==1
