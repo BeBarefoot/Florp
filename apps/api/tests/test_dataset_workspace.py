@@ -180,3 +180,38 @@ def test_restore_crash_journal_cleans_only_uncommitted_files(workspace):
     committed=root().parent/'committed-artifact';committed.mkdir()
     journal.write_text(json.dumps({'case_ids':[ids[0]],'folders':[str(committed)]}))
     recover_restore();assert committed.exists()
+
+def test_snapshot_explains_zero_ready_without_losing_drafts(workspace):
+    c,ids=workspace
+    b=body();b.update(complete=False,objects=[],reviewer='',independent_reviewer='')
+    assert c.put('/dataset/cases/'+ids[0],json=b).status_code==200
+    response=c.post('/dataset/snapshots')
+    assert response.status_code==422
+    assert 'Only 0 plans are marked Ready' in response.json()['detail']
+    assert 'train, validation and test' in response.json()['detail']
+    assert c.get('/dataset/cases/'+ids[0]).json()['annotation']['status']=='draft'
+
+
+def test_snapshot_explains_missing_split(workspace):
+    c,ids=workspace
+    for i,bid in enumerate(ids):assert c.put('/dataset/cases/'+bid,json=body(str(i),'train')).status_code==200
+    response=c.post('/dataset/snapshots')
+    assert response.status_code==422
+    assert 'validation' not in response.json()['detail'] or 'val' in response.json()['detail']
+    assert 'val, test' in response.json()['detail']
+
+def test_reimport_after_project_deletion_recreates_plan(workspace,monkeypatch):
+    from types import SimpleNamespace
+    c,_=workspace
+    monkeypatch.setattr(main,'inspect_plan',lambda *args:SimpleNamespace(automatic_scale=None))
+    image=io.BytesIO();Image.new('RGB',(100,80),'blue').save(image,format='PNG');raw=image.getvalue()
+    def send():return c.post('/dataset/import',files={'file':('plan.png',raw,'image/png')})
+    first=send();assert first.status_code==200,first.text
+    first_id=first.json()['case_ids'][0]
+    project=next(case['project_id'] for case in c.get('/dataset/cases').json() if case['id']==first_id)
+    assert c.delete('/projects/'+project).status_code==200
+    again=send();assert again.status_code==200,again.text
+    second_id=again.json()['case_ids'][0]
+    assert second_id!=first_id
+    assert any(case['id']==second_id for case in c.get('/dataset/cases').json())
+    assert send().json()['case_ids']==[second_id]

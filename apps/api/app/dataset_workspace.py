@@ -161,6 +161,13 @@ def snapshot():
     # Use the existing strict builder to reject leakage, duplicates and missing splits.
     identifier=uuid4().hex;target=root()/'snapshots'/identifier
     raw=archive(True)
+    with zipfile.ZipFile(io.BytesIO(raw)) as z:
+        eligible=json.loads(z.read('manifest.json'))['cases']
+    if len(eligible)<3:
+        raise HTTPException(422, f'Only {len(eligible)} plans are marked Ready. Review each plan, confirm rights and independent review, then mark it Ready. A snapshot needs at least 3 Ready plans, including one in each split: train, validation and test. Three is only a smoke-test minimum.')
+    missing=[split for split in ('train','val','test') if not any(c['split']==split for c in eligible)]
+    if missing:
+        raise HTTPException(422, 'Ready plans are missing these splits: '+', '.join(missing)+'. Assign at least one Ready plan to each split; keep all plans from the same building in the same split.')
     try:
         with tempfile.TemporaryDirectory() as tmp:
             with zipfile.ZipFile(io.BytesIO(raw)) as z:z.extractall(tmp)
@@ -380,6 +387,17 @@ async def import_plans(file:UploadFile=File(...)):
         except BlockingIOError:raise HTTPException(409,'This file is already importing; retry later')
         path=folder/'job.json'
         job=json.loads(path.read_text()) if path.exists() else {'pages':{},'project_id':create_project(CreateProject(title='Dataset: '+(file.filename or 'Import'))).id}
+        # A cached import is only complete while its corresponding plans exist.
+        # Projects can be deleted after import, leaving the resumable job behind.
+        from .main import engine
+        from .models import Blueprint,Project
+        from sqlmodel import Session
+        with Session(engine) as session:
+            job['pages']={number:bid for number,bid in job['pages'].items() if session.get(Blueprint,bid) is not None}
+            project_exists=session.get(Project,job['project_id']) is not None
+        if not project_exists:
+            job['project_id']=create_project(CreateProject(title='Dataset: '+(file.filename or 'Import'))).id
+        atomic_json(path,job)
         (folder/'original').write_bytes(raw)
         pdf=None
         try:
