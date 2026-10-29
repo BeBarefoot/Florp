@@ -45,3 +45,4 @@
 .dataset-app main>p{color:#667780;font-size:14px}.dataset-app .dataset-workspace{margin-top:12px}.dataset-app .dataset-viewport{background:#edf2f4;border-radius:12px;border:1px solid #dce4e8;min-height:380px}.dataset-app .dataset-inspection{background:white;border:1px solid #dfe7eb;border-radius:12px;padding:18px}
 .dataset-app .dataset-inspection h2{font-size:18px}.dataset-app .dataset-inspection p{font-size:13px;line-height:1.5;color:#627680}.dataset-app .panel{margin-top:16px;box-shadow:0 2px 12px #18353d08}
 @media(max-width:900px){.dataset-app{display:block}.dataset-app>aside,.app:has(.dataset-workspace).dataset-app>aside{width:100%}.dataset-app>main{padding:14px}.dataset-app .dataset-viewport{min-height:280px}}
+.finding-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}.finding-actions button{font-size:13px;padding:9px}

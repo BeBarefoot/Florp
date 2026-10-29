@@ -24,7 +24,7 @@ def compare_checkpoints(dataset:Path,baseline:Path,candidate:Path,output:Path,de
         for case in report['cases']:
             if case['split']!='val':continue
             image=dataset/case['prepared_image'];ann=json.loads(archive.read('cases/'+case['id']+'/annotation.json'))
-            truth=ann['objects'];w,h=ann['width_px'],ann['height_px'];gold_geometry=reconstruct(truth,w,h,ann.get('px_per_meter'))['geometry']
+            truth=[o for i,o in enumerate(ann['objects']) if i not in set(ann.get('excluded_objects',[]))];w,h=ann['width_px'],ann['height_px'];gold_geometry=reconstruct(truth,w,h,ann.get('px_per_meter'))['geometry']
             record={'id':case['id'],'group_id':case['group_id'],'models':{}}
             for name,model in models.items():
                 result=model.predict(source=str(image),imgsz=1024,conf=.25,retina_masks=True,device=device,verbose=False)[0]

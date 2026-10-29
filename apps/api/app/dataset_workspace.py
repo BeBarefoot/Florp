@@ -21,6 +21,8 @@ class Edit(BaseModel):
     rights_confirmed:bool=False
     objects:list[ObjectMask]=Field(default_factory=list)
     px_per_meter:float|None=Field(default=None,gt=0,allow_inf_nan=False)
+    excluded_objects:list[int]=Field(default_factory=list)
+    reviewed_objects:list[int]=Field(default_factory=list)
 
 def root():
     p=Path(settings.storage_path)/'dataset';p.mkdir(parents=True,exist_ok=True);return p
@@ -94,18 +96,31 @@ def edit_case(bid:str,body:Edit,background_tasks:BackgroundTasks=None):
         from shapely.geometry import Polygon
         if not Polygon(o.polygon).is_valid or Polygon(o.polygon).area<1 or any(not(0<=x<=source['width_px'] and 0<=y<=source['height_px']) for x,y in o.polygon):
             raise HTTPException(422,'Invalid or out-of-bounds mask')
-    ready=body.complete
-    if ready:
-        if not body.rights_confirmed or not body.reviewer.strip() or not body.independent_reviewer.strip() or body.reviewer.strip()==body.independent_reviewer.strip():
-            raise HTTPException(422,'Ready requires rights and two distinct reviewers')
-        try:Annotation(**{k:source[k] for k in ('width_px','height_px')},independently_reviewed=True,annotation_complete=True,reviewer=body.independent_reviewer,objects=body.objects)
-        except ValueError as e:raise HTTPException(422,str(e)) from e
     with db() as c:
         c.execute('BEGIN IMMEDIATE');old=latest(c,bid)
         if (old['revision'] if old else 0)!=body.expected_revision:raise HTTPException(409,'Annotation changed in another tab. Reload before saving.')
         if old and old['source_sha256']!=source['source_sha256']:raise HTTPException(409,'Source changed; recover the previous annotation before proceeding')
+        if old and any(key not in body.model_fields_set for key in ('excluded_objects','reviewed_objects')):
+            if (old.get('excluded_objects') or old.get('reviewed_objects')) and [o.model_dump(mode='json') for o in body.objects]!=old['objects']:
+                raise HTTPException(409,'This editor version cannot safely update reviewed objects. Refresh the page.')
+            for key in ('excluded_objects','reviewed_objects'):
+                if key not in body.model_fields_set:setattr(body,key,old.get(key,[]))
+        if any(i<0 or i>=len(body.objects) for i in [*body.excluded_objects,*body.reviewed_objects]):raise HTTPException(422,'Review selection is out of date')
+        included=[o for i,o in enumerate(body.objects) if i not in set(body.excluded_objects)]
+        ready=body.complete
+        if ready:
+            if not body.rights_confirmed or not body.reviewer.strip() or not body.independent_reviewer.strip() or body.reviewer.strip()==body.independent_reviewer.strip():
+                raise HTTPException(422,'Ready requires rights and two distinct reviewers')
+            try:Annotation(**{k:source[k] for k in ('width_px','height_px')},independently_reviewed=True,annotation_complete=True,reviewer=body.independent_reviewer,objects=included)
+            except ValueError as e:raise HTTPException(422,str(e)) from e
         from .annotation_geometry import reconstruct
-        reconstruction=reconstruct([o.model_dump() for o in body.objects],source['width_px'],source['height_px'],body.px_per_meter)
+        indices=[i for i in range(len(body.objects)) if i not in set(body.excluded_objects)]
+        reconstruction=reconstruct([body.objects[i].model_dump() for i in indices],source['width_px'],source['height_px'],body.px_per_meter)
+        for issue in reconstruction['issues']:
+            issue['object']=indices[issue['object']]
+            if 'objects' in issue:issue['objects']=[indices[i] for i in issue['objects']]
+        for opening in reconstruction['pixel_openings']:opening['object']=indices[opening['object']]
+
         record={**body.model_dump(),'reconstruction':reconstruction,**source,'revision':body.expected_revision+1,'saved_at':datetime.now(timezone.utc).isoformat(),'status':'ready' if ready else 'draft'}
         c.execute('INSERT INTO revisions VALUES (?,?,?)',(bid,record['revision'],json.dumps(record)))
         c.commit()
@@ -136,7 +151,8 @@ def archive(include_dataset=False):
             if ann:
                 put(base+'/annotation.json',json.dumps(ann))
                 if include_dataset:
-                    label={k:ann[k] for k in ('width_px','height_px','objects')}
+                    label={k:ann[k] for k in ('width_px','height_px')}
+                    label['objects']=[o for i,o in enumerate(ann['objects']) if i not in set(ann.get('excluded_objects',[]))]
                     label.update(independently_reviewed=True,annotation_complete=True,reviewer=ann['independent_reviewer'])
                     put(base+'/training.json',json.dumps(label))
                     manifest['cases'].append(dict(id=bp.id,group_id=ann['group_id'],split=ann['split'],image=base+'/source.png',annotation=base+'/training.json',source_sha256=source['source_sha256'],usage_rights_confirmed=True))
