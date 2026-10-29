@@ -229,7 +229,7 @@ def classify(red, blue, shape, scale, options: Options):
         for hole in poly.interiors:
             cv2.fillPoly(layer, [np.rint(hole.coords).astype(np.int32)], 0)
         occupancy |= layer
-    gap = min(max(shape) - 1, max(1, int(round(options.envelope_gap_cm * scale))))
+    gap = min(511, min(shape) - 1, max(1, int(round(options.envelope_gap_cm * scale))))
     if gap % 2 == 0:
         gap += 1
     # Pad so morphology never uses the image edge as an invented wall.

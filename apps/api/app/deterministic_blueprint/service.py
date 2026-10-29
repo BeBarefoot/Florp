@@ -45,14 +45,15 @@ def health():
 
 
 async def stop_process(process):
-    if process.returncode is None:
-        try:
-            if os.name == "posix":
-                os.killpg(process.pid, signal.SIGKILL)
-            else:
-                process.kill()
-        except ProcessLookupError:
-            pass
+    try:
+        # OCR may still hold the stderr pipe after its parent worker exits.
+        # Kill the process group even when the worker already has a return code.
+        if os.name == "posix":
+            os.killpg(process.pid, signal.SIGKILL)
+        elif process.returncode is None:
+            process.kill()
+    except ProcessLookupError:
+        pass
     await process.communicate()
 
 
@@ -97,7 +98,7 @@ async def extract_with_deadline(data: bytes, options: Options, timeout: float):
                 504,
                 detail={
                     "code": "deadline_exceeded",
-                    "message": "Processing budget exceeded; no partial geometry returned. Crop/downsample the plan or use an explicit reference to skip OCR.",
+                    "message": "Processing budget exceeded; no partial geometry returned. Crop/downsample, or set ocr=false with an explicit reference/default scale.",
                 },
             )
         if process.returncode:
