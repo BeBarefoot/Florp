@@ -26,3 +26,19 @@ test('mask annotation autosaves and a ready error preserves the draft',async({pa
  await expect(page.getByRole('status')).toContainText('Two distinct reviewers');
  expect(annotation.status).toBe('draft');
 });
+
+test('inspection is collapsed and never pushes the plan off screen',async({page})=>{
+ const issues=Array.from({length:300},(_,i)=>({kind:'short_wall',object:i}));
+ await page.route('http://localhost:8000/**',async route=>{
+  const path=new URL(route.request().url()).pathname;
+  const reply=(body:unknown)=>route.fulfill({contentType:'application/json',headers:{'Access-Control-Allow-Origin':'*'},body:JSON.stringify(body)});
+  if(path.endsWith('/preview'))return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"/>'});
+  if(path==='/dataset/cases')return reply([{id:'plan',name:'plan.png',width_px:300,height_px:200,annotation:{revision:1,group_id:'g',split:'train',reviewer:'',independent_reviewer:'',complete:false,rights_confirmed:false,objects:[],status:'draft',reconstruction:{issues}}}]);
+  return reply([]);
+ });
+ await page.goto('/dataset');await page.getByRole('button',{name:'plan.png · draft'}).click();
+ await expect(page.getByLabel('Training mask editor')).toBeVisible();
+ await expect(page.getByRole('button',{name:'short_wall: Inspect object'}).first()).toBeHidden();
+ await page.getByText('Inspection issues (300)').click();
+ await expect(page.getByRole('button',{name:'short_wall: Inspect object'}).first()).toBeVisible();
+});
