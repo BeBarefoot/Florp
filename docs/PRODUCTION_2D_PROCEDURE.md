@@ -313,7 +313,11 @@ The unfinished rendering assistant is removed from this extraction workflow.
 5. Save the corrected draft, then independently verify the structure.
 
 This is a simplification of the existing editor, not the full mockup implementation.
-Room-first selection, split/merge interactions, a unified graph-backed undo/redo
-history for every editor action, and spatial conflict navigation remain required
+Room-first selection, split/merge interactions, unified graph/draft persistence,
+and spatial conflict navigation remain required
 before claiming the full research UX is delivered. Existing graph revision undo
 remains available under Repair connected geometry.
+
+Main draft undo/redo now covers local geometry edits, with each endpoint drag
+grouped as one action. Saving or loading a server layout resets local history;
+saved versions remain immutable. Graph revision undo remains a separate scope.

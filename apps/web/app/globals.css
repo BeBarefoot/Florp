@@ -5,3 +5,5 @@
 .annotation-inspector{position:sticky;top:12px;border:1px solid #cbd5e1;border-radius:12px;padding:12px;background:#f8fafc;color:#0f172a;max-height:80vh;overflow-y:auto}
 .annotation-workspace button:focus-visible,.annotation-workspace svg :focus-visible{outline:3px solid #d97706;outline-offset:2px}
 @media(max-width:1150px){.annotation-workspace{grid-template-columns:minmax(0,1fr)}.annotation-inspector{position:static;max-height:none}}
+
+.plan-editor main{padding:20px}.plan-editor aside{width:230px;flex-shrink:0}.plan-editor summary{cursor:pointer;padding:8px 0;font-weight:600}.plan-editor .annotation-workspace{grid-template-columns:minmax(0,1fr) minmax(230px,280px)}.plan-editor .canvas{min-height:340px}.plan-editor header{margin-bottom:12px}@media(max-width:1000px){.plan-editor .annotation-workspace{grid-template-columns:1fr}.plan-editor aside{width:100%}.plan-editor{display:block}}

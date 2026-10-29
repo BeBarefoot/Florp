@@ -1,0 +1,618 @@
+{
+  "source_preview_sha256": "74a0affd32b812c169b7be9b7b2e44ad3f1b879341e01ecd94b6f1162752a374",
+  "layout_version": 4,
+  "ground_truth_status": "not independently validated",
+  "geometry": {
+    "width_px": 992,
+    "height_px": 440,
+    "px_per_meter": null,
+    "scale_source": "unknown",
+    "structure_reviewed": false,
+    "rooms": [
+      {
+        "id": "room-1",
+        "label": "Unverified room",
+        "points": [
+          {
+            "x": 52.8,
+            "y": 52.8
+          },
+          {
+            "x": 939.2,
+            "y": 52.8
+          },
+          {
+            "x": 939.2,
+            "y": 387.2
+          },
+          {
+            "x": 52.8,
+            "y": 387.2
+          }
+        ],
+        "confidence": 0
+      }
+    ],
+    "walls": [
+      {
+        "id": "w0",
+        "start": {
+          "x": 52.8,
+          "y": 52.8
+        },
+        "end": {
+          "x": 939.2,
+          "y": 52.8
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "w1",
+        "start": {
+          "x": 939.2,
+          "y": 52.8
+        },
+        "end": {
+          "x": 939.2,
+          "y": 387.2
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "w2",
+        "start": {
+          "x": 939.2,
+          "y": 387.2
+        },
+        "end": {
+          "x": 52.8,
+          "y": 387.2
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "w3",
+        "start": {
+          "x": 52.8,
+          "y": 387.2
+        },
+        "end": {
+          "x": 52.8,
+          "y": 52.8
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "yolo-wall-10",
+        "start": {
+          "x": 624.3525390625,
+          "y": 250.25448608398438
+        },
+        "end": {
+          "x": 857.8856811523438,
+          "y": 250.25448608398438
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "yolo-wall-23",
+        "start": {
+          "x": 853.2014770507812,
+          "y": 249.68527221679688
+        },
+        "end": {
+          "x": 853.2014770507812,
+          "y": 299.8349304199219
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "yolo-wall-30",
+        "start": {
+          "x": 369.9616394042969,
+          "y": 85.92425537109375
+        },
+        "end": {
+          "x": 369.9616394042969,
+          "y": 249.24746704101562
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "yolo-wall-33",
+        "start": {
+          "x": 582.0533447265625,
+          "y": 315.27734375
+        },
+        "end": {
+          "x": 582.0533447265625,
+          "y": 426.1322326660156
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "yolo-wall-28",
+        "start": {
+          "x": 89.45372009277344,
+          "y": 203.06451416015625
+        },
+        "end": {
+          "x": 89.45372009277344,
+          "y": 269.3488464355469
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "yolo-wall-32",
+        "start": {
+          "x": 90.27796936035156,
+          "y": 71.84183502197266
+        },
+        "end": {
+          "x": 90.27796936035156,
+          "y": 113.96891784667969
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "yolo-wall-51",
+        "start": {
+          "x": 579.2440795898438,
+          "y": 317.4526062011719
+        },
+        "end": {
+          "x": 628.9312133789062,
+          "y": 317.4526062011719
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "yolo-wall-49",
+        "start": {
+          "x": 583.0941772460938,
+          "y": 84.72894287109375
+        },
+        "end": {
+          "x": 583.0941772460938,
+          "y": 116.51194763183594
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "yolo-wall-61",
+        "start": {
+          "x": 583.4369506835938,
+          "y": 112.05543518066406
+        },
+        "end": {
+          "x": 583.4369506835938,
+          "y": 184.58135986328125
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "yolo-wall-54",
+        "start": {
+          "x": 128.9010772705078,
+          "y": 433.15065002441406
+        },
+        "end": {
+          "x": 494.94482421875,
+          "y": 433.15065002441406
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "yolo-wall-24",
+        "start": {
+          "x": 878.4196166992188,
+          "y": 74.38735961914062
+        },
+        "end": {
+          "x": 878.4196166992188,
+          "y": 119.26411437988281
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "yolo-wall-37",
+        "start": {
+          "x": 546.3984985351562,
+          "y": 187.20648193359375
+        },
+        "end": {
+          "x": 622.9541015625,
+          "y": 187.20648193359375
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "yolo-wall-4",
+        "start": {
+          "x": 333.8122863769531,
+          "y": 79.0481948852539
+        },
+        "end": {
+          "x": 449.27081298828125,
+          "y": 79.0481948852539
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "yolo-wall-9",
+        "start": {
+          "x": 537.8587646484375,
+          "y": 78.91337585449219
+        },
+        "end": {
+          "x": 623.6548461914062,
+          "y": 78.91337585449219
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "yolo-wall-25",
+        "start": {
+          "x": 124.70233154296875,
+          "y": 79.38153076171875
+        },
+        "end": {
+          "x": 274.0464172363281,
+          "y": 79.38153076171875
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "mask-10-gap-0",
+        "start": {
+          "x": 96,
+          "y": 83
+        },
+        "end": {
+          "x": 124.70233154296875,
+          "y": 83
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "mask-10-gap-1",
+        "start": {
+          "x": 274.0464172363281,
+          "y": 83
+        },
+        "end": {
+          "x": 330,
+          "y": 83
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "mask-26-gap-0",
+        "start": {
+          "x": 405,
+          "y": 245
+        },
+        "end": {
+          "x": 569,
+          "y": 245
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "mask-30-gap-0",
+        "start": {
+          "x": 97,
+          "y": 248
+        },
+        "end": {
+          "x": 219,
+          "y": 248
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "mask-34-gap-0",
+        "start": {
+          "x": 631,
+          "y": 301
+        },
+        "end": {
+          "x": 631,
+          "y": 324
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "mask-40-gap-0",
+        "start": {
+          "x": 395,
+          "y": 318
+        },
+        "end": {
+          "x": 395,
+          "y": 375
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "mask-41-gap-0",
+        "start": {
+          "x": 86.5,
+          "y": 320
+        },
+        "end": {
+          "x": 86.5,
+          "y": 343
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "mask-43-gap-0",
+        "start": {
+          "x": 179,
+          "y": 338
+        },
+        "end": {
+          "x": 281,
+          "y": 338
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "mask-44-gap-0",
+        "start": {
+          "x": 862.5,
+          "y": 356
+        },
+        "end": {
+          "x": 862.5,
+          "y": 380
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "mask-46-gap-0",
+        "start": {
+          "x": 394.5,
+          "y": 388
+        },
+        "end": {
+          "x": 394.5,
+          "y": 418
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "mask-47-gap-0",
+        "start": {
+          "x": 857,
+          "y": 370
+        },
+        "end": {
+          "x": 857,
+          "y": 428.5
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "mask-48-gap-0",
+        "start": {
+          "x": 483,
+          "y": 430
+        },
+        "end": {
+          "x": 859,
+          "y": 430
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "mask-5-gap-0",
+        "start": {
+          "x": 711,
+          "y": 74
+        },
+        "end": {
+          "x": 750.7821044921875,
+          "y": 74
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "mask-51-gap-0",
+        "start": {
+          "x": 85,
+          "y": 435.5
+        },
+        "end": {
+          "x": 128.9010772705078,
+          "y": 435.5
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "mask-6-gap-0",
+        "start": {
+          "x": 884,
+          "y": 119.26411437988281
+        },
+        "end": {
+          "x": 884,
+          "y": 138
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "yolo-wall-11",
+        "start": {
+          "x": 750.7821044921875,
+          "y": 80.1075210571289
+        },
+        "end": {
+          "x": 875.3699340820312,
+          "y": 80.1075210571289
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "yolo-wall-42",
+        "start": {
+          "x": 342.55633544921875,
+          "y": 314.7151184082031
+        },
+        "end": {
+          "x": 398.978515625,
+          "y": 314.7151184082031
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "yolo-wall-55",
+        "start": {
+          "x": 882.0960998535156,
+          "y": 208.5941162109375
+        },
+        "end": {
+          "x": 882.0960998535156,
+          "y": 257.1083679199219
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "user-7820d939-aada-4db5-8648-f3a7e1682a34",
+        "start": {
+          "x": 270,
+          "y": 248
+        },
+        "end": {
+          "x": 283,
+          "y": 248
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "user-7ddbe405-3b08-440e-b729-e18e42a22a61",
+        "start": {
+          "x": 283,
+          "y": 248
+        },
+        "end": {
+          "x": 281,
+          "y": 338
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      },
+      {
+        "id": "user-3f5029a5-0ec5-448f-897e-fdc3094df188",
+        "start": {
+          "x": 304,
+          "y": 308
+        },
+        "end": {
+          "x": 281,
+          "y": 308
+        },
+        "thickness_m": 0.15,
+        "height_m": 2.8,
+        "inferred": true
+      }
+    ],
+    "openings": [
+      {
+        "id": "review-opening-box-22",
+        "source_detection_id": "opening-box-22",
+        "reviewed": false,
+        "kind": "window",
+        "wall_id": "mask-10-gap-1",
+        "offset_m": 0.1371,
+        "width_m": 0.6062,
+        "height_m": 1.2,
+        "sill_m": 0.9,
+        "inferred": true
+      }
+    ],
+    "warnings": [
+      "Starter geometry for manual editing only; not AI extraction",
+      "Calibrate the scale before relying on dimensions",
+      "Reviewed wall labels merged into unsaved geometry; check positions before saving."
+    ]
+  }
+}

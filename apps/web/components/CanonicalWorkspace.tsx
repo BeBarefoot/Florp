@@ -42,7 +42,7 @@ export default function CanonicalWorkspace({bid,layoutVersion,hasUnsavedChanges,
  const base=`/blueprints/${bid}/canonical-plan/revisions`;
  const nodes=new Map(revision?.graph.nodes.map(n=>[n.id,n.point]));
  const disabled=busy||stale;
- return <details className="card" open><summary>Repair connected geometry</summary>
+ return <details className="card"><summary>Repair connected geometry</summary>
   <p>Repair walls as connected geometry, then use the result in the main 2D/3D draft. Existing saved versions remain available. Proposed room faces are not verified floors.</p>
   <div className="toolbar">
    <button disabled={busy} onClick={()=>void load()}>Reload graph</button>

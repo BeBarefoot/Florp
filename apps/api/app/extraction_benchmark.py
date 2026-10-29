@@ -118,6 +118,16 @@ def _prf(matches:int, predicted:int, actual:int)->dict:
     return {'matched':matches,'predicted':predicted,'ground_truth':actual,
             'precision':round(precision,4),'recall':round(recall,4),'f1':round(f1,4)}
 
+def wall_length_coverage(truth:list[Segment],pred:list[Segment],tolerance_px:float)->dict:
+    """Length coverage penalizes missing spans even when tiny fragments match."""
+    from shapely.geometry import LineString
+    def lines(items):return unary_union([LineString([(s.start.x,s.start.y),(s.end.x,s.end.y)]) for s in items])
+    reference,candidate=lines(truth),lines(pred)
+    precision=candidate.intersection(reference.buffer(tolerance_px)).length/candidate.length if candidate.length else (1. if not reference.length else 0.)
+    recall=reference.intersection(candidate.buffer(tolerance_px)).length/reference.length if reference.length else (1. if not candidate.length else 0.)
+    return {'precision':round(precision,6),'recall':round(recall,6),'reference_length_px':reference.length,'predicted_length_px':candidate.length}
+
+
 def compare(truth:PlanPrediction,pred:PlanPrediction,tolerance_px:float=8.)->dict:
     if tolerance_px<=0:raise ValueError('Positive wall tolerance required')
     if (truth.image_sha256,truth.width_px,truth.height_px)!=(pred.image_sha256,pred.width_px,pred.height_px):
@@ -126,6 +136,10 @@ def compare(truth:PlanPrediction,pred:PlanPrediction,tolerance_px:float=8.)->dic
     openings=_matching(pred.openings,truth.openings,
         lambda a,b:a.kind==b.kind and _wall_match(
           Segment(start=a.start,end=a.end),Segment(start=b.start,end=b.end),tolerance_px*1.5))
+    def exact_span(a,b):
+        def d(x,y):return math.hypot(x.x-y.x,x.y-y.y)
+        return a.kind==b.kind and min(max(d(a.start,b.start),d(a.end,b.end)),max(d(a.start,b.end),d(a.end,b.start)))<=tolerance_px
+    span_matches=_matching(pred.openings,truth.openings,exact_span)
     ppolys=[Polygon([(p.x,p.y) for p in poly]) for poly in pred.rooms]
     tpolys=[Polygon([(p.x,p.y) for p in poly]) for poly in truth.rooms]
     pa=unary_union(ppolys) if ppolys else Polygon()
@@ -135,9 +149,11 @@ def compare(truth:PlanPrediction,pred:PlanPrediction,tolerance_px:float=8.)->dic
     scale_error=(abs(pred.px_per_meter-truth.px_per_meter)/truth.px_per_meter
         if pred.px_per_meter is not None and truth.px_per_meter is not None else None)
     return {'provider':pred.provider,'source_sha256':truth.image_sha256,
+            'wall_length_coverage':wall_length_coverage(truth.walls,pred.walls,tolerance_px),
             'walls':_prf(walls,len(pred.walls),len(truth.walls)),
             'openings':(_prf(openings,len(pred.openings),len(truth.openings))
                         if pred.openings or truth.openings else None),
+            'opening_spans':_prf(span_matches,len(pred.openings),len(truth.openings)),
             'room_area_iou':round(iou,4) if iou is not None else None,
             'room_count':{'predicted':len(pred.rooms),'ground_truth':len(truth.rooms)},
             'relative_scale_error':round(scale_error,4) if scale_error is not None else None,

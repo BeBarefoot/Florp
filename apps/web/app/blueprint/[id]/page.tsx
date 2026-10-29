@@ -1,11 +1,12 @@
 'use client';
 import {useEffect,useMemo,useState} from 'react';
+import {useDraftHistory} from '../../../lib/draftHistory';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import CanonicalWorkspace from '../../../components/CanonicalWorkspace';
 import {useParams} from 'next/navigation';
 import {API,request,Geometry,Layout,Pt,Wall,Opening} from '../../../lib/api';
-import {editableEdges,snapPoint,openingPlacement,segmentDistance} from '../../../lib/geometryEditing';
+import {editableEdges,snapPoint,openingPlacement,segmentDistance,moveSharedJunction} from '../../../lib/geometryEditing';
 const Viewer=dynamic(()=>import('../../../components/Viewer3D'),{ssr:false});
 type Candidate={x1:number;y1:number;x2:number;y2:number;score:number};
 type ModelBox={category:string;confidence:number;x1:number;y1:number;x2:number;y2:number};
@@ -39,9 +40,13 @@ function localPoint(svg:SVGSVGElement,clientX:number,clientY:number):Pt|null{
 }
 export default function Editor(){
  const {id}=useParams<{id:string}>();
- const [layout,setLayout]=useState<Layout|null>(null),[geometry,setGeometry]=useState<Geometry|null>(null);
+ const [layout,setLayout]=useState<Layout|null>(null);
+ const history=useDraftHistory();
+ const {geometry,setGeometry,resetGeometry}=history;
  const [evidence,setEvidence]=useState<Evidence|null>(null);
  const [status,setStatus]=useState(''),[busy,setBusy]=useState(false);
+ const [quality,setQuality]=useState<{structural_issues:string[];metric_issues:string[];ready_for_metric_scene:boolean}|null>(null);
+ useEffect(()=>{setQuality(null);if(!geometry)return;let active=true;const timer=setTimeout(()=>{request<any>(`/blueprints/${id}/quality`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({geometry})}).then(r=>{if(active&&Array.isArray(r.structural_issues))setQuality(r)}).catch(()=>{});},300);return()=>{active=false;clearTimeout(timer)};},[id,geometry]);
  const [view,setView]=useState<'2d'|'3d'>('2d');
  const [modelDetections,setModelDetections]=useState<ModelDetections|null>(null);
  type OpeningHint={candidate_id:string;kind:'door'|'window';x1:number;y1:number;x2:number;y2:number;source_confidence:number;wall_id:string|null;fraction:number|null;reason:string};
@@ -116,7 +121,7 @@ export default function Editor(){
  const [mode,setMode]=useState<'edit'|'wall'|'door'|'window'>('edit'),[wallStart,setWallStart]=useState<Pt|null>(null);
  const [prompt,setPrompt]=useState('A sunlit Scandinavian living room with natural oak floors and green velvet furniture');
  useEffect(()=>{
-  request<Layout>(`/blueprints/${id}/layout`).then(l=>{setLayout(l);setGeometry(l.geometry)}).catch(e=>setStatus(String(e)));
+  request<Layout>(`/blueprints/${id}/layout`).then(l=>{setLayout(l);resetGeometry(l.geometry)}).catch(e=>setStatus(String(e)));
   request<Evidence>(`/blueprints/${id}/evidence`).then(setEvidence).catch(e=>setStatus('Evidence unavailable: '+String(e)));
   request<{candidate_key:string;label:string}[]>(`/blueprints/${id}/wall-annotations`).then(a=>setReviewLabels(Object.fromEntries(a.map(x=>[x.candidate_key,x.label])))).catch(()=>{});
   request<EvaluationRecord[]>(`/blueprints/${id}/evaluations`).then(rows=>{
@@ -143,7 +148,7 @@ export default function Editor(){
    try{
      const result=await request<Reconstructed>(`/blueprints/${id}/pretrained-reconstruct`,{method:'POST'});
      setModelDetections(result.detections);setDetectorAudit(result.detection_audit||null);setShowModelDetections(true);setSegmentationOverlay(null);setUnified(null);
-     setLayout(result.layout);setGeometry(result.layout.geometry);setSelectedDetection(null);setRejectedDetections([]);
+     setLayout(result.layout);resetGeometry(result.layout.geometry);setSelectedDetection(null);setRejectedDetections([]);
      setStatus('Pretrained model generated '+result.layout.geometry.walls.length+' draft walls, '+result.layout.geometry.rooms.length+' proposed enclosed rooms and '+result.layout.geometry.openings.length+' provisional openings. Review all results before confirming.');
    }catch(err){setStatus(String(err))}
    finally{setModelBusy(false)}
@@ -407,7 +412,7 @@ export default function Editor(){
    try{
      const result=await request<{layout:Layout;mask_overlay_png_base64:string;report:{provider:string;checkpoint:string;line_count:number;raw_mask_line_count:number;normalized_mask_line_count:number;coverage_fraction:number}}>(
        `/blueprints/${id}/segmentation/propose`,{method:'POST'});
-     setLayout(result.layout);setGeometry(result.layout.geometry);
+     setLayout(result.layout);resetGeometry(result.layout.geometry);
      setSegmentationOverlay('data:image/png;base64,'+result.mask_overlay_png_base64);
      setShowSegmentationOverlay(true);
      setModelDetections(null);setDetectorAudit(null);setUnified(null);setSelectedDetection(null);setSelectedWall(null);
@@ -421,7 +426,7 @@ export default function Editor(){
    setBusy(true);setStatus('');
    try{
      const result=await request<{layout:Layout;topology:{notes:string[]}}>(`/blueprints/${id}/topology/propose`,{method:'POST'});
-     setLayout(result.layout);setGeometry(result.layout.geometry);
+     setLayout(result.layout);resetGeometry(result.layout.geometry);
      setSelectedWall(null);
      setStatus('Graph solver proposed '+result.layout.geometry.rooms.length+
        ' enclosed room(s). Open boundaries remain without floors. Review corners and walls before confirming.');
@@ -475,11 +480,11 @@ export default function Editor(){
  }
  async function extract(){setBusy(true);setStatus('');try{
   const l=await request<Layout>(`/blueprints/${id}/extract`,{method:'POST'});
-  setLayout(l);setGeometry(l.geometry);setStatus('AI proposal loaded. Review and calibrate all geometry before verifying.');
+  setLayout(l);resetGeometry(l.geometry);setStatus('AI proposal loaded. Review and calibrate all geometry before verifying.');
  }catch(e){setStatus(String(e))}finally{setBusy(false)}}
  async function save(verified=false,structureReviewed=false){if(!geometry)return;setBusy(true);try{
   const l=await request<Layout>(`/blueprints/${id}/layout`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({geometry,verified,structure_reviewed:structureReviewed})});
-  setLayout(l);setGeometry(l.geometry);setStatus(verified?'Metric geometry verified.':structureReviewed?'Wall positions reviewed and saved; measurements are still provisional.':'Draft saved.');
+  setLayout(l);resetGeometry(l.geometry);setStatus(verified?'Metric geometry verified.':structureReviewed?'Wall positions reviewed and saved; measurements are still provisional.':'Draft saved.');
  }catch(e){setStatus(String(e))}finally{setBusy(false)}}
  function updatePoint(ri:number,pi:number,p:Pt){
   setGeometry(old=>{
@@ -504,8 +509,8 @@ export default function Editor(){
     if(Math.abs(dy)<Math.abs(dx)*.12)snapped={...snapped,y:other.y};
     else if(Math.abs(dx)<Math.abs(dy)*.12)snapped={...snapped,x:other.x};
     if(dist(other,snapped)<4)return current;
-    return {...current,structure_reviewed:false,
-      walls:current.walls.map(w=>w.id===wallId?{...w,[which]:snapped}:w)};
+    try{return moveSharedJunction(current,wallId,which,snapped)}
+    catch(error){setStatus(String(error));return current;}
   });
  }
  function addWall(raw:Pt){
@@ -536,7 +541,7 @@ export default function Editor(){
   if(!window.confirm('Accept this uncertain suggestion as a draft wall?'))return;
   setBusy(true);
   try{const l=await request<Layout>(`/blueprints/${id}/wall-candidates/accept`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)});
-   setLayout(l);setGeometry(l.geometry);setStatus('Suggestion accepted as a draft wall.');
+   setLayout(l);resetGeometry(l.geometry);setStatus('Suggestion accepted as a draft wall.');
   }catch(e){setStatus(String(e))}finally{setBusy(false)}
  }
  const sourceId=(i:number)=>'model-box-'+i;
@@ -719,7 +724,7 @@ export default function Editor(){
   setStatus('Selected junction applied to UNSAVED draft. Save corrected draft, then preview remaining junctions.');
  }
  function removeWall(id:string){if(!geometry)return;setSelectedWall(null);setGeometry({...geometry,structure_reviewed:false,walls:geometry.walls.filter(w=>w.id!==id),openings:geometry.openings.filter(o=>o.wall_id!==id)});setStatus('Draft wall removed. Save to persist changes.')}
- return <div className="app"><aside><h2>✦ Florp</h2><Link href="/">← Projects</Link>
+ return <div className="app plan-editor"><aside><h2>✦ Florp</h2><Link href="/">← Projects</Link>
  <hr style={{borderColor:'#354053',margin:'22px 0'}}/><p>Saved layout v{layout?.version??'–'} · {layout?.verified?'Verified':'Unverified'}</p>
  {geometry&&layout&&<p className="notice">{geometry===layout.geometry?'All changes saved':'● Unsaved edits — Save draft when ready'}</p>}
  <div className="stack">
@@ -736,7 +741,7 @@ export default function Editor(){
  </div><small>Metric verification requires a confirmed reference dimension.</small>
  </details>
  <div className="stack" style={{marginTop:16,borderTop:'1px solid #475569',paddingTop:12}}>
- <strong>4 · Measure extraction quality</strong>
+ <details><summary>Training & evaluation</summary><div className="stack"><strong>Measure extraction quality</strong>
  <button className="secondary" disabled={!layout} onClick={()=>void downloadReviewedGeometry()}>
  Export saved walls + labels JSON</button>
  <small>Keep a model snapshot, correct the drawing, then score it against your reviewed geometry.</small>
@@ -762,15 +767,235 @@ export default function Editor(){
  <button className="secondary" onClick={()=>void downloadEvaluation(r.id)}>Export JSON</button>
  </div>)}
  </details>
- </div></aside>
- <main>{layout&&geometry&&<CanonicalWorkspace bid={id} layoutVersion={layout.version} hasUnsavedChanges={geometry!==layout.geometry} onUseDraft={g=>{setGeometry(g);setView('2d');setSelectedWall(null);setStatus('Repaired graph loaded into the main 2D/3D draft. Save corrected draft to persist.');}}/>}<header><div><h1>Geometry studio</h1><p className="muted">2D and 3D display the same draft walls.</p></div>
- <div className="row"><button className={view==='2d'?'':'secondary'} onClick={()=>setView('2d')}>2D editor</button>
+ </div></details></div></aside>
+ <main><header><div><h1>Plan editor</h1><p className="muted">Extract → review walls and gaps → openings and scale → save</p></div>
+ <div className="row"><button className="secondary" disabled={!history.canUndo||busy||modelBusy} onClick={()=>{history.undo();setConnectivity(null);setSelectedWall(null);}}>Undo draft edit</button><button className="secondary" disabled={!history.canRedo||busy||modelBusy} onClick={()=>{history.redo();setConnectivity(null);setSelectedWall(null);}}>Redo draft edit</button><button className={view==='2d'?'':'secondary'} onClick={()=>setView('2d')}>2D editor</button>
  <button className={view==='3d'?'':'secondary'} onClick={()=>setView('3d')}>3D shell</button></div></header>
  {status&&<p className="notice">{status}</p>}
- {geometry&&<div className="grid" style={{gridTemplateColumns:'minmax(0,2fr) minmax(290px,1fr)'}}>
+ {quality&&<details className="notice"><summary>{quality.ready_for_metric_scene?'Geometry checks passed — independent accuracy review still required':'Incomplete plan — 3D is a draft preview'}</summary><ul>{[...quality.structural_issues,...quality.metric_issues].map(issue=><li key={issue}>{issue}</li>)}</ul></details>}
+ {geometry&&<div className="grid" style={{gridTemplateColumns:'minmax(0,1fr)'}}>
  <div className="panel"><h2>{view==='2d'?'Floor-plan overlay':'3D shell · draft geometry'}</h2>
  {unified&&<p className="notice">{Object.values(fusionDecisions).filter(d=>d==='accept').length} walls accepted · {Object.values(openingDecisions).filter(d=>d==='accept').length} openings classified. Main draft: {geometry.walls.length} walls · {geometry.openings.length} physical openings. Apply reviewed walls + openings to update this view; unresolved opening hosts still need correction.</p>}
- {view==='2d'&&geometry.walls.length>0&&<div style={{border:'1px solid #cbd5e1',padding:10,borderRadius:10,marginBottom:12}}>
+ {view==='2d'&&<div className="row" style={{marginBottom:12}}>
+ <button className={mode==='edit'?'':'secondary'} onClick={()=>{setMode('edit');setWallStart(null);setStatus('Click any saved wall on the floor plan, then drag either green endpoint handle. Save corrected draft to persist.')}}>Edit wall endpoints</button>
+  {(['wall','door','window'] as const).map(tool=><button key={tool} className={mode===tool?'':'secondary'} onClick={()=>{setMode(mode===tool?'edit':tool);setWallStart(null)}}>{tool==='wall'?'Draw missing wall':tool==='door'?'Add door':'Add window'}</button>)}
+ </div>}
+ {view==='2d'?<div className="annotation-workspace">
+ <svg className="canvas" viewBox={reviewFocus&&unified?(()=>{
+ const selected=reviewType==='wall'?
+   {x1:reviewCandidate?.start.x??0,y1:reviewCandidate?.start.y??0,x2:reviewCandidate?.end.x??0,y2:reviewCandidate?.end.y??0}:
+   currentOpening;
+ if(!selected)return `0 0 ${geometry.width_px} ${geometry.height_px}`;
+ const w=Math.min(geometry.width_px,Math.max(Math.abs(selected.x2-selected.x1)*2.8,geometry.width_px*.30));
+ const h=Math.min(geometry.height_px,Math.max(Math.abs(selected.y2-selected.y1)*2.8,w*geometry.height_px/geometry.width_px));
+ const x=Math.max(0,Math.min(geometry.width_px-w,(selected.x1+selected.x2-w)/2));
+ const y=Math.max(0,Math.min(geometry.height_px-h,(selected.y1+selected.y2-h)/2));
+ return `${x} ${y} ${w} ${h}`;
+})():`0 0 ${geometry.width_px} ${geometry.height_px}`}
+ style={{aspectRatio:geometry.width_px/geometry.height_px,touchAction:'none',cursor:mode!=='edit'?'crosshair':'default'}}
+ onClick={e=>{const p=localPoint(e.currentTarget,e.clientX,e.clientY);if(!p)return;
+ if(mode==='wall'){addWall({x:Math.max(0,Math.min(geometry.width_px,Math.round(p.x))),y:Math.max(0,Math.min(geometry.height_px,Math.round(p.y)))});return;}
+ if(mode==='door'||mode==='window'){
+  const ranked=edges.map(edge=>({edge,d:segmentDistance(p,edge)})).sort((a,b)=>a.d-b.d);
+  const closest=ranked.find(item=>item.edge.id.startsWith('model-')&&item.d<=Math.max(20,ranked[0]?.d+10))||ranked[0];
+  if(!closest||closest.d>Math.max(25,Math.min(geometry.width_px,geometry.height_px)*.05)){setStatus('No nearby wall found. Click closer to a wall centerline.');return;}
+  addOpening(closest.edge,p,mode);
+ }
+ }}>
+ <image href={`${API}/blueprints/${id}/preview`} width={geometry.width_px} height={geometry.height_px}
+ style={{filter:grayscale?'grayscale(1) contrast(1.12) brightness(1.08)':'none'}}/>
+ {r2s&&r2sVisible&&r2s.rooms.map((room,i)=>
+ <polygon key={'r2s-'+i}
+ points={room.points.map(([x,y])=>`${x},${y}`).join(' ')}
+ fill="#f59e0b" fillOpacity={.1} stroke="#d97706"
+ strokeWidth={Math.max(2,geometry.width_px/420)} strokeDasharray="8 4"
+ pointerEvents="none"/>)}
+ {r2s&&r2sVisible&&r2s.opening_symbols.map((symbol,i)=>
+ <polygon key={'r2s-opening-'+i}
+ points={symbol.points.map(([x,y])=>`${x},${y}`).join(' ')}
+ fill={symbol.kind==='door'?'#ea580c':'#06b6d4'} fillOpacity={.15}
+ stroke={symbol.kind==='door'?'#ea580c':'#0891b2'}
+ strokeWidth={Math.max(3,geometry.width_px/360)} strokeDasharray="3 3"
+ pointerEvents="none"/>)}
+ {segmentationOverlay&&showSegmentationOverlay&&<image href={segmentationOverlay}
+ width={geometry.width_px} height={geometry.height_px} pointerEvents="none"/>}
+ {unified&&showUnifiedWalls&&unified.candidates.map((item,i)=>
+ <g key={'review-wall-'+item.id}>
+ <line x1={item.start.x} y1={item.start.y} x2={item.end.x} y2={item.end.y}
+ stroke="transparent" strokeWidth={Math.max(18,geometry.width_px/95)}
+ style={{cursor:'pointer'}} pointerEvents={mode==='edit'?'stroke':'none'} onClick={e=>{e.stopPropagation();setFusionIndex(i);setReviewType('wall');setReviewFocus(true)}}/>
+ </g>)}
+ {unified&&showUnifiedWalls&&unified.candidates.map((item,i)=>
+ <line key={'fused-'+item.id} x1={item.start.x} y1={item.start.y}
+ x2={item.end.x} y2={item.end.y}
+ onClick={e=>{e.stopPropagation();setFusionIndex(i);setReviewType('wall');setReviewFocus(true)}}
+ style={{cursor:'pointer'}}
+ stroke={fusionDecisions[item.id]==='reject'?'#9ca3af':
+ fusionDecisions[item.id]==='accept'?'#16a34a':
+ item.category==='agreed'?'#1d4ed8':item.category==='yolo_only'?'#d97706':'#9333ea'}
+ strokeWidth={Math.max(reviewType==='wall'&&i===fusionIndex?8:3,geometry.width_px/360)}
+ strokeDasharray={reviewType==='wall'&&i===fusionIndex?'none':'5 3'}
+ opacity={reviewType==='wall'&&i===fusionIndex?1:fusionDecisions[item.id]==='reject'?.15:.45}>
+ <title>{item.category}; mask support {Math.round(item.mask_support*100)}%</title>
+ </line>)}
+ {unified&&unified.opening_hints.map((hint,i)=>
+ <rect key={'opening-hint-'+hint.candidate_id} x={hint.x1} y={hint.y1}
+ width={hint.x2-hint.x1} height={hint.y2-hint.y1}
+ pointerEvents={mode==='edit'?'all':'none'} onClick={e=>{e.stopPropagation();setOpeningIndex(i);setReviewType('opening');setReviewFocus(true)}}
+ stroke={openingDecisions[hint.candidate_id]==='reject'?'#9ca3af':
+ openingDecisions[hint.candidate_id]==='accept'?'#16a34a':
+ hint.kind==='door'?'#ea580c':'#0891b2'}
+ strokeWidth={reviewType==='opening'&&i===openingIndex?Math.max(5,geometry.width_px/270):2}
+ strokeDasharray={reviewType==='opening'&&i===openingIndex?'none':'6 4'}
+ opacity={reviewType==='opening'&&i===openingIndex?1:.5}
+ fill="transparent" style={{cursor:'pointer'}}><title>{hint.kind}: {hint.reason}</title></rect>)}
+  {unified&&reviewType==='wall'&&reviewCandidate&&<g pointerEvents="none">
+   <line x1={reviewCandidate.start.x} y1={reviewCandidate.start.y}
+         x2={reviewCandidate.end.x} y2={reviewCandidate.end.y}
+         stroke="#fff" strokeWidth={Math.max(15,geometry.width_px/140)} strokeLinecap="round"/>
+   <line x1={reviewCandidate.start.x} y1={reviewCandidate.start.y}
+         x2={reviewCandidate.end.x} y2={reviewCandidate.end.y}
+         stroke="#f97316" strokeWidth={Math.max(8,geometry.width_px/250)}
+         strokeLinecap="round"/>
+   <circle cx={reviewCandidate.start.x} cy={reviewCandidate.start.y}
+           r={Math.max(6,geometry.width_px/190)} fill="#fff" stroke="#ea580c" strokeWidth="3"/>
+   <circle cx={reviewCandidate.end.x} cy={reviewCandidate.end.y}
+           r={Math.max(6,geometry.width_px/190)} fill="#fff" stroke="#ea580c" strokeWidth="3"/>
+  </g>}
+  {unified&&reviewType==='opening'&&currentOpening&&<rect
+    x={currentOpening.x1} y={currentOpening.y1}
+    width={currentOpening.x2-currentOpening.x1}
+    height={currentOpening.y2-currentOpening.y1}
+    fill="#f97316" fillOpacity={.12} stroke="#f97316"
+    strokeWidth={Math.max(6,geometry.width_px/220)} pointerEvents="none"/>}
+  {unified&&showComparisonBoxes&&unified.detections?.boxes.filter(b=>b.category==='wall').map((b,i)=>
+ <rect key={'compare-box-'+i} x={b.x1} y={b.y1} width={b.x2-b.x1} height={b.y2-b.y1}
+ fill="none" stroke="#a855f7" strokeWidth="2" strokeDasharray="7 4" pointerEvents="none"/>)}
+  {missingGaps.filter(g=>!dismissedGaps.includes(g.id)).map(g=>
+ <line key={'gap-'+g.id} x1={g.start.x} y1={g.start.y} x2={g.end.x} y2={g.end.y}
+ stroke="#d97706" strokeWidth={Math.max(4,geometry.width_px/260)} strokeDasharray="7 5"
+ pointerEvents="none"><title>Unverified missing-wall gap · {Math.round(g.image_support*100)}% ink support</title></line>)}
+  {showModelDetections&&modelDetections?.boxes.map((b,i)=>
+ <g key={'model-'+i} pointerEvents={b.category==='door'||b.category==='window'?'all':'none'}
+ onClick={e=>{if(b.category==='door'||b.category==='window'){e.stopPropagation();setSelectedDetection(i);setMode('edit')}}}
+ style={{cursor:b.category==='door'||b.category==='window'?'pointer':'default'}}>
+ <rect x={b.x1} y={b.y1} width={b.x2-b.x1} height={b.y2-b.y1}
+ stroke={geometry.openings.some(o=>o.source_detection_id===sourceId(i)&&o.reviewed)?'#16a34a':selectedDetection===i?'#22c55e':rejectedDetections.includes(sourceId(i))?'#9ca3af':b.category.includes('wall')?'#8b5cf6':b.category.includes('door')?'#ea580c':b.category.includes('window')?'#0891b2':'#737373'}
+ strokeWidth={Math.max(selectedDetection===i?5:2,geometry.width_px/420)} fill={b.category==='door'||b.category==='window'?'rgba(56,189,248,.08)':'none'} strokeDasharray="8 5"/>
+ <title>{b.category+' · '+(b.confidence*100).toFixed(1)+'% · '+(geometry.openings.some(o=>o.source_detection_id===sourceId(i)&&o.reviewed)?'reviewed':geometry.openings.some(o=>o.source_detection_id===sourceId(i))?'proposed':'unreviewed')}</title></g>)}
+ {showRaw&&evidence?.segments.map((s,i)=><line key={'raw'+i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke="#d98d26" strokeWidth={Math.max(1,geometry.width_px/700)} opacity={.3} pointerEvents="none"/>)}
+ {showSuggestions&&suggestions.map((s,i)=><line key={'candidate'+i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
+ stroke={reviewLabels[candidateKey(s)]==='not_wall'?'#b91c1c':reviewLabels[candidateKey(s)]==='wall'?'#16a34a':'#2563eb'} strokeWidth={Math.max(3,geometry.width_px/230)} opacity={.82} style={{cursor:'pointer'}}
+ pointerEvents={mode==='edit'?'stroke':'none'}
+ onClick={e=>{e.stopPropagation();setSelectedCandidate(s)}}/>)}
+ {showLegacyRoomOutline&&geometry.rooms.map((r,ri)=><g key={r.id}>
+ <polygon points={r.points.map(p=>`${p.x},${p.y}`).join(' ')} fill="#46b494" fillOpacity={.08} stroke="#008a70" strokeWidth={Math.max(2,geometry.width_px/400)} pointerEvents="none"/>
+ {mode==='edit'&&r.points.map((p,pi)=><circle key={pi} cx={p.x} cy={p.y} r={Math.max(5,geometry.width_px/140)} fill="white" stroke="#008a70"
+ strokeWidth={Math.max(2,geometry.width_px/650)} style={{cursor:'grab'}} onPointerDown={e=>{e.stopPropagation();history.begin();e.currentTarget.setPointerCapture(e.pointerId)}}
+ onPointerMove={e=>{if(!e.currentTarget.hasPointerCapture(e.pointerId))return;const svg=e.currentTarget.ownerSVGElement;if(!svg)return;const point=localPoint(svg,e.clientX,e.clientY);if(point)updatePoint(ri,pi,point)}}
+ onLostPointerCapture={()=>history.end()} onPointerUp={e=>e.currentTarget.releasePointerCapture(e.pointerId)} />)}
+ </g>)}
+ {edges.map(e=><line key={'edge-'+e.id} x1={e.start.x} y1={e.start.y} x2={e.end.x} y2={e.end.y}
+ stroke="transparent" strokeWidth={Math.max(18,geometry.width_px/75)} style={{cursor:mode==='door'||mode==='window'?'crosshair':'inherit'}}
+ pointerEvents="none"
+ onClick={event=>{if(mode!=='door'&&mode!=='window')return;event.stopPropagation();const svg=event.currentTarget.ownerSVGElement;if(!svg)return;const p=localPoint(svg,event.clientX,event.clientY);if(p)addOpening(e,p,mode)}}/>)}
+ {geometry.openings.map(o=>{const e=edges.find(e=>e.id===o.wall_id);if(!e)return null;
+  const scale=geometry.px_per_meter||60,len=dist(e.start,e.end),t=o.offset_m*scale/len,u=(o.offset_m+o.width_m)*scale/len;
+  const x1=e.start.x+(e.end.x-e.start.x)*t,y1=e.start.y+(e.end.y-e.start.y)*t,x2=e.start.x+(e.end.x-e.start.x)*u,y2=e.start.y+(e.end.y-e.start.y)*u;
+  return <line key={o.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke={o.kind==='door'?'#f97316':'#0284c7'} strokeDasharray={o.kind==='door'?'10 6':undefined} strokeWidth={Math.max(7,geometry.width_px/160)} pointerEvents="none"/>;
+ })}
+ {geometry.walls.map(w=><line key={w.id} x1={w.start.x} y1={w.start.y} x2={w.end.x} y2={w.end.y} stroke={selectedWall===w.id?"#16a34a":w.id.startsWith('user-')?'#d97706':'#0284c7'}
+ strokeWidth={Math.max(selectedWall===w.id?5:3,geometry.width_px/220)}
+ pointerEvents={mode==='edit'?'stroke':'none'} style={{cursor:mode==='edit'?'pointer':'default'}}
+ onClick={e=>{if(mode==='edit'){e.stopPropagation();setSelectedWall(w.id)}}}/>)}
+ {mode==='edit'&&geometry.walls.filter(w=>w.id===selectedWall).flatMap(w=>(
+  (['start','end'] as const).map(which=>{
+   const p=w[which];
+   return <circle key={w.id+which} cx={p.x} cy={p.y} r={Math.max(7,geometry.width_px/130)}
+    fill="white" stroke="#16a34a" strokeWidth={3} style={{cursor:'grab',touchAction:'none'}}
+    onPointerDown={e=>{e.stopPropagation();history.begin();e.currentTarget.setPointerCapture(e.pointerId)}}
+    onPointerMove={e=>{
+      if(!e.currentTarget.hasPointerCapture(e.pointerId))return;
+      const svg=e.currentTarget.ownerSVGElement;
+      if(!svg)return;
+      const point=localPoint(svg,e.clientX,e.clientY);
+      if(point)moveWallEndpoint(w.id,which,point);
+    }}
+    onLostPointerCapture={()=>history.end()} onPointerUp={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId)}}
+    onClick={e=>e.stopPropagation()}/>;
+  })
+ ))}
+ {connectivity&&JSON.stringify(geometry)===connectivity.source&&
+ connectivity.proposal.changes.map((c,i)=><g key={'connect-'+i}>
+ <line x1={c.original.x} y1={c.original.y} x2={c.proposed.x} y2={c.proposed.y}
+ stroke="#0891b2" strokeWidth={Math.max(3,geometry.width_px/300)}
+ strokeDasharray="4 3" pointerEvents="none"/>
+ <circle cx={c.original.x} cy={c.original.y} r={Math.max(4,geometry.width_px/250)}
+ fill="#fff" stroke="#0891b2" strokeWidth="2" pointerEvents="none"/>
+ <circle cx={c.proposed.x} cy={c.proposed.y} r={Math.max(4,geometry.width_px/250)}
+ fill={selectedJunction===i?'#16a34a':'#0891b2'} stroke="white" strokeWidth="2" pointerEvents="none"/>
+ <circle cx={c.proposed.x} cy={c.proposed.y} r={Math.max(12,geometry.width_px/80)} fill="transparent" stroke="transparent" style={{cursor:'pointer'}}
+  onClick={e=>{e.stopPropagation();setSelectedJunction(i);setMode('edit')}}><title>Review {c.reason} for {c.wall_id}</title></circle>
+ </g>)}
+ {association&&JSON.stringify(geometry)===association.source&&association.items.map((item,i)=>
+ <line key={'opening-assoc-'+i} x1={item.start.x} y1={item.start.y}
+ x2={item.end.x} y2={item.end.y} pointerEvents="none"
+ stroke={item.status==='proposed'?'#06b6d4':'#f97316'}
+ strokeWidth={Math.max(6,geometry.width_px/210)} strokeDasharray="7 3"/>)}
+ {wallStart&&<circle cx={wallStart.x} cy={wallStart.y} r={Math.max(5,geometry.width_px/130)} fill="#d97706" pointerEvents="none"/>}
+ </svg>
+ <div className="annotation-inspector">
+ <strong>Review on plan</strong>
+ {!unified?<p className="muted">Run Extract and compare to review detected walls and openings here.</p>:<>
+ <div className="row" style={{margin:'12px 0',flexWrap:'wrap',gap:4}}>
+ <button className={reviewType==='wall'?'':'secondary'} onClick={()=>{setReviewType('wall');setReviewFocus(false)}}>Walls ({unified.candidates.length})</button>
+ <button className={reviewType==='opening'?'':'secondary'} onClick={()=>{setReviewType('opening');setReviewFocus(false)}}>Openings ({unified.opening_hints.length})</button>
+ </div>
+ <small>{reviewType==='wall'?
+ `${unified.candidates.filter(c=>fusionDecisions[c.id]&&fusionDecisions[c.id]!=='unsure').length} / ${unified.candidates.length} classified`:
+ `${unified.opening_hints.filter(h=>openingDecisions[h.candidate_id]&&openingDecisions[h.candidate_id]!=='unsure').length} / ${unified.opening_hints.length} classified`}</small>
+ <div style={{height:5,background:'#e2e8f0',borderRadius:8,margin:'8px 0 14px'}}>
+ <div style={{width:((reviewType==='wall'?unified.candidates.filter(c=>fusionDecisions[c.id]&&fusionDecisions[c.id]!=='unsure').length:unified.opening_hints.filter(h=>openingDecisions[h.candidate_id]&&openingDecisions[h.candidate_id]!=='unsure').length)/
+ Math.max(1,reviewType==='wall'?unified.candidates.length:unified.opening_hints.length)*100)+'%',height:'100%',background:'#059669',borderRadius:8}}/>
+ </div>
+ {reviewType==='wall'&&reviewCandidate&&<>
+ <strong>Wall candidate {fusionIndex+1} / {unified.candidates.length}</strong>
+ <p style={{fontSize:13,margin:'6px 0'}}>{unified.geometry_review?.suggestions.some(h=>h.candidate_id===reviewCandidate.id)?'Potential missing partition · ':''}{reviewCandidate.category.replaceAll('_',' ')} · mask support {Math.round(reviewCandidate.mask_support*100)}%</p>
+ <p style={{fontSize:13}}>Decision: <strong>{fusionDecisions[reviewCandidate.id]||'Pending'}</strong></p>
+ <div className="row" style={{flexWrap:'wrap',gap:5}}>
+ <button disabled={fusionSaving} onClick={()=>void decideFusion('accept')}>Wall</button>
+ <button className="secondary" disabled={fusionSaving} onClick={()=>void decideFusion('door')}>Door</button>
+ <button className="secondary" disabled={fusionSaving} onClick={()=>void decideFusion('window')}>Window</button>
+ <button className="secondary" disabled={fusionSaving} onClick={()=>void decideFusion('reject')}>Not wall</button>
+ <button className="secondary" disabled={fusionSaving} onClick={()=>void decideFusion('unsure')}>Unsure</button>
+ </div>
+ </>}
+ {reviewType==='opening'&&currentOpening&&<>
+ <strong>{currentOpening.kind==='door'?'Door':'Window'} {openingIndex+1} / {unified.opening_hints.length}</strong>
+ <p style={{fontSize:13}}>Detector confidence {Math.round(currentOpening.source_confidence*100)}%. {currentOpening.reason}</p>
+ <p style={{fontSize:13}}>Decision: <strong>{openingDecisions[currentOpening.candidate_id]||'Pending'}</strong></p>
+ <div className="row" style={{flexWrap:'wrap',gap:5}}>
+ <button disabled={fusionSaving} onClick={()=>void reviewDetectedOpening('accept')}>Classify as {currentOpening.kind}</button>
+ <button className="secondary" disabled={fusionSaving} onClick={()=>void reviewDetectedOpening('reject')}>Not opening</button>
+ <button className="secondary" disabled={fusionSaving} onClick={()=>void reviewDetectedOpening('unsure')}>Unsure</button>
+ </div>
+ </>}
+ <div className="row" style={{marginTop:12,gap:6,flexWrap:'wrap'}}>
+ <button className="secondary" onClick={()=>{if(reviewType==='wall')setFusionIndex(i=>Math.max(0,i-1));else setOpeningIndex(i=>Math.max(0,i-1));}}>← Previous</button>
+ <button className="secondary" onClick={()=>{if(reviewType==='wall')setFusionIndex(i=>Math.min(unified.candidates.length-1,i+1));else setOpeningIndex(i=>Math.min(unified.opening_hints.length-1,i+1));}}>Next →</button>
+ <button className="secondary" onClick={()=>{
+ if(reviewType==='wall'){const i=unified.candidates.findIndex((c,i)=>i>fusionIndex&&!fusionDecisions[c.id]);setFusionIndex(i<0?Math.max(0,unified.candidates.findIndex(c=>!fusionDecisions[c.id])):i);}
+ else{const i=unified.opening_hints.findIndex((h,j)=>j>openingIndex&&!openingDecisions[h.candidate_id]);setOpeningIndex(i<0?Math.max(0,unified.opening_hints.findIndex(h=>!openingDecisions[h.candidate_id])):i);}
+ }}>Next pending</button>
+ </div>
+ <label style={{display:'block',marginTop:12}}><input type="checkbox" checked={reviewFocus} onChange={e=>setReviewFocus(e.target.checked)}/> Zoom to selected item</label>
+ <small style={{display:'block',margin:'8px 0'}}>Select geometry on the plan. Shortcuts: ← / → navigate, 1 wall/confirm, 2 door, 3 window, 4 reject, 5 unsure, F zoom. Shortcuts are inactive while typing.</small>
+ <button disabled={busy||modelBusy||fusionSaving} onClick={()=>void applyUnified()}>Apply reviewed walls + openings to draft</button>
+ <small style={{display:'block',marginTop:8}}>Review decisions are saved separately. Applying changes only your unsaved 2D/3D draft.</small>
+ </>}
+ </div></div>:<Viewer geometry={geometry}/>}
+ <p className="muted">{mode==='wall'?'Click two points to add a missing wall.':mode==='door'||mode==='window'?'Click near a wall or on a detected opening box to add or correct it.':'Review model walls and detected openings; tap a wall to adjust or reject it.'}</p></div>
+ <details className="panel"><summary>Repair walls, gaps and opening hosts</summary>{layout&&geometry&&<CanonicalWorkspace bid={id} layoutVersion={layout.version} hasUnsavedChanges={geometry!==layout.geometry} onUseDraft={g=>{setGeometry(g);setView('2d');setSelectedWall(null);setStatus('Repaired graph loaded into the main 2D/3D draft. Save corrected draft to persist.');}}/>} {view==='2d'&&geometry.walls.length>0&&<div style={{border:'1px solid #cbd5e1',padding:10,borderRadius:10,marginBottom:12}}>
  <div className="row" style={{justifyContent:'space-between'}}>
  <strong>Connect reviewed wall endpoints</strong>
  <button className="secondary" disabled={connectivityBusy||busy}
@@ -894,226 +1119,8 @@ export default function Editor(){
  <option value="all">All detections</option><option value="near">Near current outline</option></select>
  <label><input type="checkbox" checked={showRaw} onChange={e=>setShowRaw(e.target.checked)}/> Raw lines ({evidence?.segments.length??0})</label></details>
  </div></details>}
- {view==='2d'&&<div className="row" style={{marginBottom:12}}>
- <button className={mode==='edit'?'':'secondary'} onClick={()=>{setMode('edit');setWallStart(null);setStatus('Click any saved wall on the floor plan, then drag either green endpoint handle. Save corrected draft to persist.')}}>Edit wall endpoints</button>
-  {(['wall','door','window'] as const).map(tool=><button key={tool} className={mode===tool?'':'secondary'} onClick={()=>{setMode(mode===tool?'edit':tool);setWallStart(null)}}>{tool==='wall'?'Draw missing wall':tool==='door'?'Add door':'Add window'}</button>)}
- </div>}
- {view==='2d'?<div className="annotation-workspace">
- <svg className="canvas" viewBox={reviewFocus&&unified?(()=>{
- const selected=reviewType==='wall'?
-   {x1:reviewCandidate?.start.x??0,y1:reviewCandidate?.start.y??0,x2:reviewCandidate?.end.x??0,y2:reviewCandidate?.end.y??0}:
-   currentOpening;
- if(!selected)return `0 0 ${geometry.width_px} ${geometry.height_px}`;
- const w=Math.min(geometry.width_px,Math.max(Math.abs(selected.x2-selected.x1)*2.8,geometry.width_px*.30));
- const h=Math.min(geometry.height_px,Math.max(Math.abs(selected.y2-selected.y1)*2.8,w*geometry.height_px/geometry.width_px));
- const x=Math.max(0,Math.min(geometry.width_px-w,(selected.x1+selected.x2-w)/2));
- const y=Math.max(0,Math.min(geometry.height_px-h,(selected.y1+selected.y2-h)/2));
- return `${x} ${y} ${w} ${h}`;
-})():`0 0 ${geometry.width_px} ${geometry.height_px}`}
- style={{aspectRatio:geometry.width_px/geometry.height_px,touchAction:'none',cursor:mode!=='edit'?'crosshair':'default'}}
- onClick={e=>{const p=localPoint(e.currentTarget,e.clientX,e.clientY);if(!p)return;
- if(mode==='wall'){addWall({x:Math.max(0,Math.min(geometry.width_px,Math.round(p.x))),y:Math.max(0,Math.min(geometry.height_px,Math.round(p.y)))});return;}
- if(mode==='door'||mode==='window'){
-  const ranked=edges.map(edge=>({edge,d:segmentDistance(p,edge)})).sort((a,b)=>a.d-b.d);
-  const closest=ranked.find(item=>item.edge.id.startsWith('model-')&&item.d<=Math.max(20,ranked[0]?.d+10))||ranked[0];
-  if(!closest||closest.d>Math.max(25,Math.min(geometry.width_px,geometry.height_px)*.05)){setStatus('No nearby wall found. Click closer to a wall centerline.');return;}
-  addOpening(closest.edge,p,mode);
- }
- }}>
- <image href={`${API}/blueprints/${id}/preview`} width={geometry.width_px} height={geometry.height_px}
- style={{filter:grayscale?'grayscale(1) contrast(1.12) brightness(1.08)':'none'}}/>
- {r2s&&r2sVisible&&r2s.rooms.map((room,i)=>
- <polygon key={'r2s-'+i}
- points={room.points.map(([x,y])=>`${x},${y}`).join(' ')}
- fill="#f59e0b" fillOpacity={.1} stroke="#d97706"
- strokeWidth={Math.max(2,geometry.width_px/420)} strokeDasharray="8 4"
- pointerEvents="none"/>)}
- {r2s&&r2sVisible&&r2s.opening_symbols.map((symbol,i)=>
- <polygon key={'r2s-opening-'+i}
- points={symbol.points.map(([x,y])=>`${x},${y}`).join(' ')}
- fill={symbol.kind==='door'?'#ea580c':'#06b6d4'} fillOpacity={.15}
- stroke={symbol.kind==='door'?'#ea580c':'#0891b2'}
- strokeWidth={Math.max(3,geometry.width_px/360)} strokeDasharray="3 3"
- pointerEvents="none"/>)}
- {segmentationOverlay&&showSegmentationOverlay&&<image href={segmentationOverlay}
- width={geometry.width_px} height={geometry.height_px} pointerEvents="none"/>}
- {unified&&showUnifiedWalls&&unified.candidates.map((item,i)=>
- <g key={'review-wall-'+item.id}>
- <line x1={item.start.x} y1={item.start.y} x2={item.end.x} y2={item.end.y}
- stroke="transparent" strokeWidth={Math.max(18,geometry.width_px/95)}
- style={{cursor:'pointer'}} pointerEvents={mode==='edit'?'stroke':'none'} onClick={e=>{e.stopPropagation();setFusionIndex(i);setReviewType('wall');setReviewFocus(true)}}/>
- </g>)}
- {unified&&showUnifiedWalls&&unified.candidates.map((item,i)=>
- <line key={'fused-'+item.id} x1={item.start.x} y1={item.start.y}
- x2={item.end.x} y2={item.end.y}
- onClick={e=>{e.stopPropagation();setFusionIndex(i);setReviewType('wall');setReviewFocus(true)}}
- style={{cursor:'pointer'}}
- stroke={fusionDecisions[item.id]==='reject'?'#9ca3af':
- fusionDecisions[item.id]==='accept'?'#16a34a':
- item.category==='agreed'?'#1d4ed8':item.category==='yolo_only'?'#d97706':'#9333ea'}
- strokeWidth={Math.max(reviewType==='wall'&&i===fusionIndex?8:3,geometry.width_px/360)}
- strokeDasharray={reviewType==='wall'&&i===fusionIndex?'none':'5 3'}
- opacity={reviewType==='wall'&&i===fusionIndex?1:fusionDecisions[item.id]==='reject'?.15:.45}>
- <title>{item.category}; mask support {Math.round(item.mask_support*100)}%</title>
- </line>)}
- {unified&&unified.opening_hints.map((hint,i)=>
- <rect key={'opening-hint-'+hint.candidate_id} x={hint.x1} y={hint.y1}
- width={hint.x2-hint.x1} height={hint.y2-hint.y1}
- pointerEvents={mode==='edit'?'all':'none'} onClick={e=>{e.stopPropagation();setOpeningIndex(i);setReviewType('opening');setReviewFocus(true)}}
- stroke={openingDecisions[hint.candidate_id]==='reject'?'#9ca3af':
- openingDecisions[hint.candidate_id]==='accept'?'#16a34a':
- hint.kind==='door'?'#ea580c':'#0891b2'}
- strokeWidth={reviewType==='opening'&&i===openingIndex?Math.max(5,geometry.width_px/270):2}
- strokeDasharray={reviewType==='opening'&&i===openingIndex?'none':'6 4'}
- opacity={reviewType==='opening'&&i===openingIndex?1:.5}
- fill="transparent" style={{cursor:'pointer'}}><title>{hint.kind}: {hint.reason}</title></rect>)}
-  {unified&&reviewType==='wall'&&reviewCandidate&&<g pointerEvents="none">
-   <line x1={reviewCandidate.start.x} y1={reviewCandidate.start.y}
-         x2={reviewCandidate.end.x} y2={reviewCandidate.end.y}
-         stroke="#fff" strokeWidth={Math.max(15,geometry.width_px/140)} strokeLinecap="round"/>
-   <line x1={reviewCandidate.start.x} y1={reviewCandidate.start.y}
-         x2={reviewCandidate.end.x} y2={reviewCandidate.end.y}
-         stroke="#f97316" strokeWidth={Math.max(8,geometry.width_px/250)}
-         strokeLinecap="round"/>
-   <circle cx={reviewCandidate.start.x} cy={reviewCandidate.start.y}
-           r={Math.max(6,geometry.width_px/190)} fill="#fff" stroke="#ea580c" strokeWidth="3"/>
-   <circle cx={reviewCandidate.end.x} cy={reviewCandidate.end.y}
-           r={Math.max(6,geometry.width_px/190)} fill="#fff" stroke="#ea580c" strokeWidth="3"/>
-  </g>}
-  {unified&&reviewType==='opening'&&currentOpening&&<rect
-    x={currentOpening.x1} y={currentOpening.y1}
-    width={currentOpening.x2-currentOpening.x1}
-    height={currentOpening.y2-currentOpening.y1}
-    fill="#f97316" fillOpacity={.12} stroke="#f97316"
-    strokeWidth={Math.max(6,geometry.width_px/220)} pointerEvents="none"/>}
-  {unified&&showComparisonBoxes&&unified.detections?.boxes.filter(b=>b.category==='wall').map((b,i)=>
- <rect key={'compare-box-'+i} x={b.x1} y={b.y1} width={b.x2-b.x1} height={b.y2-b.y1}
- fill="none" stroke="#a855f7" strokeWidth="2" strokeDasharray="7 4" pointerEvents="none"/>)}
-  {missingGaps.filter(g=>!dismissedGaps.includes(g.id)).map(g=>
- <line key={'gap-'+g.id} x1={g.start.x} y1={g.start.y} x2={g.end.x} y2={g.end.y}
- stroke="#d97706" strokeWidth={Math.max(4,geometry.width_px/260)} strokeDasharray="7 5"
- pointerEvents="none"><title>Unverified missing-wall gap · {Math.round(g.image_support*100)}% ink support</title></line>)}
-  {showModelDetections&&modelDetections?.boxes.map((b,i)=>
- <g key={'model-'+i} pointerEvents={b.category==='door'||b.category==='window'?'all':'none'}
- onClick={e=>{if(b.category==='door'||b.category==='window'){e.stopPropagation();setSelectedDetection(i);setMode('edit')}}}
- style={{cursor:b.category==='door'||b.category==='window'?'pointer':'default'}}>
- <rect x={b.x1} y={b.y1} width={b.x2-b.x1} height={b.y2-b.y1}
- stroke={geometry.openings.some(o=>o.source_detection_id===sourceId(i)&&o.reviewed)?'#16a34a':selectedDetection===i?'#22c55e':rejectedDetections.includes(sourceId(i))?'#9ca3af':b.category.includes('wall')?'#8b5cf6':b.category.includes('door')?'#ea580c':b.category.includes('window')?'#0891b2':'#737373'}
- strokeWidth={Math.max(selectedDetection===i?5:2,geometry.width_px/420)} fill={b.category==='door'||b.category==='window'?'rgba(56,189,248,.08)':'none'} strokeDasharray="8 5"/>
- <title>{b.category+' · '+(b.confidence*100).toFixed(1)+'% · '+(geometry.openings.some(o=>o.source_detection_id===sourceId(i)&&o.reviewed)?'reviewed':geometry.openings.some(o=>o.source_detection_id===sourceId(i))?'proposed':'unreviewed')}</title></g>)}
- {showRaw&&evidence?.segments.map((s,i)=><line key={'raw'+i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke="#d98d26" strokeWidth={Math.max(1,geometry.width_px/700)} opacity={.3} pointerEvents="none"/>)}
- {showSuggestions&&suggestions.map((s,i)=><line key={'candidate'+i} x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
- stroke={reviewLabels[candidateKey(s)]==='not_wall'?'#b91c1c':reviewLabels[candidateKey(s)]==='wall'?'#16a34a':'#2563eb'} strokeWidth={Math.max(3,geometry.width_px/230)} opacity={.82} style={{cursor:'pointer'}}
- pointerEvents={mode==='edit'?'stroke':'none'}
- onClick={e=>{e.stopPropagation();setSelectedCandidate(s)}}/>)}
- {showLegacyRoomOutline&&geometry.rooms.map((r,ri)=><g key={r.id}>
- <polygon points={r.points.map(p=>`${p.x},${p.y}`).join(' ')} fill="#46b494" fillOpacity={.08} stroke="#008a70" strokeWidth={Math.max(2,geometry.width_px/400)} pointerEvents="none"/>
- {mode==='edit'&&r.points.map((p,pi)=><circle key={pi} cx={p.x} cy={p.y} r={Math.max(5,geometry.width_px/140)} fill="white" stroke="#008a70"
- strokeWidth={Math.max(2,geometry.width_px/650)} style={{cursor:'grab'}} onPointerDown={e=>{e.stopPropagation();e.currentTarget.setPointerCapture(e.pointerId)}}
- onPointerMove={e=>{if(!e.currentTarget.hasPointerCapture(e.pointerId))return;const svg=e.currentTarget.ownerSVGElement;if(!svg)return;const point=localPoint(svg,e.clientX,e.clientY);if(point)updatePoint(ri,pi,point)}}
- onPointerUp={e=>e.currentTarget.releasePointerCapture(e.pointerId)} />)}
- </g>)}
- {edges.map(e=><line key={'edge-'+e.id} x1={e.start.x} y1={e.start.y} x2={e.end.x} y2={e.end.y}
- stroke="transparent" strokeWidth={Math.max(18,geometry.width_px/75)} style={{cursor:mode==='door'||mode==='window'?'crosshair':'inherit'}}
- pointerEvents="none"
- onClick={event=>{if(mode!=='door'&&mode!=='window')return;event.stopPropagation();const svg=event.currentTarget.ownerSVGElement;if(!svg)return;const p=localPoint(svg,event.clientX,event.clientY);if(p)addOpening(e,p,mode)}}/>)}
- {geometry.openings.map(o=>{const e=edges.find(e=>e.id===o.wall_id);if(!e)return null;
-  const scale=geometry.px_per_meter||60,len=dist(e.start,e.end),t=o.offset_m*scale/len,u=(o.offset_m+o.width_m)*scale/len;
-  const x1=e.start.x+(e.end.x-e.start.x)*t,y1=e.start.y+(e.end.y-e.start.y)*t,x2=e.start.x+(e.end.x-e.start.x)*u,y2=e.start.y+(e.end.y-e.start.y)*u;
-  return <line key={o.id} x1={x1} y1={y1} x2={x2} y2={y2} stroke={o.kind==='door'?'#f97316':'#0284c7'} strokeDasharray={o.kind==='door'?'10 6':undefined} strokeWidth={Math.max(7,geometry.width_px/160)} pointerEvents="none"/>;
- })}
- {geometry.walls.map(w=><line key={w.id} x1={w.start.x} y1={w.start.y} x2={w.end.x} y2={w.end.y} stroke={selectedWall===w.id?"#16a34a":w.id.startsWith('user-')?'#d97706':'#0284c7'}
- strokeWidth={Math.max(selectedWall===w.id?5:3,geometry.width_px/220)}
- pointerEvents={mode==='edit'?'stroke':'none'} style={{cursor:mode==='edit'?'pointer':'default'}}
- onClick={e=>{if(mode==='edit'){e.stopPropagation();setSelectedWall(w.id)}}}/>)}
- {mode==='edit'&&geometry.walls.filter(w=>w.id===selectedWall).flatMap(w=>(
-  (['start','end'] as const).map(which=>{
-   const p=w[which];
-   return <circle key={w.id+which} cx={p.x} cy={p.y} r={Math.max(7,geometry.width_px/130)}
-    fill="white" stroke="#16a34a" strokeWidth={3} style={{cursor:'grab',touchAction:'none'}}
-    onPointerDown={e=>{e.stopPropagation();e.currentTarget.setPointerCapture(e.pointerId)}}
-    onPointerMove={e=>{
-      if(!e.currentTarget.hasPointerCapture(e.pointerId))return;
-      const svg=e.currentTarget.ownerSVGElement;
-      if(!svg)return;
-      const point=localPoint(svg,e.clientX,e.clientY);
-      if(point)moveWallEndpoint(w.id,which,point);
-    }}
-    onPointerUp={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId)}}
-    onClick={e=>e.stopPropagation()}/>;
-  })
- ))}
- {connectivity&&JSON.stringify(geometry)===connectivity.source&&
- connectivity.proposal.changes.map((c,i)=><g key={'connect-'+i}>
- <line x1={c.original.x} y1={c.original.y} x2={c.proposed.x} y2={c.proposed.y}
- stroke="#0891b2" strokeWidth={Math.max(3,geometry.width_px/300)}
- strokeDasharray="4 3" pointerEvents="none"/>
- <circle cx={c.original.x} cy={c.original.y} r={Math.max(4,geometry.width_px/250)}
- fill="#fff" stroke="#0891b2" strokeWidth="2" pointerEvents="none"/>
- <circle cx={c.proposed.x} cy={c.proposed.y} r={Math.max(4,geometry.width_px/250)}
- fill={selectedJunction===i?'#16a34a':'#0891b2'} stroke="white" strokeWidth="2" pointerEvents="none"/>
- <circle cx={c.proposed.x} cy={c.proposed.y} r={Math.max(12,geometry.width_px/80)} fill="transparent" stroke="transparent" style={{cursor:'pointer'}}
-  onClick={e=>{e.stopPropagation();setSelectedJunction(i);setMode('edit')}}><title>Review {c.reason} for {c.wall_id}</title></circle>
- </g>)}
- {association&&JSON.stringify(geometry)===association.source&&association.items.map((item,i)=>
- <line key={'opening-assoc-'+i} x1={item.start.x} y1={item.start.y}
- x2={item.end.x} y2={item.end.y} pointerEvents="none"
- stroke={item.status==='proposed'?'#06b6d4':'#f97316'}
- strokeWidth={Math.max(6,geometry.width_px/210)} strokeDasharray="7 3"/>)}
- {wallStart&&<circle cx={wallStart.x} cy={wallStart.y} r={Math.max(5,geometry.width_px/130)} fill="#d97706" pointerEvents="none"/>}
- </svg>
- <div className="annotation-inspector">
- <strong>Review on plan</strong>
- {!unified?<p className="muted">Run Extract and compare to review detected walls and openings here.</p>:<>
- <div className="row" style={{margin:'12px 0',flexWrap:'wrap',gap:4}}>
- <button className={reviewType==='wall'?'':'secondary'} onClick={()=>{setReviewType('wall');setReviewFocus(false)}}>Walls ({unified.candidates.length})</button>
- <button className={reviewType==='opening'?'':'secondary'} onClick={()=>{setReviewType('opening');setReviewFocus(false)}}>Openings ({unified.opening_hints.length})</button>
- </div>
- <small>{reviewType==='wall'?
- `${unified.candidates.filter(c=>fusionDecisions[c.id]&&fusionDecisions[c.id]!=='unsure').length} / ${unified.candidates.length} classified`:
- `${unified.opening_hints.filter(h=>openingDecisions[h.candidate_id]&&openingDecisions[h.candidate_id]!=='unsure').length} / ${unified.opening_hints.length} classified`}</small>
- <div style={{height:5,background:'#e2e8f0',borderRadius:8,margin:'8px 0 14px'}}>
- <div style={{width:((reviewType==='wall'?unified.candidates.filter(c=>fusionDecisions[c.id]&&fusionDecisions[c.id]!=='unsure').length:unified.opening_hints.filter(h=>openingDecisions[h.candidate_id]&&openingDecisions[h.candidate_id]!=='unsure').length)/
- Math.max(1,reviewType==='wall'?unified.candidates.length:unified.opening_hints.length)*100)+'%',height:'100%',background:'#059669',borderRadius:8}}/>
- </div>
- {reviewType==='wall'&&reviewCandidate&&<>
- <strong>Wall candidate {fusionIndex+1} / {unified.candidates.length}</strong>
- <p style={{fontSize:13,margin:'6px 0'}}>{unified.geometry_review?.suggestions.some(h=>h.candidate_id===reviewCandidate.id)?'Potential missing partition · ':''}{reviewCandidate.category.replaceAll('_',' ')} · mask support {Math.round(reviewCandidate.mask_support*100)}%</p>
- <p style={{fontSize:13}}>Decision: <strong>{fusionDecisions[reviewCandidate.id]||'Pending'}</strong></p>
- <div className="row" style={{flexWrap:'wrap',gap:5}}>
- <button disabled={fusionSaving} onClick={()=>void decideFusion('accept')}>Wall</button>
- <button className="secondary" disabled={fusionSaving} onClick={()=>void decideFusion('door')}>Door</button>
- <button className="secondary" disabled={fusionSaving} onClick={()=>void decideFusion('window')}>Window</button>
- <button className="secondary" disabled={fusionSaving} onClick={()=>void decideFusion('reject')}>Not wall</button>
- <button className="secondary" disabled={fusionSaving} onClick={()=>void decideFusion('unsure')}>Unsure</button>
- </div>
- </>}
- {reviewType==='opening'&&currentOpening&&<>
- <strong>{currentOpening.kind==='door'?'Door':'Window'} {openingIndex+1} / {unified.opening_hints.length}</strong>
- <p style={{fontSize:13}}>Detector confidence {Math.round(currentOpening.source_confidence*100)}%. {currentOpening.reason}</p>
- <p style={{fontSize:13}}>Decision: <strong>{openingDecisions[currentOpening.candidate_id]||'Pending'}</strong></p>
- <div className="row" style={{flexWrap:'wrap',gap:5}}>
- <button disabled={fusionSaving} onClick={()=>void reviewDetectedOpening('accept')}>Classify as {currentOpening.kind}</button>
- <button className="secondary" disabled={fusionSaving} onClick={()=>void reviewDetectedOpening('reject')}>Not opening</button>
- <button className="secondary" disabled={fusionSaving} onClick={()=>void reviewDetectedOpening('unsure')}>Unsure</button>
- </div>
- </>}
- <div className="row" style={{marginTop:12,gap:6,flexWrap:'wrap'}}>
- <button className="secondary" onClick={()=>{if(reviewType==='wall')setFusionIndex(i=>Math.max(0,i-1));else setOpeningIndex(i=>Math.max(0,i-1));}}>← Previous</button>
- <button className="secondary" onClick={()=>{if(reviewType==='wall')setFusionIndex(i=>Math.min(unified.candidates.length-1,i+1));else setOpeningIndex(i=>Math.min(unified.opening_hints.length-1,i+1));}}>Next →</button>
- <button className="secondary" onClick={()=>{
- if(reviewType==='wall'){const i=unified.candidates.findIndex((c,i)=>i>fusionIndex&&!fusionDecisions[c.id]);setFusionIndex(i<0?Math.max(0,unified.candidates.findIndex(c=>!fusionDecisions[c.id])):i);}
- else{const i=unified.opening_hints.findIndex((h,j)=>j>openingIndex&&!openingDecisions[h.candidate_id]);setOpeningIndex(i<0?Math.max(0,unified.opening_hints.findIndex(h=>!openingDecisions[h.candidate_id])):i);}
- }}>Next pending</button>
- </div>
- <label style={{display:'block',marginTop:12}}><input type="checkbox" checked={reviewFocus} onChange={e=>setReviewFocus(e.target.checked)}/> Zoom to selected item</label>
- <small style={{display:'block',margin:'8px 0'}}>Select geometry on the plan. Shortcuts: ← / → navigate, 1 wall/confirm, 2 door, 3 window, 4 reject, 5 unsure, F zoom. Shortcuts are inactive while typing.</small>
- <button disabled={busy||modelBusy||fusionSaving} onClick={()=>void applyUnified()}>Apply reviewed walls + openings to draft</button>
- <small style={{display:'block',marginTop:8}}>Review decisions are saved separately. Applying changes only your unsaved 2D/3D draft.</small>
- </>}
- </div></div>:<Viewer geometry={geometry}/>}
- <p className="muted">{mode==='wall'?'Click two points to add a missing wall.':mode==='door'||mode==='window'?'Click near a wall or on a detected opening box to add or correct it.':'Review model walls and detected openings; tap a wall to adjust or reject it.'}</p></div>
- <div className="stack"><div className="panel stack"><h2>Geometry</h2>
+</details>
+ <details className="panel"><summary>Scale, dimensions and selected geometry</summary><div className="stack"><div className="panel stack"><h2>Geometry</h2>
  <details><summary>Advanced scale override (optional)</summary><label>Pixels per meter <input type="number" min=".001" step=".1" value={geometry.px_per_meter??''}
  onChange={e=>setGeometry({...geometry,px_per_meter:e.target.value?Number(e.target.value):null,scale_source:'user_confirmed'})} placeholder="Use confirmed dimension"/></label></details>
  <span className="pill">{geometry.rooms.length} rooms · {geometry.walls.length} stored walls</span>
@@ -1206,9 +1213,6 @@ export default function Editor(){
  </div>)}
  {geometry.walls.filter(w=>w.id.startsWith('user-')||w.id.startsWith('model-')).map(w=><div className="row" key={w.id}><small>{w.id.slice(0,18)}</small><button className="secondary" onClick={()=>removeWall(w.id)}>Remove</button></div>)}
  {geometry.warnings.map((w,i)=><div className="notice" key={i}>{w}</div>)}
- </div><div className="panel stack"><h2>Design assistant · upcoming</h2>
- <textarea rows={4} value={prompt} onChange={e=>setPrompt(e.target.value)}/>
- <button disabled title="Depth-conditioned generation is not integrated">Generate render (next milestone)</button>
- <p className="muted">No simulated AI output is produced.</p></div></div></div>}
+ </div></div></details></div>}
  </main></div>;
 }

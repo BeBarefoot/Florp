@@ -136,3 +136,21 @@ def test_real_34_wall_fixture_can_initialize_and_project_without_losing_fragment
     with Session(db) as s:
         assert len(s.exec(select(Layout)).all())==2
         assert s.exec(select(Layout).where(Layout.version==2)).one().geometry==real.model_dump()
+
+
+def test_legacy_placeholder_hidden_on_read_and_cleaned_on_save_without_rewriting_history(workspace):
+    from app.geometry import fallback_geometry
+    c,db,bid,root,initial,g=workspace
+    legacy=fallback_geometry(300,200)
+    legacy.walls.append(Wall(id='real-wall',start=Pt(x=50,y=50),end=Pt(x=220,y=50)))
+    with Session(db) as s:
+        row=Layout(blueprint_id=bid,version=2,verified=True,geometry=legacy.model_dump());s.add(row);s.commit();old_id=row.id
+    response=c.get(f'/blueprints/{bid}/layout')
+    assert [w['id'] for w in response.json()['geometry']['walls']]==['real-wall']
+    assert response.json()['geometry']['rooms']==[]
+    assert response.json()['verified'] is False
+    saved=c.post(f'/blueprints/{bid}/layout',json={'geometry':response.json()['geometry']})
+    assert saved.status_code==200 and len(saved.json()['geometry']['walls'])==1
+    with Session(db) as s:
+        assert len(s.get(Layout,old_id).geometry['walls'])==5
+        assert s.get(Layout,old_id).verified is True

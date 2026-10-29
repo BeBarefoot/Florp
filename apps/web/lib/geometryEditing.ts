@@ -61,3 +61,17 @@ export function openingPlacement(edge:DraftEdge,p:Pt,g:Geometry,kind:'door'|'win
     offset_m:Number(offset.toFixed(3)),width_m:Number(width.toFixed(3)),
     height_m:kind==='door'?2.1:1.2,sill_m:kind==='door'?0:.9,inferred:true};
 }
+
+// Only truly shared coordinates are coupled. Nearby parallel walls stay separate.
+// Hosted openings need explicit host reconciliation before moving their wall.
+export function moveSharedJunction(g:Geometry,wallId:string,which:'start'|'end',target:Pt):Geometry{
+ if(!Number.isFinite(target.x)||!Number.isFinite(target.y)||target.x<0||target.y<0||target.x>g.width_px||target.y>g.height_px)throw Error('Junction must stay within the source plan.');
+ const source=g.walls.find(w=>w.id===wallId)?.[which];if(!source)return g;
+ const incident=g.walls.filter(w=>dist(w.start,source)<.01||dist(w.end,source)<.01);
+ if(g.openings.some(o=>incident.some(w=>w.id===o.wall_id)))throw Error('This junction belongs to a wall with openings. Reconcile opening hosts before moving it.');
+ const moved=g.walls.map(w=>({...w,start:dist(w.start,source)<.01?{...target}:w.start,end:dist(w.end,source)<.01?{...target}:w.end}));
+ if(moved.some(w=>incident.some(i=>i.id===w.id)&&dist(w.start,w.end)<3))throw Error('Moving this shared junction would collapse a wall.');
+ const rooms=g.rooms.filter(r=>!r.points.some((p,i)=>segmentDistance(source,{start:p,end:r.points[(i+1)%r.points.length]})<.01));
+ const warning='Room boundaries changed. Reconstruct affected room faces before verification.';
+ return {...g,structure_reviewed:false,walls:moved,rooms,warnings:rooms.length===g.rooms.length?g.warnings:Array.from(new Set([...g.warnings,warning]))};
+}

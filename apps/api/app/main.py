@@ -10,6 +10,7 @@ import fitz
 from .config import settings
 from .models import Project, Blueprint, Layout, Render, WallAnnotation, ModelWallCorrection, FusionCandidateReview, ExtractionEvaluation, PlanGraphRevision
 from .geometry import Geometry, fallback_geometry, validate_geometry
+from .connectivity_preview import without_starter
 from .providers import extract_geometry, ProviderUnavailable, ProviderAuthenticationError, ProviderConfigurationError, ProviderOutputError
 from .evidence import inspect_plan
 from .reconcile import reconcile
@@ -111,7 +112,7 @@ async def upload(pid:str,file:UploadFile=File(...)):
     raw=folder/('original'+suffix);raw.write_bytes(contents)
     preview=folder/'preview.png';image.save(preview)
     bp.local_path=str(raw);bp.preview_path=str(preview)
-    starting=fallback_geometry(bp.width,bp.height)
+    starting=Geometry(width_px=bp.width,height_px=bp.height,warnings=['No extracted geometry yet. Extract or draw structural walls.'])
     evidence=inspect_plan(raw,preview)
     if evidence.automatic_scale:
         starting.px_per_meter=evidence.automatic_scale.px_per_meter
@@ -130,7 +131,10 @@ def get_layout(bid:str):
     with Session(engine) as s:
         row=s.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
         if not row:raise HTTPException(404,'No layout')
-        return row
+        # Normalize the response, retaining immutable historical rows.
+        original=Geometry.model_validate(row.geometry)
+        clean=without_starter(original)
+        return row.model_copy(update={'geometry':clean.model_dump(),'verified':row.verified and clean==original})
 class EvaluationStartBody(BaseModel):
     provider: str
     image_sha256: str
@@ -190,11 +194,13 @@ def reviewed_geometry_export(bid:str):
         labels=[{'candidate_id':row.candidate_id,'decision':row.decision,
                  'candidate':row.candidate,'input_manifest':row.input_manifest}
                 for row in latest.values()]
+        original=Geometry.model_validate(layout.geometry)
+        clean=without_starter(original)
         return {'schema_version':1,'source_preview_sha256':digest,
                 'width_px':bp.width,'height_px':bp.height,
-                'layout_version':layout.version,'layout_verified':layout.verified,
-                'structure_reviewed':bool(layout.geometry.get('structure_reviewed',False)),
-                'geometry':layout.geometry,'review_labels':labels,
+                'layout_version':layout.version,'layout_verified':layout.verified and clean==original,
+                'structure_reviewed':clean.structure_reviewed,
+                'geometry':clean.model_dump(),'review_labels':labels,
                 'source':'saved geometry + latest append-only human review decisions',
                 'ground_truth_status':'not independently validated',
                 'warning':'Approved candidate labels and a saved draft are not automatically complete training ground truth.'}
@@ -627,7 +633,7 @@ def merge_reviewed_fusion_walls(bid:str,body:MergeFusionDraftBody):
         current=session.exec(select(Layout).where(Layout.blueprint_id==bid)
                              .order_by(Layout.version.desc())).first()
         if current is None:raise HTTPException(404,'No saved layout')
-        if body.layout_version!=current.version or body.geometry.model_dump()!=Geometry.model_validate(current.geometry).model_dump():
+        if body.layout_version!=current.version or body.geometry.model_dump()!=without_starter(Geometry.model_validate(current.geometry)).model_dump():
             raise HTTPException(409,'Current saved geometry changed; reload before merging approvals')
         reviews=list(session.exec(select(FusionCandidateReview).where(
             FusionCandidateReview.blueprint_id==bid,
@@ -1059,7 +1065,7 @@ def save_layout(bid:str,body:SaveLayout):
         if not session.get(Blueprint,bid):
             raise HTTPException(404,'Blueprint not found')
         last=session.exec(select(Layout).where(Layout.blueprint_id==bid).order_by(Layout.version.desc())).first()
-        incoming=body.geometry.model_copy(deep=True)
+        incoming=without_starter(body.geometry)
         if body.structure_reviewed:
             incoming.structure_reviewed=True
         issues=validate_geometry(incoming)
@@ -1067,6 +1073,9 @@ def save_layout(bid:str,body:SaveLayout):
             issues.append('Confirm the scale using blueprint dimension evidence before metric verification')
         if body.verified and any(o.inferred for o in incoming.openings):
             issues.append('Confirm each provisional door/window dimension before metric verification')
+        if body.verified:
+            from .plan_quality import assess_plan
+            issues.extend(assess_plan(incoming)['structural_issues'])
         if body.verified and issues:
             raise HTTPException(422,{'message':'Metric verification blocked; wall review may still be saved separately','issues':issues})
         version=last.version+1 if last else 1
@@ -1246,3 +1255,21 @@ def canonical_draft(bid: str, revision_id: str):
         return {'saved':False,'revision_id':revision.id,
                 'source_layout_version':revision.source_layout_version,
                 'geometry':geometry.model_dump(mode='json')}
+
+
+class PlanQualityBody(BaseModel):
+    geometry: Geometry
+
+@app.post('/blueprints/{bid}/quality')
+def plan_quality(bid: str, body: PlanQualityBody):
+    from .plan_quality import assess_plan
+    import hashlib
+    with Session(engine) as session:
+        bp=session.get(Blueprint,bid)
+        if bp is None:raise HTTPException(404,'Blueprint not found')
+        digest=hashlib.sha256(Path(bp.preview_path).read_bytes()).hexdigest()
+        rows=session.exec(select(FusionCandidateReview).where(
+            FusionCandidateReview.blueprint_id==bid,FusionCandidateReview.preview_sha256==digest)
+            .order_by(FusionCandidateReview.created_at,FusionCandidateReview.id)).all()
+        latest={r.candidate_id:{'candidate_id':r.candidate_id,'decision':r.decision} for r in rows}
+        return assess_plan(body.geometry,list(latest.values()))
