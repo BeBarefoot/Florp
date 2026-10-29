@@ -143,3 +143,19 @@ test('newly opened plan automatically shows reconstructed wall lines',async({pag
  await expect(page.getByLabel('Training mask editor').locator('line[stroke="#147eb1"]')).toHaveCount(1);
  await expect(page.getByLabel('Training mask editor').locator('circle')).toHaveCount(0);
 });
+
+test('review controls wait for an in-flight save instead of dropping the next decision',async({page})=>{
+ let release!:()=>void;const gate=new Promise<void>(r=>{release=r});let saving=false;
+ const ann={revision:1,group_id:'g',split:'train',reviewer:'',independent_reviewer:'',complete:false,rights_confirmed:false,objects:[{kind:'wall',polygon:[[20,20],[100,20],[100,30],[20,30]]},{kind:'window',polygon:[[140,20],[160,20],[160,30],[140,30]]}],status:'draft',reconstruction:{geometry:{width_px:300,height_px:200,walls:[],rooms:[],openings:[]},issues:[{kind:'short_wall',object:0},{kind:'opening_host',object:1}]}};
+ await page.route('http://localhost:8000/**',async route=>{
+  const path=new URL(route.request().url()).pathname;const reply=(body:unknown)=>route.fulfill({contentType:'application/json',headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type','Access-Control-Allow-Methods':'GET, PUT, OPTIONS'},body:JSON.stringify(body)});
+  if(route.request().method()==='OPTIONS')return reply({});
+  if(path==='/dataset/cases')return reply([{id:'plan',name:'plan.png',width_px:300,height_px:200,annotation:ann}]);
+  if(path==='/dataset/cases/plan'){saving=true;await gate;const b=route.request().postDataJSON();return reply({...ann,...b,revision:2,status:'draft'})}
+  if(path.endsWith('/preview'))return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"/>'});return reply([]);
+ });
+ await page.goto('/dataset');await page.getByRole('button',{name:'plan.png · draft'}).click();await page.getByRole('button',{name:'Start review'}).click();
+ await page.getByRole('button',{name:'False detection'}).click();await expect.poll(()=>saving).toBe(true);
+ await expect(page.getByRole('button',{name:'Wall',exact:true})).toBeDisabled();
+ release();await expect(page.getByRole('button',{name:'Wall',exact:true})).toBeEnabled();
+});
