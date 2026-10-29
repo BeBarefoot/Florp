@@ -66,7 +66,7 @@ export function openingPlacement(edge:DraftEdge,p:Pt,g:Geometry,kind:'door'|'win
 // Hosted openings need explicit host reconciliation before moving their wall.
 export function moveSharedJunction(g:Geometry,wallId:string,which:'start'|'end',target:Pt):Geometry{
  if(!Number.isFinite(target.x)||!Number.isFinite(target.y)||target.x<0||target.y<0||target.x>g.width_px||target.y>g.height_px)throw Error('Junction must stay within the source plan.');
- const source=g.walls.find(w=>w.id===wallId)?.[which];if(!source)return g;
+ const source=g.walls.find(w=>w.id===wallId)?.[which];if(!source||dist(source,target)<.01)return g;
  const incident=g.walls.filter(w=>dist(w.start,source)<.01||dist(w.end,source)<.01);
  if(g.openings.some(o=>incident.some(w=>w.id===o.wall_id)))throw Error('This junction belongs to a wall with openings. Reconcile opening hosts before moving it.');
  const moved=g.walls.map(w=>({...w,start:dist(w.start,source)<.01?{...target}:w.start,end:dist(w.end,source)<.01?{...target}:w.end}));

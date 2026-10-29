@@ -7,3 +7,5 @@
 @media(max-width:1150px){.annotation-workspace{grid-template-columns:minmax(0,1fr)}.annotation-inspector{position:static;max-height:none}}
 
 .plan-editor main{padding:20px}.plan-editor aside{width:230px;flex-shrink:0}.plan-editor summary{cursor:pointer;padding:8px 0;font-weight:600}.plan-editor .annotation-workspace{grid-template-columns:minmax(0,1fr) minmax(230px,280px)}.plan-editor .canvas{min-height:340px}.plan-editor header{margin-bottom:12px}@media(max-width:1000px){.plan-editor .annotation-workspace{grid-template-columns:1fr}.plan-editor aside{width:100%}.plan-editor{display:block}}
+
+.plan-editor header{flex-wrap:wrap;gap:12px}.plan-editor header>div{max-width:100%;min-width:0}

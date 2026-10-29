@@ -4,6 +4,7 @@ import {useDraftHistory} from '../../../lib/draftHistory';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import CanonicalWorkspace from '../../../components/CanonicalWorkspace';
+import {SpatialOverlay,SpatialInspector,SpatialQuality,LooseEndpoint} from '../../../components/SpatialReview';
 import {useParams} from 'next/navigation';
 import {API,request,Geometry,Layout,Pt,Wall,Opening} from '../../../lib/api';
 import {editableEdges,snapPoint,openingPlacement,segmentDistance,moveSharedJunction} from '../../../lib/geometryEditing';
@@ -45,8 +46,12 @@ export default function Editor(){
  const {geometry,setGeometry,resetGeometry}=history;
  const [evidence,setEvidence]=useState<Evidence|null>(null);
  const [status,setStatus]=useState(''),[busy,setBusy]=useState(false);
- const [quality,setQuality]=useState<{structural_issues:string[];metric_issues:string[];ready_for_metric_scene:boolean}|null>(null);
- useEffect(()=>{setQuality(null);if(!geometry)return;let active=true;const timer=setTimeout(()=>{request<any>(`/blueprints/${id}/quality`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({geometry})}).then(r=>{if(active&&Array.isArray(r.structural_issues))setQuality(r)}).catch(()=>{});},300);return()=>{active=false;clearTimeout(timer)};},[id,geometry]);
+ const [qualityError,setQualityError]=useState('');
+ const [quality,setQuality]=useState<SpatialQuality|null>(null);
+ useEffect(()=>{setQuality(null);setQualityError('');if(!geometry)return;let active=true;const timer=setTimeout(()=>{request<any>(`/blueprints/${id}/quality`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({geometry})}).then(r=>{if(active&&Array.isArray(r.structural_issues))setQuality(r)}).catch(error=>{if(active)setQualityError(String(error))});},300);return()=>{active=false;clearTimeout(timer)};},[id,geometry]);
+ const [spatialReview,setSpatialReview]=useState(true);
+ const [selectedRoom,setSelectedRoom]=useState<string|null>(null);
+ const [gapIndex,setGapIndex]=useState(-1);
  const [view,setView]=useState<'2d'|'3d'>('2d');
  const [modelDetections,setModelDetections]=useState<ModelDetections|null>(null);
  type OpeningHint={candidate_id:string;kind:'door'|'window';x1:number;y1:number;x2:number;y2:number;source_confidence:number;wall_id:string|null;fraction:number|null;reason:string};
@@ -268,7 +273,7 @@ export default function Editor(){
      setShowUnifiedWalls(true);setShowComparisonBoxes(false);
      setSegmentationOverlay('data:image/png;base64,'+result.mask_overlay_png_base64);
      setShowSegmentationOverlay(false);setShowModelDetections(false);
-     setStatus('Comparison ready — no layout was saved or replaced. Review the proposed walls before applying.');
+     setSpatialReview(false);setSelectedRoom(null);setStatus('Comparison ready — no layout was saved or replaced. Review the proposed walls before applying.');
    }catch(err){setStatus(String(err))}
    finally{setModelBusy(false)}
  }
@@ -724,6 +729,19 @@ export default function Editor(){
   setStatus('Selected junction applied to UNSAVED draft. Save corrected draft, then preview remaining junctions.');
  }
  function removeWall(id:string){if(!geometry)return;setSelectedWall(null);setGeometry({...geometry,structure_reviewed:false,walls:geometry.walls.filter(w=>w.id!==id),openings:geometry.openings.filter(o=>o.wall_id!==id)});setStatus('Draft wall removed. Save to persist changes.')}
+ function selectGap(gap:LooseEndpoint){
+  setSelectedRoom(null);setSelectedWall(gap.source_wall_ids[0]||null);setMode('edit');setReviewFocus(false);
+  setStatus('Inspect the highlighted endpoint against the source. Connect only a real wall junction.');
+ }
+ function removeSharedPartition(wallId:string){
+  if(!geometry||!quality?.room_faces?.some(r=>r.id===selectedRoom&&r.shared_source_wall_ids.includes(wallId)))return;
+  if(geometry.openings.some(o=>o.wall_id===wallId)){setStatus('Reconcile hosted openings before removing this partition.');return;}
+  const wall=geometry.walls.find(w=>w.id===wallId);if(!wall)return;
+  const middle={x:(wall.start.x+wall.end.x)/2,y:(wall.start.y+wall.end.y)/2};
+  setGeometry({...geometry,structure_reviewed:false,walls:geometry.walls.filter(w=>w.id!==wallId),
+   rooms:geometry.rooms.filter(r=>!r.points.some((p,i)=>segmentDistance(middle,{start:p,end:r.points[(i+1)%r.points.length]})<.01))});
+  setSelectedRoom(null);setSelectedWall(null);setStatus('Shared partition removed from draft. Review the combined region; Undo restores the partition.');
+ }
  return <div className="app plan-editor"><aside><h2>✦ Florp</h2><Link href="/">← Projects</Link>
  <hr style={{borderColor:'#354053',margin:'22px 0'}}/><p>Saved layout v{layout?.version??'–'} · {layout?.verified?'Verified':'Unverified'}</p>
  {geometry&&layout&&<p className="notice">{geometry===layout.geometry?'All changes saved':'● Unsaved edits — Save draft when ready'}</p>}
@@ -772,11 +790,14 @@ export default function Editor(){
  <div className="row"><button className="secondary" disabled={!history.canUndo||busy||modelBusy} onClick={()=>{history.undo();setConnectivity(null);setSelectedWall(null);}}>Undo draft edit</button><button className="secondary" disabled={!history.canRedo||busy||modelBusy} onClick={()=>{history.redo();setConnectivity(null);setSelectedWall(null);}}>Redo draft edit</button><button className={view==='2d'?'':'secondary'} onClick={()=>setView('2d')}>2D editor</button>
  <button className={view==='3d'?'':'secondary'} onClick={()=>setView('3d')}>3D shell</button></div></header>
  {status&&<p className="notice">{status}</p>}
+ {qualityError&&<p role="alert" className="notice">Geometry checks unavailable: {qualityError}</p>}
  {quality&&<details className="notice"><summary>{quality.ready_for_metric_scene?'Geometry checks passed — independent accuracy review still required':'Incomplete plan — 3D is a draft preview'}</summary><ul>{[...quality.structural_issues,...quality.metric_issues].map(issue=><li key={issue}>{issue}</li>)}</ul></details>}
  {geometry&&<div className="grid" style={{gridTemplateColumns:'minmax(0,1fr)'}}>
  <div className="panel"><h2>{view==='2d'?'Floor-plan overlay':'3D shell · draft geometry'}</h2>
  {unified&&<p className="notice">{Object.values(fusionDecisions).filter(d=>d==='accept').length} walls accepted · {Object.values(openingDecisions).filter(d=>d==='accept').length} openings classified. Main draft: {geometry.walls.length} walls · {geometry.openings.length} physical openings. Apply reviewed walls + openings to update this view; unresolved opening hosts still need correction.</p>}
  {view==='2d'&&<div className="row" style={{marginBottom:12}}>
+ <button className={spatialReview?'':'secondary'} onClick={()=>{setSpatialReview(true);setReviewFocus(false);setMode('edit')}}>Rooms & gaps</button>
+ <button className={!spatialReview?'':'secondary'} onClick={()=>setSpatialReview(false)}>Model candidates</button>
  <button className={mode==='edit'?'':'secondary'} onClick={()=>{setMode('edit');setWallStart(null);setStatus('Click any saved wall on the floor plan, then drag either green endpoint handle. Save corrected draft to persist.')}}>Edit wall endpoints</button>
   {(['wall','door','window'] as const).map(tool=><button key={tool} className={mode===tool?'':'secondary'} onClick={()=>{setMode(mode===tool?'edit':tool);setWallStart(null)}}>{tool==='wall'?'Draw missing wall':tool==='door'?'Add door':'Add window'}</button>)}
  </div>}
@@ -804,6 +825,7 @@ export default function Editor(){
  }}>
  <image href={`${API}/blueprints/${id}/preview`} width={geometry.width_px} height={geometry.height_px}
  style={{filter:grayscale?'grayscale(1) contrast(1.12) brightness(1.08)':'none'}}/>
+ {spatialReview&&mode==='edit'&&<SpatialOverlay quality={quality} roomId={selectedRoom} width={geometry.width_px} onRoom={id=>{setSelectedRoom(id);setSelectedWall(null);setReviewFocus(false)}} onGap={selectGap}/>}
  {r2s&&r2sVisible&&r2s.rooms.map((room,i)=>
  <polygon key={'r2s-'+i}
  points={room.points.map(([x,y])=>`${x},${y}`).join(' ')}
@@ -945,7 +967,10 @@ export default function Editor(){
  {wallStart&&<circle cx={wallStart.x} cy={wallStart.y} r={Math.max(5,geometry.width_px/130)} fill="#d97706" pointerEvents="none"/>}
  </svg>
  <div className="annotation-inspector">
- <strong>Review on plan</strong>
+ {spatialReview?<SpatialInspector quality={quality} geometry={geometry} roomId={selectedRoom} wallId={selectedWall}
+  onBoundary={id=>{setSelectedWall(id);setMode('edit')}} onPartition={removeSharedPartition}
+  onDraw={()=>{setMode('wall');setWallStart(null);setStatus('Click two boundary points to draw a partition. Review the resulting regions, then save.')}}
+  onNextGap={()=>{const gaps=quality?.loose_endpoints||[];if(gaps.length){const next=(gapIndex+1)%gaps.length;setGapIndex(next);selectGap(gaps[next]);}}}/>:<><strong>Review on plan</strong>
  {!unified?<p className="muted">Run Extract and compare to review detected walls and openings here.</p>:<>
  <div className="row" style={{margin:'12px 0',flexWrap:'wrap',gap:4}}>
  <button className={reviewType==='wall'?'':'secondary'} onClick={()=>{setReviewType('wall');setReviewFocus(false)}}>Walls ({unified.candidates.length})</button>
@@ -993,7 +1018,7 @@ export default function Editor(){
  <button disabled={busy||modelBusy||fusionSaving} onClick={()=>void applyUnified()}>Apply reviewed walls + openings to draft</button>
  <small style={{display:'block',marginTop:8}}>Review decisions are saved separately. Applying changes only your unsaved 2D/3D draft.</small>
  </>}
- </div></div>:<Viewer geometry={geometry}/>}
+ </>} </div></div>:<Viewer geometry={geometry}/>}
  <p className="muted">{mode==='wall'?'Click two points to add a missing wall.':mode==='door'||mode==='window'?'Click near a wall or on a detected opening box to add or correct it.':'Review model walls and detected openings; tap a wall to adjust or reject it.'}</p></div>
  <details className="panel"><summary>Repair walls, gaps and opening hosts</summary>{layout&&geometry&&<CanonicalWorkspace bid={id} layoutVersion={layout.version} hasUnsavedChanges={geometry!==layout.geometry} onUseDraft={g=>{setGeometry(g);setView('2d');setSelectedWall(null);setStatus('Repaired graph loaded into the main 2D/3D draft. Save corrected draft to persist.');}}/>} {view==='2d'&&geometry.walls.length>0&&<div style={{border:'1px solid #cbd5e1',padding:10,borderRadius:10,marginBottom:12}}>
  <div className="row" style={{justifyContent:'space-between'}}>
