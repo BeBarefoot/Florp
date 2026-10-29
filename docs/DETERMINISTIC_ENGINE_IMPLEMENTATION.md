@@ -1,0 +1,11 @@
+# Deterministic blueprint service: implementation and acceptance contract
+
+Build a separate, opt-in FastAPI microservice on latest Florp main. Do not change saved layouts, model training or the editor. No generative or cloud inference at runtime.
+
+Implement in order: validated bounded input and coordinate transforms; cautious document rectification; local OCR and witness-tick dimension consensus plus explicit reference/default calibration; HSV/Lab material masks; scale-aware morphology and noise suppression; hierarchy-aware polygonization and bounded Manhattan snapping; exterior classification without inventing walls; exact metric bounds; PNG/SVG/DXF and JSON provenance; service admission/timeouts; tests and reproducible benchmark.
+
+Correct the supplied prototype's ignored contour hierarchy, sequential integer snapping, ignored outer-only mode, truncated margin, unchecked empty geometry, and unmeasured timing claims. Never interpret the largest connected wall component or a convex hull as the exterior shell.
+
+Acceptance: tests must verify nested void preservation, fractional-pixel exact 50cm vector margins on all sides, material separation, opening gaps, rotated/perspective reference transforms, calibration ambiguity, invalid input, metric CAD units, outer-only behavior, repeatability and timeouts. Benchmark PNG decode through ZIP encoding, OCR enabled and disabled, cold and warm, pin to eight available CPU cores, report dimensions/platform/stages and enforce 3.5 seconds on the measured fixtures. Do not claim an arbitrary-plan/hardware timing or architectural-accuracy guarantee. OCR has a bounded subprocess timeout; a separate killable worker enforces the HTTP processing deadline and bounded concurrency.
+
+Accuracy limits: color is a configurable convention, not semantic proof. Monochrome, severely faded/cropped plans, unknown perspective proportions, red annotations and ambiguous perimeter topology must be reported. Scale from one line assumes an isotropic planar raster. 300 DPI is a print setting at an explicit drawing ratio, not additional source detail. SVG/DXF margins are exact floating-point centimeters; PNG edges round at subpixel resolution. No benchmark or synthetic test substitutes for held-out manually traced real plans.
