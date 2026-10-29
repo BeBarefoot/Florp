@@ -383,6 +383,27 @@ def preview_wall_connectivity(bid:str,body:ConnectivityPreviewBody):
         return {'saved':False,**proposal.model_dump()}
 
 
+class AutomaticConnectionsBody(BaseModel):
+    geometry: Geometry
+    opening_boxes: list[tuple[float,float,float,float]] = []
+
+@app.post('/blueprints/{bid}/connectivity/automatic')
+def automatic_wall_connectivity(bid:str,body:AutomaticConnectionsBody):
+    from .automatic_connections import repair
+    from PIL import Image
+    with Session(engine) as session:
+        bp=session.get(Blueprint,bid)
+        if bp is None:raise HTTPException(404,'Blueprint not found')
+        if (body.geometry.width_px,body.geometry.height_px)!=(bp.width,bp.height):
+            raise HTTPException(422,'Draft dimensions mismatch the source image')
+        try:
+            with Image.open(bp.preview_path) as image:
+                result,changes,graph=repair(body.geometry,image,body.opening_boxes)
+        except (ValueError,OSError) as exc:raise HTTPException(422,str(exc)) from exc
+        return {'saved':False,'geometry':result.model_dump(),'changes':[c.model_dump() for c in changes],
+                'remaining_loose_endpoints':graph.dangling_nodes}
+
+
 class CreateCanonicalPlanBody(BaseModel):
     expected_layout_version: int
 
