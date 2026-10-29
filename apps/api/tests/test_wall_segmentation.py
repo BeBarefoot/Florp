@@ -49,3 +49,29 @@ def test_unsupported_short_mask_does_not_invent_wall(monkeypatch):
     mask[40:43,50:67]=255
     result=mask_centerlines(mask,min_length=50)
     assert result.line_count==0
+
+
+@pytest.mark.parametrize('fault',[None,'padding','source','count','nonfinite','missing'])
+def test_inference_masks_are_bound_to_source_pixels(monkeypatch,tmp_path,fault):
+    from types import SimpleNamespace
+    from app import wall_segmentation as ws
+    from app.pretrained_detector import DetectorUnavailable
+    weights=tmp_path/'segment.pt';weights.write_bytes(b'test double, not model weights')
+    monkeypatch.setattr(ws.settings,'wall_segmentation_weights',str(weights))
+    mask=np.zeros((1,40,100),dtype='float32');mask[0,12:15,20:80]=1
+    if fault=='padding':mask=np.pad(mask,((0,0),(30,30),(0,0)))
+    if fault=='nonfinite':mask[0,0,0]=np.nan
+    tensor=SimpleNamespace(cpu=lambda:SimpleNamespace(numpy=lambda:mask))
+    result=SimpleNamespace(orig_shape=(41,100) if fault=='source' else (40,100),names={0:'wall'},
+        masks=None if fault=='missing' else SimpleNamespace(data=tensor),
+        boxes=[] if fault=='count' else [SimpleNamespace(cls=np.array(0))])
+    options={}
+    def predict(**kwargs):options.update(kwargs);return [result]
+    monkeypatch.setattr(ws,'_load_model',lambda _:SimpleNamespace(predict=predict))
+    if fault:
+        with pytest.raises(DetectorUnavailable):ws.infer_wall_mask(tmp_path/'source.png',100,40)
+    else:
+        actual,_=ws.infer_wall_mask(tmp_path/'source.png',100,40)
+        assert actual.shape==(40,100)
+        assert np.array_equal(actual,mask[0]*255)
+    assert options['retina_masks'] is True

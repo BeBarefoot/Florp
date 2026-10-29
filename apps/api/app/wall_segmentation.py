@@ -119,14 +119,22 @@ def infer_wall_mask(preview:Path,width:int,height:int)->tuple[np.ndarray,str]:
         raise DetectorUnavailable('Wall segmentation weights do not exist at the configured path.')
     try:
         model=_load_model(str(path))
-        results=model.predict(source=str(preview),device='cpu',verbose=False,conf=.3)
+        results=model.predict(source=str(preview),device='cpu',verbose=False,conf=.3,retina_masks=True)
     except Exception as exc:
         raise DetectorUnavailable('Wall-mask inference failed: '+type(exc).__name__) from exc
     if not results or results[0].masks is None:
         raise DetectorUnavailable('Checkpoint returned bounding boxes but no instance masks. Use a segmentation checkpoint with a wall class.')
     result=results[0]
+    if tuple(result.orig_shape)!=(height,width):
+        raise DetectorUnavailable('Segmentation result does not match the source raster dimensions.')
     names=result.names
     masks=result.masks.data.cpu().numpy()
+    if masks.ndim!=3 or masks.shape[1:]!=(height,width):
+        raise DetectorUnavailable('Segmentation masks are not in source coordinates; refusing to stretch padded masks.')
+    if result.boxes is None or len(masks)!=len(result.boxes):
+        raise DetectorUnavailable('Segmentation mask/object count mismatch.')
+    if not np.isfinite(masks).all() or np.any((masks<0)|(masks>1)):
+        raise DetectorUnavailable('Segmentation masks contain invalid values.')
     merged=np.zeros((height,width),dtype=np.uint8)
     wall_count=0
     for i,b in enumerate(result.boxes):
@@ -134,8 +142,6 @@ def infer_wall_mask(preview:Path,width:int,height:int)->tuple[np.ndarray,str]:
         label=str(names.get(cls,cls) if isinstance(names,dict) else names[cls]).lower()
         if label not in ('wall','walls'):continue
         candidate=masks[i]
-        if candidate.shape!=(height,width):
-            candidate=cv2.resize(candidate.astype('float32'),(width,height),interpolation=cv2.INTER_NEAREST)
         merged[candidate>.5]=255
         wall_count+=1
     if not wall_count:
