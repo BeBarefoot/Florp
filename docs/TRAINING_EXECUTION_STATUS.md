@@ -1,31 +1,29 @@
-# Training workflow implementation status — 29 October 2026
+# Training workflow execution — 29 October 2026
 
-This branch implements working annotation tooling but does not complete the training-readiness contract. It must not be presented as production-ready or as a measured detection improvement.
+Implemented for local macOS/CPU operation; no new pretrained accuracy claim is made.
 
-## Implemented
+## Delivered
 
-- Dataset workspace at `/dataset`, linked from home. Multiple-file upload uses existing project ingestion (PDF first page only).
-- Source-bound polygon masks for wall/door/window, vertex dragging, deletion and mask undo. Debounced annotation autosave, local recovery copy and optimistic server revision checks. Existing geometry editor remains separate.
-- Append-only SQLite annotation revisions in configured persistent storage. Incomplete drafts can save. Ready requires complete valid polygons, rights confirmation and distinct reviewer identities (self-reported; not authenticated).
-- Building group/split controls. Immutable dataset preparation invokes the existing validator: requires train/validation/test and rejects duplicate sources, leakage, invalid masks and hash mismatch.
-- Downloadable dataset snapshots. Annotation archive includes original/raster, annotation histories, layouts, graph revisions, candidate decisions and evaluation records with checksums. Clean-install restore and conflict/corruption rejection tested. It is not a full system backup: training runs/checkpoints/render assets/project metadata are not included. Restore spans two databases; crash-atomic recovery remains incomplete.
-- Background local training launcher with CPU/MPS selection, configured trusted local checkpoint, dataset/checkpoint identity validation, single-worker lock, persistent status and bounded log reads. It invokes the existing trainer and never promotes a model. This is not a durable queued scheduler; competing runs fail explicitly. Cancellation, optimizer resume and interrupted-machine recovery remain incomplete.
-- Opening-anchor reconciliation API and UI: attach a preserved legacy span to an explicit host or dismiss with a reason. The original evidence remains in revision operation history. Draft-only wall preview can bypass pending-opening rendering; default projection and graph application retain strict guards. No pending openings are silently rendered or discarded.
+- Source-bound dataset workspace, multipage PDF import with per-page retry checkpoints, image orientation normalization, whole-source polygon labeling, undo/redo, selection/vertex edits, zoom, calibration and review filters.
+- Automatic pretrained mask proposals and detector opening outlines. Original model evidence is stored separately. Predictions never overwrite corrections. Boxes remain review proposals, not verified training masks.
+- Dataset annotation, reconstructed wall topology, pixel-space opening spans and 3D projection saved together in one annotation revision. Overlapping footprint evidence can join corners; explicit opening masks can bridge a compatible host gap. Blank gaps are not forcibly closed. Complex footprints use the existing mask-topology decoder and remain flagged for review. The older project editor is retained for compatibility; its independent saved layouts are not silently migrated/overwritten.
+- Annotation revisions now reside in the application SQLite database, with guarded one-time migration from the earlier standalone workspace database. Revision/source mismatch guards remain active. Pending legacy openings have explicit attach/dismiss reconciliation and draft-only preview.
+- Immutable datasets with source hashes, complete review, group leakage and duplicate checks. Reviewer identities are self-reported attestations in this local application.
+- Training workers serialize locally, retain logs/state, support epoch-boundary cancellation and actual optimizer-checkpoint resume. Interrupted workers are detected by lock state. Restored jobs relocate local paths. No automatic production model promotion.
+- Automatic baseline/candidate comparison on validation masks after training, retaining raw predictions, per-class footprint precision/recall/IoU and mask-derived geometry metrics. Test cases are excluded from candidate selection. Independent structural truth and real test evaluation remain distinct from these derived scores.
+- Portable archives include original/page sources, historical records, annotations, model evidence, dataset snapshots, available training checkpoints and run logs. Restore rejects conflicts/checksum failures, relocates dataset paths, and restores annotation/structural records in one database transaction. A recovery journal cleans staged uncommitted files on restart. Automatic review-session archives retain two versions; manual backup remains available.
+- Operator instructions: TRAINING_OPERATOR_GUIDE.md.
 
-## Local validation
+## Validation evidence
 
-- Backend: `uv run --directory apps/api pytest -q`: **228 passed**, one pre-existing Starlette/httpx deprecation warning.
-- Browser: `npm run test:ui` in apps/web: **11 passed**. Browser tests use mocked API responses; API persistence and clean restore are separately covered by backend integration tests.
-- Frontend production build: successful before final server-only worker/test additions; final rebuild run recorded in session output.
-- `git diff --check`: passed.
-- No real pretrained training, Mac/MPS execution, 35-plan batch experiment, real-model accuracy benchmark or new measured detection accuracy result.
+Backend suite covers the new reconstruction, source coordinates, opening-only bridging, false-positive footprint scoring, pending-opening resolution, stale revisions, review gates, leak checks, clean restore, relocated snapshots/checkpoints, interrupted restore, training preflight/cancel/resume guards, prediction preservation, retry-safe two-page PDF import, and a synthetic 35-case import/annotation/dataset campaign.
 
-## Remaining contract work
+The browser suite covers mask autosave, rejected-ready preservation and previous editor/undo/opening behaviors. Its API responses are mocked; database persistence is separately tested through real API integration tests.
 
-A unified graph/mask editor and authoritative revision; lossless pixel-space opening migration and span editing; evidence-ranked semantic gap repair beyond short snapping; shared floor/opening topology; improved OCR dimension association; full multipage PDF/batch jobs; full mask redo/split/merge and zoom/pan; issue prioritization and coverage review; real-API browser acceptance; whole-system backup/restore and cross-database crash atomicity; resumable/cancellable resource-limited jobs; real Mac train/reload/infer smoke test; complete host/room/scale/automatic-repair metrics; frozen corpus evaluation; public-service hardening.
+See the PR/session for final test counts and CI outcomes. No real model dependencies/checkpoints are installed in this execution environment: real training, MPS execution, real-plan extraction accuracy, user correction time and production acceptance cannot be reported as tested. Synthetic 35-case acceptance is not an accuracy evaluation of 35 customer plans.
 
-The code preserves existing editor behavior instead of prematurely claiming the separate graph, draft and mask stores have been unified. Polygon editing is available to gather draft labels; do not claim that all operator/developer intervention has been eliminated. No additional user decision is needed to continue this engineering work.
+## Boundaries to preserve
 
-## Operator entry points
+Unknown metric scale does not prevent pixel labels; wall/window heights remain explicit draft defaults. Reconstructed room cycles and geometry are hypotheses, not independent structural gold. Complex wall masks and ambiguous opening hosts require review. Automatic OCR association is still the existing provisional estimator, not a new measured scale solution. The local app has no public multi-user security certification. Backup size limits and single-machine worker semantics are documented in the operator guide.
 
-Start existing API and web services, open Dataset from home, import/select a case, draw and correct true object footprints, assign building and split, save drafts, complete independent review, prepare a snapshot, download it, and launch a candidate run if configured. Set `WALL_SEGMENTATION_WEIGHTS` to a trusted licensed local segmentation checkpoint. CPU is the default; use MPS only on a compatible Mac. The launcher's runtime errors appear in the run log. Never mark incomplete labels Ready solely to make preparation succeed.
+These are product/validation boundaries, not evidence that a trained candidate is production-ready. Do not replace them with an assertion that passing CI proves perfect 2D or 3D extraction.

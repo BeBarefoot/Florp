@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sqlmodel import SQLModel, Session, create_engine, select
 from pydantic import BaseModel
-from PIL import Image
+from PIL import Image, ImageOps
 import fitz
 from .config import settings
 from .models import Project, Blueprint, Layout, Render, WallAnnotation, ModelWallCorrection, FusionCandidateReview, ExtractionEvaluation, PlanGraphRevision
@@ -32,7 +32,13 @@ if settings.database_url.startswith('sqlite:///'):
     Path(settings.database_url.removeprefix('sqlite:///')).parent.mkdir(parents=True,exist_ok=True)
 engine=create_engine(settings.database_url,connect_args={'check_same_thread':False} if settings.database_url.startswith('sqlite') else {})
 SQLModel.metadata.create_all(engine)
-app=FastAPI(title='Florp API',version='0.1.0')
+from contextlib import asynccontextmanager
+@asynccontextmanager
+async def lifespan(application):
+    from .dataset_workspace import recover_restore
+    recover_restore()
+    yield
+app=FastAPI(title='Florp API',version='0.1.0',lifespan=lifespan)
 app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origins.split(','),allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
 
 @app.get('/models/status')
@@ -103,7 +109,7 @@ async def upload(pid:str,file:UploadFile=File(...)):
             image=Image.open(io.BytesIO(pix.tobytes('png'))).convert('RGB')
         except Exception:raise HTTPException(422,'Could not read PDF')
     else:
-        try:image=Image.open(io.BytesIO(contents)).convert('RGB')
+        try:image=ImageOps.exif_transpose(Image.open(io.BytesIO(contents))).convert('RGB')
         except Exception:raise HTTPException(415,'Only PDF and common images are supported')
     if image.width*image.height>45_000_000:raise HTTPException(413,'Image pixel count too large')
     bp=Blueprint(project_id=pid,filename=(file.filename or 'plan')[:255],local_path='',preview_path='',width=image.width,height=image.height)
