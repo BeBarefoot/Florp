@@ -1,0 +1,619 @@
+{
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.39",
+  "python": "3.12.14",
+  "cpu": "x86_64",
+  "cpu_affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "effective_cpu_count": 8,
+  "opencv": "4.14.0",
+  "numpy": "2.5.4",
+  "tesseract_languages": [
+    "eng",
+    "osd"
+  ],
+  "budget_seconds": 3.5,
+  "measurement": "in-process warm and HTTP TestClient with a fresh isolated worker per request; includes import/startup/decode/OCR/vectors/PNG/SVG/DXF/ZIP, excludes network transfer and dependency install",
+  "cases": [
+    {
+      "name": "synthetic_2400x1600",
+      "source_sha256": "64f53ab62b186a52eca521303238e63b36292fbc32bb679e7ac880eb0d717043",
+      "source_size_px": [
+        2400,
+        1600
+      ],
+      "results": [
+        {
+          "ocr_enabled": false,
+          "first_direct_seconds": 1.2433022650002385,
+          "warm_pipeline": {
+            "seconds": [
+              1.0342572560002736,
+              1.0455770779999511,
+              1.0675797670000975,
+              1.0076856129999214,
+              1.029850515000362
+            ],
+            "min": 1.0076856129999214,
+            "median": 1.0342572560002736,
+            "p95": 1.0631792292000681,
+            "max": 1.0675797670000975
+          },
+          "isolated_worker_http": {
+            "seconds": [
+              2.0599175380002634,
+              2.082503397000437,
+              1.698169577999579,
+              1.7135104740000315,
+              1.40754323299916
+            ],
+            "min": 1.40754323299916,
+            "median": 1.7135104740000315,
+            "p95": 2.0779862252004024,
+            "max": 2.082503397000437
+          },
+          "http_failures": [],
+          "stages_seconds_each_worker": [
+            {
+              "decode": 0.173845,
+              "normalize": 0.013567,
+              "ocr": 1.3e-05,
+              "calibration": 0.007316,
+              "masks": 1.009135,
+              "vectors_and_classification": 0.075267,
+              "render_and_cad_encode": 0.278241,
+              "zip_encode": 0.000923
+            },
+            {
+              "decode": 0.165057,
+              "normalize": 0.023894,
+              "ocr": 1.5e-05,
+              "calibration": 0.00976,
+              "masks": 1.18624,
+              "vectors_and_classification": 0.045628,
+              "render_and_cad_encode": 0.146418,
+              "zip_encode": 0.001308
+            },
+            {
+              "decode": 0.172559,
+              "normalize": 0.017491,
+              "ocr": 1.4e-05,
+              "calibration": 0.006632,
+              "masks": 0.939756,
+              "vectors_and_classification": 0.037094,
+              "render_and_cad_encode": 0.136639,
+              "zip_encode": 0.001423
+            },
+            {
+              "decode": 0.132131,
+              "normalize": 0.013582,
+              "ocr": 5.6e-05,
+              "calibration": 0.006649,
+              "masks": 0.934094,
+              "vectors_and_classification": 0.055535,
+              "render_and_cad_encode": 0.134539,
+              "zip_encode": 0.001017
+            },
+            {
+              "decode": 0.139041,
+              "normalize": 0.01451,
+              "ocr": 1.5e-05,
+              "calibration": 0.006394,
+              "masks": 0.734793,
+              "vectors_and_classification": 0.034054,
+              "render_and_cad_encode": 0.097975,
+              "zip_encode": 0.000848
+            }
+          ],
+          "sample_warnings": [
+            "page_boundary_not_detected: no homography applied; flat, top-down input is assumed",
+            "ocr_disabled",
+            "Exterior labels use a provisional closed-envelope band; inferred bridges are never exported as walls",
+            "color_semantics_unverified: identical colors can represent walls, annotations or site objects",
+            "not_survey_grade: source resolution, perspective and calibration limit accuracy",
+            "scale_requires_confirmation: assumed_not_measured"
+          ],
+          "scale_source": "explicit_default",
+          "pass": true
+        },
+        {
+          "ocr_enabled": true,
+          "first_direct_seconds": 1.3469680119997065,
+          "warm_pipeline": {
+            "seconds": [
+              1.3313802470001974,
+              1.4350076709997666,
+              1.3328069509998386,
+              1.5711075070003062,
+              1.763664123000126
+            ],
+            "min": 1.3313802470001974,
+            "median": 1.4350076709997666,
+            "p95": 1.725152799800162,
+            "max": 1.763664123000126
+          },
+          "isolated_worker_http": {
+            "seconds": [
+              2.6993039420003697,
+              1.7650340010004584,
+              1.7838955100005478,
+              1.8080106769994018,
+              1.747966832000202
+            ],
+            "min": 1.747966832000202,
+            "median": 1.7838955100005478,
+            "p95": 2.5210452890001758,
+            "max": 2.6993039420003697
+          },
+          "http_failures": [],
+          "stages_seconds_each_worker": [
+            {
+              "decode": 0.37575,
+              "normalize": 0.034888,
+              "ocr": 0.451561,
+              "calibration": 0.044549,
+              "masks": 1.121728,
+              "vectors_and_classification": 0.04037,
+              "render_and_cad_encode": 0.122951,
+              "zip_encode": 0.001108
+            },
+            {
+              "decode": 0.136774,
+              "normalize": 0.018141,
+              "ocr": 0.258923,
+              "calibration": 0.018738,
+              "masks": 0.837269,
+              "vectors_and_classification": 0.035425,
+              "render_and_cad_encode": 0.116897,
+              "zip_encode": 0.000994
+            },
+            {
+              "decode": 0.136186,
+              "normalize": 0.01181,
+              "ocr": 0.271769,
+              "calibration": 0.024152,
+              "masks": 0.857876,
+              "vectors_and_classification": 0.033353,
+              "render_and_cad_encode": 0.101641,
+              "zip_encode": 0.001196
+            },
+            {
+              "decode": 0.155031,
+              "normalize": 0.016255,
+              "ocr": 0.377047,
+              "calibration": 0.021582,
+              "masks": 0.785085,
+              "vectors_and_classification": 0.024757,
+              "render_and_cad_encode": 0.096213,
+              "zip_encode": 0.000854
+            },
+            {
+              "decode": 0.142509,
+              "normalize": 0.013325,
+              "ocr": 0.24957,
+              "calibration": 0.019414,
+              "masks": 0.848746,
+              "vectors_and_classification": 0.031474,
+              "render_and_cad_encode": 0.104413,
+              "zip_encode": 0.000968
+            }
+          ],
+          "sample_warnings": [
+            "page_boundary_not_detected: no homography applied; flat, top-down input is assumed",
+            "ocr_language_unavailable: heb",
+            "Exterior labels use a provisional closed-envelope band; inferred bridges are never exported as walls",
+            "color_semantics_unverified: identical colors can represent walls, annotations or site objects",
+            "not_survey_grade: source resolution, perspective and calibration limit accuracy",
+            "scale_requires_confirmation: provisional_verify_reference"
+          ],
+          "scale_source": "ocr_witness_consensus",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "name": "Screenshot 2026-10-24 at 21.51.52.png",
+      "source_sha256": "764b243c8a44882502e68c47621a8688c0249c45c114e5860f5d1bd32e436485",
+      "source_size_px": [
+        1306,
+        408
+      ],
+      "results": [
+        {
+          "ocr_enabled": false,
+          "first_direct_seconds": 0.3463335980004558,
+          "warm_pipeline": {
+            "seconds": [
+              0.31111590300042735,
+              0.2982340190001196,
+              0.3135664749997886,
+              0.3190176080006495,
+              0.4098137360006149
+            ],
+            "min": 0.2982340190001196,
+            "median": 0.3135664749997886,
+            "p95": 0.39165451040062177,
+            "max": 0.4098137360006149
+          },
+          "isolated_worker_http": {
+            "seconds": [
+              0.7062385239996729,
+              0.7016241100000116,
+              0.8026114290005353,
+              0.8677780319994781,
+              0.7376301509993937
+            ],
+            "min": 0.7016241100000116,
+            "median": 0.7376301509993937,
+            "p95": 0.8547447113996895,
+            "max": 0.8677780319994781
+          },
+          "http_failures": [],
+          "stages_seconds_each_worker": [
+            {
+              "decode": 0.035374,
+              "normalize": 0.045236,
+              "ocr": 1.1e-05,
+              "calibration": 0.001013,
+              "masks": 0.168777,
+              "vectors_and_classification": 0.084468,
+              "render_and_cad_encode": 0.044114,
+              "zip_encode": 0.0022
+            },
+            {
+              "decode": 0.040888,
+              "normalize": 0.057839,
+              "ocr": 2e-05,
+              "calibration": 0.001204,
+              "masks": 0.130667,
+              "vectors_and_classification": 0.083513,
+              "render_and_cad_encode": 0.044366,
+              "zip_encode": 0.002597
+            },
+            {
+              "decode": 0.045991,
+              "normalize": 0.058221,
+              "ocr": 1.2e-05,
+              "calibration": 0.002973,
+              "masks": 0.148339,
+              "vectors_and_classification": 0.111031,
+              "render_and_cad_encode": 0.062393,
+              "zip_encode": 0.002874
+            },
+            {
+              "decode": 0.057398,
+              "normalize": 0.077857,
+              "ocr": 1.7e-05,
+              "calibration": 0.000998,
+              "masks": 0.147028,
+              "vectors_and_classification": 0.103152,
+              "render_and_cad_encode": 0.051288,
+              "zip_encode": 0.0043
+            },
+            {
+              "decode": 0.055951,
+              "normalize": 0.055676,
+              "ocr": 1.5e-05,
+              "calibration": 0.001256,
+              "masks": 0.133624,
+              "vectors_and_classification": 0.084413,
+              "render_and_cad_encode": 0.04769,
+              "zip_encode": 0.002389
+            }
+          ],
+          "sample_warnings": [
+            "page_boundary_not_detected: no homography applied; flat, top-down input is assumed",
+            "ocr_disabled",
+            "Exterior labels use a provisional closed-envelope band; inferred bridges are never exported as walls",
+            "color_semantics_unverified: identical colors can represent walls, annotations or site objects",
+            "not_survey_grade: source resolution, perspective and calibration limit accuracy",
+            "scale_requires_confirmation: assumed_not_measured",
+            "unsafe_snaps_rejected: 9"
+          ],
+          "scale_source": "explicit_default",
+          "pass": true
+        },
+        {
+          "ocr_enabled": true,
+          "first_direct_seconds": 0.7727820710006199,
+          "warm_pipeline": {
+            "seconds": [
+              0.7389698160004627,
+              0.7984462720005467,
+              0.7563976960000218,
+              0.7810325820000799,
+              1.0428897439996945
+            ],
+            "min": 0.7389698160004627,
+            "median": 0.7810325820000799,
+            "p95": 0.9940010495998649,
+            "max": 1.0428897439996945
+          },
+          "isolated_worker_http": {
+            "seconds": [
+              1.2233680579993234,
+              1.2652081289998023,
+              1.2515987730002962,
+              1.2121064780003508,
+              1.2044248809997953
+            ],
+            "min": 1.2044248809997953,
+            "median": 1.2233680579993234,
+            "p95": 1.262486257799901,
+            "max": 1.2652081289998023
+          },
+          "http_failures": [],
+          "stages_seconds_each_worker": [
+            {
+              "decode": 0.042054,
+              "normalize": 0.051953,
+              "ocr": 0.586406,
+              "calibration": 0.008311,
+              "masks": 0.120447,
+              "vectors_and_classification": 0.076049,
+              "render_and_cad_encode": 0.041805,
+              "zip_encode": 0.002872
+            },
+            {
+              "decode": 0.03843,
+              "normalize": 0.05096,
+              "ocr": 0.579951,
+              "calibration": 0.008753,
+              "masks": 0.172136,
+              "vectors_and_classification": 0.0698,
+              "render_and_cad_encode": 0.040888,
+              "zip_encode": 0.002817
+            },
+            {
+              "decode": 0.038035,
+              "normalize": 0.067274,
+              "ocr": 0.599138,
+              "calibration": 0.007878,
+              "masks": 0.120253,
+              "vectors_and_classification": 0.076943,
+              "render_and_cad_encode": 0.040949,
+              "zip_encode": 0.003055
+            },
+            {
+              "decode": 0.035402,
+              "normalize": 0.050271,
+              "ocr": 0.569242,
+              "calibration": 0.008798,
+              "masks": 0.124172,
+              "vectors_and_classification": 0.075369,
+              "render_and_cad_encode": 0.039843,
+              "zip_encode": 0.003174
+            },
+            {
+              "decode": 0.035662,
+              "normalize": 0.048736,
+              "ocr": 0.530295,
+              "calibration": 0.025502,
+              "masks": 0.154972,
+              "vectors_and_classification": 0.070383,
+              "render_and_cad_encode": 0.042911,
+              "zip_encode": 0.002497
+            }
+          ],
+          "sample_warnings": [
+            "page_boundary_not_detected: no homography applied; flat, top-down input is assumed",
+            "ocr_language_unavailable: heb",
+            "Exterior labels use a provisional closed-envelope band; inferred bridges are never exported as walls",
+            "color_semantics_unverified: identical colors can represent walls, annotations or site objects",
+            "not_survey_grade: source resolution, perspective and calibration limit accuracy",
+            "scale_requires_confirmation: assumed_not_measured",
+            "unsafe_snaps_rejected: 9"
+          ],
+          "scale_source": "explicit_default",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "name": "Screenshot 2026-10-25 at 8.28.17.png",
+      "source_sha256": "38fa5011aa0f72777610e3641d8c404f0a7253c94f0ff4a1e4ac6b88d5696dc4",
+      "source_size_px": [
+        992,
+        440
+      ],
+      "results": [
+        {
+          "ocr_enabled": false,
+          "first_direct_seconds": 0.23046487200008414,
+          "warm_pipeline": {
+            "seconds": [
+              0.21314984499986167,
+              0.21431860699976824,
+              0.27054687600048055,
+              0.24189569700047286,
+              0.21680472299976827
+            ],
+            "min": 0.21314984499986167,
+            "median": 0.21680472299976827,
+            "p95": 0.264816640200479,
+            "max": 0.27054687600048055
+          },
+          "isolated_worker_http": {
+            "seconds": [
+              0.6715700739996464,
+              0.6453333299996302,
+              0.5867232979999244,
+              0.5895452449994991,
+              0.6646475729994563
+            ],
+            "min": 0.5867232979999244,
+            "median": 0.6453333299996302,
+            "p95": 0.6701855737996084,
+            "max": 0.6715700739996464
+          },
+          "http_failures": [],
+          "stages_seconds_each_worker": [
+            {
+              "decode": 0.037173,
+              "normalize": 0.04746,
+              "ocr": 1.6e-05,
+              "calibration": 0.000932,
+              "masks": 0.124645,
+              "vectors_and_classification": 0.052166,
+              "render_and_cad_encode": 0.038537,
+              "zip_encode": 0.00195
+            },
+            {
+              "decode": 0.032866,
+              "normalize": 0.054402,
+              "ocr": 1.2e-05,
+              "calibration": 0.002331,
+              "masks": 0.130586,
+              "vectors_and_classification": 0.037495,
+              "render_and_cad_encode": 0.030678,
+              "zip_encode": 0.001734
+            },
+            {
+              "decode": 0.031549,
+              "normalize": 0.053667,
+              "ocr": 1.3e-05,
+              "calibration": 0.003433,
+              "masks": 0.127896,
+              "vectors_and_classification": 0.043382,
+              "render_and_cad_encode": 0.026123,
+              "zip_encode": 0.001809
+            },
+            {
+              "decode": 0.03477,
+              "normalize": 0.047006,
+              "ocr": 1.4e-05,
+              "calibration": 0.001138,
+              "masks": 0.124464,
+              "vectors_and_classification": 0.048864,
+              "render_and_cad_encode": 0.026597,
+              "zip_encode": 0.001882
+            },
+            {
+              "decode": 0.048896,
+              "normalize": 0.089511,
+              "ocr": 6.5e-05,
+              "calibration": 0.001715,
+              "masks": 0.116773,
+              "vectors_and_classification": 0.044221,
+              "render_and_cad_encode": 0.028921,
+              "zip_encode": 0.002553
+            }
+          ],
+          "sample_warnings": [
+            "page_boundary_not_detected: no homography applied; flat, top-down input is assumed",
+            "ocr_disabled",
+            "Exterior labels use a provisional closed-envelope band; inferred bridges are never exported as walls",
+            "color_semantics_unverified: identical colors can represent walls, annotations or site objects",
+            "not_survey_grade: source resolution, perspective and calibration limit accuracy",
+            "scale_requires_confirmation: assumed_not_measured",
+            "unsafe_snaps_rejected: 4"
+          ],
+          "scale_source": "explicit_default",
+          "pass": true
+        },
+        {
+          "ocr_enabled": true,
+          "first_direct_seconds": 1.0038614439999947,
+          "warm_pipeline": {
+            "seconds": [
+              0.7004493829999774,
+              0.652021980000427,
+              0.7800591579998581,
+              1.159819793000679,
+              1.0379772539999976
+            ],
+            "min": 0.652021980000427,
+            "median": 0.7800591579998581,
+            "p95": 1.1354512852005427,
+            "max": 1.159819793000679
+          },
+          "isolated_worker_http": {
+            "seconds": [
+              2.0109495319993584,
+              0.9656536150005195,
+              1.2695538079997277,
+              1.176638326000102,
+              1.1835056579993761
+            ],
+            "min": 0.9656536150005195,
+            "median": 1.1835056579993761,
+            "p95": 1.8626703871994321,
+            "max": 2.0109495319993584
+          },
+          "http_failures": [],
+          "stages_seconds_each_worker": [
+            {
+              "decode": 0.053549,
+              "normalize": 0.045186,
+              "ocr": 1.233458,
+              "calibration": 0.007719,
+              "masks": 0.17582,
+              "vectors_and_classification": 0.085941,
+              "render_and_cad_encode": 0.053311,
+              "zip_encode": 0.001966
+            },
+            {
+              "decode": 0.029685,
+              "normalize": 0.064817,
+              "ocr": 0.373126,
+              "calibration": 0.0036,
+              "masks": 0.11931,
+              "vectors_and_classification": 0.049587,
+              "render_and_cad_encode": 0.026723,
+              "zip_encode": 0.00208
+            },
+            {
+              "decode": 0.057061,
+              "normalize": 0.065433,
+              "ocr": 0.578195,
+              "calibration": 0.004292,
+              "masks": 0.111778,
+              "vectors_and_classification": 0.062622,
+              "render_and_cad_encode": 0.055151,
+              "zip_encode": 0.002566
+            },
+            {
+              "decode": 0.028922,
+              "normalize": 0.047798,
+              "ocr": 0.619093,
+              "calibration": 0.003883,
+              "masks": 0.110535,
+              "vectors_and_classification": 0.034829,
+              "render_and_cad_encode": 0.032333,
+              "zip_encode": 0.002483
+            },
+            {
+              "decode": 0.028158,
+              "normalize": 0.044088,
+              "ocr": 0.646173,
+              "calibration": 0.003798,
+              "masks": 0.11619,
+              "vectors_and_classification": 0.034526,
+              "render_and_cad_encode": 0.025673,
+              "zip_encode": 0.002026
+            }
+          ],
+          "sample_warnings": [
+            "page_boundary_not_detected: no homography applied; flat, top-down input is assumed",
+            "ocr_language_unavailable: heb",
+            "Exterior labels use a provisional closed-envelope band; inferred bridges are never exported as walls",
+            "color_semantics_unverified: identical colors can represent walls, annotations or site objects",
+            "not_survey_grade: source resolution, perspective and calibration limit accuracy",
+            "scale_requires_confirmation: assumed_not_measured",
+            "unsafe_snaps_rejected: 4"
+          ],
+          "scale_source": "explicit_default",
+          "pass": true
+        }
+      ]
+    }
+  ],
+  "pass": true
+}
