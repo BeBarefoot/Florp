@@ -1,25 +1,48 @@
-# Florp dataset and training workflow
+# Florp Training & Annotation Standard Operating Procedure (SOP)
 
-## Start
+## 1. System Setup & Initialization
 
-Run the API and web app using LOCAL_DEV.md. Open **Dataset** on the home screen. Configure your trusted local segmentation checkpoint in `WALL_SEGMENTATION_WEIGHTS` and install the optional runtime with `uv sync --extra pretrained-yolo` in apps/api. Keep model/data permissions appropriate to your use. No checkpoints are downloaded implicitly. MPS needs a compatible Mac; CPU is available for a small smoke run.
+- **Environment Startup:** Launch the API and web app following local development guidelines. Ensure your trusted local segmentation checkpoint is specified in `WALL_SEGMENTATION_WEIGHTS`.
+- **Runtime Installation:** Install optional runtime dependencies using `uv sync --extra pretrained-yolo`. Confirm that model and data permissions are correctly set. Note that no checkpoints are downloaded implicitly.
+- **Hardware Requirements:** Apple Silicon Macs with unified memory require a compatible MPS environment; standard CPU execution is available for small smoke tests.
 
-## Review a collection
+## 2. Importing and Managing Blueprints
 
-1. Import PNGs/images or multipage PDFs. Every PDF page is a case. If interrupted, reimport the identical file: completed pages are retained. Errors identify the failed file.
-2. Select a case and choose **Extract model proposals**. This captures original mask/detector evidence without replacing existing annotations. If the model is unavailable, configure it or draw labels directly. Door/window boxes are initial outlines; edit them into the physical opening footprint, excluding swing arcs.
-3. Review the whole source, not only model proposals. Choose Wall, Door or Window, click polygon vertices and Finish polygon. Select a mask to drag its vertices; delete false objects. Undo/Redo support polygon operations. Zoom and scroll to inspect small details. Split bent footprints into straight wall instances where practical; complex masks are decoded by the mask-topology engine and flagged for inspection. No unsupported blank gaps are filled merely to close a room.
-4. Autosave acknowledges a server revision. Local recovery retains pending mask edits; leave the tab open until Saved before changing devices. Source hash and revision guards reject stale writes. Fix invalid polygons when indicated. Use **Calibrate known length** only if needed: click two known points, enter meters and confirm. Unknown scale does not prevent mask annotation. Opening spans are retained in pixels until scale is available. Heights use explicit draft defaults.
-5. Inspect the 3D preview from the same saved annotation revision. It remains a draft, not a measurement certificate. The older project editor remains available for existing projects; dataset annotations do not silently overwrite saved layouts.
-6. Assign the real building group so related floors/scans stay together. Set train/validation/test. For 30 independent buildings, start with 15 train, 5 validation and 10 test; additional examples improve statistical confidence. Confirm rights, record the author and independent reviewer, then mark Ready only after complete source review. A second name is an attestation, not an authenticated identity. Never invent a second reviewer.
-7. Download a backup after each review session. Archives include original/page sources, histories, model evidence, dataset snapshots, training logs and available weights. Restore into a clean installation; existing cases/files are not overwritten. Keep a second copy outside the machine. Archives are limited to 2 GiB compressed / 4 GiB expanded; larger corpora need external storage/partitioning. Keep trusted checkpoints private.
+1. **Source Ingestion:** Import floor plan PNGs, images, or multi-page PDFs. Every page of a PDF is treated as an independent case.
+2. **Resilience & Error Handling:** If an import is interrupted, re-importing the identical file will safely retain already completed pages. Any error logs will specifically identify the failed file.
 
-## Train and compare
+## 3. Model Proposal Extraction & Manual Annotation
 
-1. Prepare a snapshot. The builder refuses missing splits, duplicate sources, building leakage, incomplete reviews or malformed labels. Draft cases stay preserved but are excluded. Snapshots never change when later annotations change.
-2. Choose device, epoch budget, batch size and seed, then Train candidate. Start with batch 1 on Mac and perform a small smoke run before a long experiment. The local worker serializes training. It survives an API restart, and stores status/logs before loading the model.
-3. Read logs and refresh jobs. Stop requests are cooperative at epoch boundaries. Resume is available only when a saved optimizer checkpoint exists; it uses `last.pt`, not a fresh weights-only restart. A machine interruption is reported as interrupted after the worker lock is released. Resume after restart; if no checkpoint exists, start a new run.
-4. Completed runs compare the initial checkpoint and best candidate against the validation split, saving per-case predictions and mask precision/recall/IoU plus geometry comparison. Inspect false positives and false negatives. Model outputs are never automatically promoted. A failed validation comparison appears as a failed job with its retained training artifacts.
-5. Try several seeds and tune only on training/validation. Freeze the chosen candidate before running the separate held-out release evaluator described in PRODUCTION_2D_PROCEDURE.md. The validation report's graph references are derived from masks; independent reviewed structure, opening hosts, scale and timing are still required for a production accuracy claim. Test results cannot honestly be supplied before the real corpus is annotated and evaluated.
+1. **Generate Proposals:** Select a case and click **Extract Model Proposals**. This captures original mask and detector evidence without overwriting any existing human annotations. If model weights are unavailable, configure the path or proceed with direct manual labeling.
+2. **Opening Footprints:** Door and window bounding boxes serve as initial coarse outlines. Operators must refine them into the exact physical opening footprint, explicitly excluding swing arcs.
+3. **Comprehensive Review:** Inspect the entire source plan, not just model proposals. Select *Wall*, *Door*, or *Window*, click polygon vertices sequentially, and select **Finish Polygon**. Click any existing mask to drag and adjust vertices, or delete false-positive objects. Undo and Redo are fully supported for all polygon operations.
+4. **Complex Structures & Gaps:** Split bent or concave footprints into straight wall instances wherever practical. Complex masks are decoded automatically by the mask-topology engine and flagged for manual review. **Never** fill unsupported blank gaps solely to artificially close a room boundary.
+5. **Scale Calibration:** Use **Calibrate Known Length** only when physical scale is required: click two known reference points, enter the real-world distance in meters, and confirm. Operating without a known scale is fully supported for mask annotation (opening spans remain in pixels until calibrated). Heights rely on explicit draft defaults.
 
-No new real-model accuracy is implied by passing software tests. Mac/MPS runtime and model quality must be observed on your hardware and actual plans. The local app is not a publicly hardened multi-user service.
+## 4. Saving and Revision Control
+
+- **Autosave & Recovery:** Autosave confirms successful server revisions. Local browser recovery retains pending mask modifications; keep the browser tab open until the status explicitly reads **Saved** before switching devices.
+- **Integrity Guards:** Source hashes and revision controls reject stale writes. Operators must fix any flagged invalid polygons before proceeding.
+- **3D Preview Verification:** Inspect the 3D preview derived from the current saved annotation revision. Note that this view represents an active draft and is not a certified architectural measurement. The legacy project editor remains accessible for older projects, and dataset annotations never silently overwrite saved layouts.
+
+## 5. Dataset Curation & Quality Assurance
+
+1. **Building Grouping:** Assign a real building group ID to ensure related floors and scans stay grouped together.
+2. **Split Allocation:** Designate the split (`training`, `validation`, or `test`). For a baseline corpus of 30 independent buildings, target an initial distribution of 15 train, 5 validation, and 10 test examples. Scale up counts to improve statistical confidence.
+3. **Attestation & Readiness:** Confirm rights, record the primary author and the independent reviewer, and select **Mark Ready** only after a complete, exhaustive source review.
+
+> *Note:* Recording a second reviewer's name serves as an administrative attestation, not an authenticated cryptographic identity. **Never fabricate a second reviewer.**
+
+## 6. Backup & Archiving
+
+- **Session Backups:** Download a full backup archive after each review session. Archives bundle original sources, page histories, model evidence, dataset snapshots, training logs, and available weights.
+- **Restoration:** Restoring into a clean installation will not overwrite existing cases or local files. Always maintain a secondary backup copy outside the primary machine. Archives are capped at 2 GiB compressed / 4 GiB expanded; larger corpora require external storage partitioning. Keep trusted checkpoints strictly private.
+
+## 7. Model Training & Comparison Workflow
+
+1. **Snapshot Preparation:** Generate a training snapshot. The builder will automatically reject missing splits, duplicate sources, building data leakage, incomplete reviews, or malformed labels. Draft cases are preserved in the workspace but excluded from training. Snapshots remain immutable even if subsequent annotations are modified later.
+2. **Job Configuration:** Select your target device, epoch budget, batch size, and random seed, then click **Train Candidate**. On macOS, start with a batch size of 1 and execute a short smoke run before launching long training jobs.
+3. **Worker Persistence:** The local worker serializes training tasks. It survives API restarts and persists status/logs prior to model loading. Stop requests are cooperative and process cleanly at epoch boundaries.
+4. **Resuming Training:** Job resumption requires a saved optimizer checkpoint (`last.pt`), rather than a fresh weights-only restart. If a machine interruption occurs, the job status reports as interrupted once the worker lock releases; resume from the checkpoint or start a new run if no checkpoint exists.
+5. **Validation & Evaluation:** Completed runs compare the baseline checkpoint against the best candidate using the validation split, recording per-case predictions, mask precision/recall/IoU, and geometry metrics. Inspect false positives and false negatives thoroughly. Model outputs are never automatically promoted.
+6. **Production Release:** Experiment with multiple seeds, tuning exclusively on training and validation data. Freeze your chosen candidate before running the separate held-out release evaluator.

@@ -9,3 +9,11 @@
 .plan-editor main{padding:20px}.plan-editor aside{width:230px;flex-shrink:0}.plan-editor summary{cursor:pointer;padding:8px 0;font-weight:600}.plan-editor .annotation-workspace{grid-template-columns:minmax(0,1fr) minmax(230px,280px)}.plan-editor .canvas{min-height:340px}.plan-editor header{margin-bottom:12px}@media(max-width:1000px){.plan-editor .annotation-workspace{grid-template-columns:1fr}.plan-editor aside{width:100%}.plan-editor{display:block}}
 
 .plan-editor header{flex-wrap:wrap;gap:12px}.plan-editor header>div{max-width:100%;min-width:0}
+
+/* Dataset review: independently scrollable canvas and inspection. */
+.dataset-workspace{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:16px;align-items:start;margin:16px 0}
+.dataset-viewer{min-width:0}.dataset-viewport{height:min(68vh,760px);min-height:320px;overflow:auto;overscroll-behavior:contain;border:1px solid #d6dfe7;border-radius:12px;background:#e9edf1}
+.dataset-viewport svg{display:block}.dataset-inspection{background:#f6f8fa;color:#182435;border:1px solid #d6dfe7;border-radius:12px;padding:14px;position:static}
+.dataset-inspection summary{cursor:pointer;font-weight:700}.dataset-issue-list{max-height:54vh;overflow:auto;display:grid;gap:6px;margin-top:12px}.dataset-issue-list button{background:#e8eef2;color:#24384b;text-align:left;font-size:.85rem;padding:9px}
+.dataset-global,.dataset-drawing{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.dataset-drawing{background:#edf2f3;padding:10px;border-radius:10px}.app>aside details{margin:12px 0;padding:10px 0;border-top:1px solid #354053}.app>aside summary{cursor:pointer;font-weight:700}.app>aside details label{display:block;margin:10px 0}.app>aside details input,.app>aside details select{max-width:100%}
+@media(max-width:900px){.dataset-workspace{grid-template-columns:1fr}.dataset-inspection{order:-1}.dataset-viewport{height:55vh}}
