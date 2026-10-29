@@ -41,3 +41,12 @@ def test_bent_footprint_does_not_become_diagonal_bounding_box():
     result=reconstruct([wall],150,120,50)
     assert result['geometry']['walls']
     assert all(abs(w['start']['x']-w['end']['x'])<1 or abs(w['start']['y']-w['end']['y'])<1 for w in result['geometry']['walls'])
+
+def test_regional_warnings_keep_members_and_filter_only_noise():
+    from app.inspection_issues import regional_issues
+    objects=[mask('wall',10,10,20,20),mask('wall',12,10,22,20),mask('wall',60,10,70,20),mask('wall',1,1,2,2)]
+    issues=[{'kind':'complex_wall_mask','object':i} for i in range(4)]
+    regions,suppressed=regional_issues(issues,objects)
+    assert len(regions)==2 and regions[0]['objects']==[0,1]
+    assert regions[1]['objects']==[2] and suppressed==1
+    assert len(objects)==4

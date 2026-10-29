@@ -17,3 +17,15 @@
 .dataset-inspection summary{cursor:pointer;font-weight:700}.dataset-issue-list{max-height:54vh;overflow:auto;display:grid;gap:6px;margin-top:12px}.dataset-issue-list button{background:#e8eef2;color:#24384b;text-align:left;font-size:.85rem;padding:9px}
 .dataset-global,.dataset-drawing{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.dataset-drawing{background:#edf2f3;padding:10px;border-radius:10px}.app>aside details{margin:12px 0;padding:10px 0;border-top:1px solid #354053}.app>aside summary{cursor:pointer;font-weight:700}.app>aside details label{display:block;margin:10px 0}.app>aside details input,.app>aside details select{max-width:100%}
 @media(max-width:900px){.dataset-workspace{grid-template-columns:1fr}.dataset-inspection{order:-1}.dataset-viewport{height:55vh}}
+/* Canvas-first workspace inspired by the selected layout concept. */
+.app:has(.dataset-workspace){background:#f5f7f9}
+.app:has(.dataset-workspace)>aside{background:#f8fafb;color:#263445;border-right:1px solid #dce3e8}
+.app:has(.dataset-workspace)>aside details{border-color:#dce3e8;background:white;padding:12px;border-radius:10px}
+.app:has(.dataset-workspace)>aside a{color:#176c60}
+.dataset-workspace{grid-template-columns:minmax(0,1fr) minmax(240px,290px)}
+.dataset-viewport{background:#eef2f4;box-shadow:0 2px 10px #142c3810}
+.dataset-inspection{width:auto;background:white;box-shadow:0 2px 10px #142c3810;max-height:70vh;overflow:auto}
+.dataset-inspection h2{margin:0 0 8px}.dataset-inspection details details{padding:10px 0;border-top:1px solid #e5eaee}.dataset-inspection details details summary{font-size:.9rem}
+.selected-region{background:#edf7f3;padding:12px;margin:12px 0;border-radius:8px}.selected-region button{margin:3px;font-size:.8rem}
+.issue-pagination{display:flex;align-items:center;justify-content:space-between;gap:4px;font-size:.8rem}.issue-pagination button{padding:6px}
+@media(max-width:900px){.dataset-workspace{grid-template-columns:1fr}.dataset-inspection{max-height:40vh}}

@@ -96,4 +96,6 @@ def reconstruct(objects,width,height,ppm=None):
         issues.append({'kind':'opening_span_crosses_junction','object':int(pending.id.split('-')[-1]),'message':'Opening spans multiple host edges; inspect the source and split/correct the footprint.'})
     # Room cycles are hypotheses; metric preview never silently verifies them.
     projected=to_geometry(plan,include_derived_rooms=True,draft_preview=True)
-    return {'geometry':projected.model_dump(mode='json'),'pixel_openings':pixel_openings,'issues':issues,'canonical_plan':plan.model_dump(mode='json')}
+    from .inspection_issues import regional_issues
+    regions,suppressed=regional_issues(issues,objects)
+    return {'geometry':projected.model_dump(mode='json'),'pixel_openings':pixel_openings,'issues':regions,'suppressed_noise_count':suppressed,'canonical_plan':plan.model_dump(mode='json')}
