@@ -151,3 +151,13 @@ is claimed. See PRODUCTION_2D_PROCEDURE.md for commands and remaining gates.
   adjacent boundary inspector. Fixture is synthetic, not a measured extraction.
 - No-op endpoint movement preserves the existing draft object and room faces.
 - Existing empirical/training and production-readiness limitations still apply.
+
+## 2026-10-29: native source-mask alignment
+
+The optional Ultralytics mask adapter requests source-resolution masks and rejects
+padded/wrong-sized/nonfinite/mismatched mask results instead of stretching them.
+Six adapter regression cases use a model double, including an exact non-square
+occupied-pixel comparison. Complete backend suite: **222 passed**, one existing
+Starlette warning; Python compilation and diff checks passed. Real checkpoint
+inference remains unexecuted. Native masks may use more memory on large rasters;
+profile the target corpus before production rollout. Yytsi is unchanged.

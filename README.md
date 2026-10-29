@@ -2,10 +2,24 @@
 
 **Status:** working local-first **Milestone 1 engineering scaffold**, not a completed photorealistic generation product. No secret tokens are included.
 
+## Current 2D workflow
+
+Extract → review model candidates → apply reviewed walls/openings → inspect
+**Rooms & gaps** → confirm scale/dimensions → save. Training is a separate
+workflow under **Training & evaluation**, not a requirement for everyday editing.
+Pull latest main and restart both servers to see these changes in a local install.
+
+- [Exact training and production-readiness procedure](docs/PRODUCTION_2D_PROCEDURE.md)
+- [Validation results and remaining empirical gates](docs/VALIDATION_RESULTS.md)
+- [Spatial review implementation and acceptance plan](docs/SPATIAL_REVIEW_PLAN.md)
+
+The later milestone sections record historical behavior; the current procedure
+above supersedes their old starter-outline and workflow instructions.
+
 ## What works now
 - Create local projects and upload PNG/JPEG or first-page PDFs.
 - Store originals and previews locally; persist project, blueprint and layout versions in SQLite.
-- See an explicitly unverified starter geometry overlay, drag room vertices, set scale and save drafts.
+- Start from an empty draft; extract and review walls/openings on the source plan. Select enclosed regions and loose endpoints, edit shared junctions, undo/redo, and save versions.
 - Run **real** LLM image-to-JSON extraction using an OpenAI-compatible chat completions endpoint when `LLM_API_KEY` is configured. Output is schema validated and warnings are shown. Provider errors are surfaced.
 - Verify geometries only when basic checks pass. Preview walls and floors in Three.js.
 - Baseline unit tests for layout validation; no synthetic AI render masquerading as output.
@@ -21,11 +35,9 @@ Requires Python 3.11+, Node 20+ (or compatible). Start two terminals:
 
 ```bash
 cd apps/api
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+uv sync
 cp ../../.env.example .env
-uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --port 8000
 ```
 
 ```bash
@@ -41,7 +53,7 @@ In `apps/api/.env`, set `LLM_API_KEY` and a compatible `LLM_MODEL` when you are 
 
 ## Verify
 ```bash
-cd apps/api && python -m pytest -q
+cd apps/api && uv run pytest -q
 cd apps/web && npm run build
 ```
 
