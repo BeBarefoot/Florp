@@ -223,3 +223,16 @@ test("photo straightening collects four corners and creates a separate plan", as
   expect(payload.page_aspect_ratio).toBe(1.5);
   expect(payload.corners).toHaveLength(4);
 });
+
+test("mobile canvas and inspector remain bounded without covering footer", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setup(page);
+  const canvas = await page.locator(".pw-canvas").boundingBox();
+  const inspector = await page.locator(".pw-inspector").boundingBox();
+  const footer = await page.locator(".pw-footer").boundingBox();
+  expect(canvas!.height).toBeGreaterThan(300);
+  expect(inspector!.y).toBeGreaterThanOrEqual(canvas!.y + canvas!.height);
+  expect(footer!.y).toBeGreaterThanOrEqual(inspector!.y + inspector!.height);
+});
