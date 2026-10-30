@@ -351,6 +351,11 @@ def export(bid: str):
     ppm = scale(d)
     if not ppm:
         raise HTTPException(422, "Set one known measurement before metric export")
+    if any(o.kind != "wall" and not o.host_id for o in d.objects):
+        raise HTTPException(
+            422,
+            "An opening needs a host wall. Review its finding before exporting geometry.",
+        )
     from .deterministic_blueprint.export import normalize_metric, png, svg, dxf, bundle
 
     layers = {
@@ -434,3 +439,127 @@ def history(bid: str):
                 .order_by(WorkspaceRevision.version.desc())
             ).all()
         ]
+
+
+class Rectification(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    corners: list[tuple[float, float]] = Field(min_length=4, max_length=4)
+    page_aspect_ratio: float = Field(ge=0.1, le=10)
+    expected_version: int = Field(ge=0)
+
+
+@router.post("/blueprints/{bid}/workspace/straighten")
+def straighten(bid: str, body: Rectification):
+    """Create a new rectified source; preserve original plan and every revision."""
+    import cv2, numpy as np, shutil, hashlib
+    from PIL import Image
+    from .config import settings
+    from .deterministic_blueprint.preprocess import decode, order_quad, transform_points
+
+    with Session(get_engine()) as s:
+        source = s.get(Blueprint, bid)
+        if not source:
+            raise HTTPException(404, "Source not found")
+        current = latest(s, bid)
+        if (current.version if current else 0) != body.expected_version:
+            raise HTTPException(409, "Save/reload the source before straightening")
+        initial = Document.model_validate(current.document) if current else None
+        image = decode(Path(source.preview_path).read_bytes())
+        h, w = image.shape[:2]
+        q = order_quad(body.corners)
+        if (
+            not cv2.isContourConvex(q)
+            or abs(cv2.contourArea(q)) < 0.1 * w * h
+            or np.any(q < 0)
+            or np.any(q[:, 0] > w - 1)
+            or np.any(q[:, 1] > h - 1)
+        ):
+            raise HTTPException(
+                422, "Select four corners enclosing the sheet, inside the image"
+            )
+        vectors = np.roll(q, -1, axis=0) - q
+        width = (np.linalg.norm(vectors[0]) + np.linalg.norm(vectors[2])) / 2
+        height = width / body.page_aspect_ratio
+        factor = min(1, 4000 / max(width, height))
+        width = max(16, round(width * factor))
+        height = max(16, round(height * factor))
+        matrix = cv2.getPerspectiveTransform(
+            q,
+            np.float32(
+                [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]]
+            ),
+        )
+        rectified = cv2.warpPerspective(
+            image, matrix, (width, height), borderValue=(255, 255, 255)
+        )
+        target = Blueprint(
+            project_id=source.project_id,
+            filename=source.filename + " — straightened",
+            local_path="",
+            preview_path="",
+            width=width,
+            height=height,
+        )
+        folder = Path(settings.storage_path) / target.id
+        folder.mkdir(parents=True, exist_ok=False)
+        reference = None
+        if initial and initial.reference:
+            pts = transform_points(
+                [initial.reference.start, initial.reference.end], matrix
+            )
+            if (
+                np.all(pts >= 0)
+                and np.all(pts[:, 0] <= width - 1)
+                and np.all(pts[:, 1] <= height - 1)
+                and np.linalg.norm(pts[1] - pts[0]) >= 5
+            ):
+                reference = CalibrationReference(
+                    start=tuple(pts[0]),
+                    end=tuple(pts[1]),
+                    length_cm=initial.reference.length_cm,
+                )
+        try:
+            raw = folder / ("original" + Path(source.local_path).suffix)
+            shutil.copyfile(source.local_path, raw)
+            preview = folder / "preview.png"
+            Image.fromarray(cv2.cvtColor(rectified, cv2.COLOR_BGR2RGB)).save(preview)
+            target.local_path = str(raw)
+            target.preview_path = str(preview)
+            (folder / "source-transform.json").write_text(
+                json.dumps(
+                    {
+                        "parent_blueprint_id": bid,
+                        "page_aspect_ratio": body.page_aspect_ratio,
+                        "source_to_rectified": matrix.tolist(),
+                        "rectified_to_source": np.linalg.inv(matrix).tolist(),
+                        "source_sha256": hashlib.sha256(
+                            Path(source.preview_path).read_bytes()
+                        ).hexdigest(),
+                    }
+                )
+            )
+            d = Document(
+                width=width,
+                height=height,
+                reference=reference,
+                warnings=[
+                    "Rectified from source "
+                    + bid
+                    + " using confirmed page proportions. Original plan and revisions retained."
+                ],
+            )
+            s.add(target)
+            s.add(
+                WorkspaceRevision(
+                    blueprint_id=target.id, version=1, document=d.model_dump()
+                )
+            )
+            s.commit()
+        except Exception:
+            shutil.rmtree(folder)
+            raise
+        return {
+            "id": target.id,
+            "source_to_rectified": matrix.tolist(),
+            "reference_preserved": reference is not None,
+        }

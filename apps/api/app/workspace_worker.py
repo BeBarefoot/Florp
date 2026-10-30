@@ -1,6 +1,6 @@
 """Isolated local extraction; no scale prerequisite, no generated geometry."""
 
-import sys, json
+import sys
 from pathlib import Path
 import cv2, numpy as np
 from .plan_workspace import Document, Segment, Point
@@ -62,6 +62,44 @@ def build(path):
                     if layers and not layers.get("LAYER_WALLS_EXTERIOR").is_empty
                     else None
                 ),
+            )
+        )
+    # Preserve isolated genuine diagonal runs rather than forcing Manhattan axes.
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:1000]:
+        if len(contour) < 3:
+            continue
+        (_, _), (bw, bh), _ = cv2.minAreaRect(contour)
+        long, short = max(bw, bh), min(bw, bh)
+        if (
+            short < 2
+            or long < 20
+            or long / max(short, 1) < 4
+            or cv2.contourArea(contour) < long * short * 0.45
+        ):
+            continue
+        vx, vy, x0, y0 = map(
+            float, cv2.fitLine(contour, cv2.DIST_L2, 0, 0.01, 0.01).reshape(-1)
+        )
+        angle = abs(np.degrees(np.arctan2(vy, vx))) % 90
+        if min(angle, 90 - angle) < 8:
+            continue
+        pts = contour.reshape(-1, 2)
+        projection = (pts[:, 0] - x0) * vx + (pts[:, 1] - y0) * vy
+        ends = [
+            Point(
+                x=float(np.clip(x0 + t * vx, 0, w - 1)),
+                y=float(np.clip(y0 + t * vy, 0, h - 1)),
+            )
+            for t in (projection.min(), projection.max())
+        ]
+        objects.append(
+            Segment(
+                id=f"diagonal-{len(objects)}",
+                start=ends[0],
+                end=ends[1],
+                thickness_px=float(short),
+                uncertain=True,
             )
         )
     # Only connect nearby perpendicular/collinear endpoints; large blank gaps stay open.
