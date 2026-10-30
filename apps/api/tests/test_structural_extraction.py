@@ -136,3 +136,19 @@ def test_configured_evaluator_requires_local_files_without_downloading(
     )
     with pytest.raises(ValueError, match="trusted CubiCasa source"):
         predict(np.full((100, 200, 3), 255, np.uint8))
+
+
+def test_evaluation_renderer_handles_fully_cut_host_wall():
+    from scripts.evaluate_workspace import render
+    from app.plan_workspace import Document
+
+    wall = line((20, 50), (100, 50), "host", 10)
+    opening = wall.model_copy(deep=True)
+    opening.id = "opening"
+    opening.kind = "door"
+    opening.host_id = wall.id
+    opening.height_m = 2.1
+    document = Document(width=160, height=100, objects=[wall, opening])
+    clean, _, svg = render(document, np.full((100, 160, 3), 255, np.uint8))
+    assert np.all(clean == 255)
+    assert "<svg" in svg

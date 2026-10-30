@@ -30,7 +30,7 @@ def render(document, source):
         fill = "#1e4b8c" if wall.material == "concrete" else "#aa6464"
         parts = list(shape.geoms) if hasattr(shape, "geoms") else [shape]
         for p in parts:
-            if p.geom_type != "Polygon":
+            if p.geom_type != "Polygon" or p.is_empty:
                 continue
             cv2.fillPoly(image, [np.rint(p.exterior.coords).astype(np.int32)], color)
             for hole in p.interiors:
