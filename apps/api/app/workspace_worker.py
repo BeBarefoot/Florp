@@ -8,17 +8,21 @@ from .deterministic_blueprint.preprocess import decode
 from .deterministic_blueprint.geometry import wall_masks
 from .deterministic_blueprint.schema import Options
 from .deterministic_blueprint.calibration import recognize
-from .mask_topology import region_wall_lines
 
 
 def build(path):
     image = decode(Path(path).read_bytes())
     h, w = image.shape[:2]
+    from .config import settings
+
+    if settings.workspace_semantic_source or settings.workspace_semantic_weights:
+        from .semantic_workspace import build as semantic_build
+
+        return semantic_build(image)
     options = Options(ocr_timeout_s=1)
     words, notes = recognize(image, options)
     red, blue, _ = wall_masks(image, words, 1.0, np.eye(3), options)
     mask = red | blue
-    lines = region_wall_lines(mask, min_length=max(12, min(w, h) // 35)).lines
     from .deterministic_blueprint.geometry import clean_geometry, classify
 
     try:
@@ -27,42 +31,29 @@ def build(path):
         layers, classification = classify(rg, bg, mask.shape, 1.0, options)
     except Exception:
         layers = {}
-    if not lines:
+    if not np.any(mask):
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         ink = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
         mask = cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-        lines = region_wall_lines(mask, min_length=max(30, min(w, h) // 10)).lines
         notes.append("Monochrome fallback: review structural runs against the source.")
     has_color = bool(red.any() or blue.any())
-    objects = []
-    for i, l in enumerate(lines):
-        x, y = int((l.x1 + l.x2) / 2), int((l.y1 + l.y2) / 2)
-        horizontal = abs(l.x2 - l.x1) > abs(l.y2 - l.y1)
-        thickness = 1
-        for sign in (-1, 1):
-            for d in range(1, 50):
-                xx = x if horizontal else x + sign * d
-                yy = y + sign * d if horizontal else y
-                if not (0 <= xx < w and 0 <= yy < h) or not mask[yy, xx]:
-                    break
-                thickness += 1
-        objects.append(
-            Segment(
-                id=f"wall-{i}",
-                start=Point(x=l.x1, y=l.y1),
-                end=Point(x=l.x2, y=l.y2),
-                thickness_px=max(3, thickness),
-                uncertain=not has_color,
-                material="concrete" if blue[y, x] else "block",
-                exterior=(
-                    layers["LAYER_WALLS_EXTERIOR"].distance(
-                        __import__("shapely").geometry.Point(x, y)
-                    )
-                    < max(3, thickness)
-                    if layers and not layers.get("LAYER_WALLS_EXTERIOR").is_empty
-                    else None
-                ),
+    from .structural_runs import structural_runs, join_intersections
+
+    objects = structural_runs(mask, min_length=max(12, min(w, h) // 35))
+    for i, o in enumerate(objects):
+        o.id = f"wall-{i}"
+        o.uncertain = not has_color
+        # Majority along the strip, not a midpoint at a perpendicular branch.
+        xs = np.rint(np.linspace(o.start.x, o.end.x, 25)).astype(int).clip(0, w - 1)
+        ys = np.rint(np.linspace(o.start.y, o.end.y, 25)).astype(int).clip(0, h - 1)
+        o.material = "concrete" if np.mean(blue[ys, xs] > 0) > 0.5 else "block"
+        o.exterior = (
+            layers["LAYER_WALLS_EXTERIOR"].distance(
+                __import__("shapely").geometry.Point(o.start.x, o.start.y)
             )
+            < max(3, o.thickness_px)
+            if layers and not layers["LAYER_WALLS_EXTERIOR"].is_empty
+            else None
         )
     # Preserve isolated genuine diagonal runs rather than forcing Manhattan axes.
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -102,18 +93,7 @@ def build(path):
                 uncertain=True,
             )
         )
-    # Only connect nearby perpendicular/collinear endpoints; large blank gaps stay open.
-    for i, a in enumerate(objects):
-        for b in objects[i + 1 :]:
-            for p in (a.start, a.end):
-                for q in (b.start, b.end):
-                    if np.hypot(p.x - q.x, p.y - q.y) <= max(
-                        4, min(a.thickness_px, b.thickness_px)
-                    ):
-                        x = (p.x + q.x) / 2
-                        y = (p.y + q.y) / 2
-                        p.x = q.x = x
-                        p.y = q.y = y
+    objects = join_intersections(objects)
     try:
         from .pretrained_detector import detect_objects
 

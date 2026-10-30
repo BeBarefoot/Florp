@@ -329,6 +329,12 @@ async def extract(bid: str, expected_version: int = 0):
                 504, "Extraction exceeded its budget; saved geometry is unchanged"
             )
         if proc.returncode:
+            from .config import settings
+            if settings.workspace_semantic_source or settings.workspace_semantic_weights:
+                raise HTTPException(
+                    503,
+                    "Local semantic evaluation failed. Check the trusted source, checkpoint, optional runtime and device configuration. Saved geometry is unchanged.",
+                )
             raise HTTPException(
                 422,
                 "Unable to extract supported walls. Try a clearer, flat scan or add a wall directly.",

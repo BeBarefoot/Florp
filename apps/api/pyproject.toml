@@ -28,6 +28,8 @@ dependencies = [
 pretrained-yolo = ["ultralytics>=8.2.8,<9"]
 # Yytsi ResNet34-UNet, installed from the published upstream source. Uses raster input directly.
 yytsi = ["buildingcv[serve] @ git+https://github.com/Yytsi/floorplan-to-3d.git"]
+# Trusted local model evaluation only; checkpoint/source are never downloaded.
+semantic-eval = ["torch>=2.6,<3"]
 
 [dependency-groups]
 dev=["pytest>=8,<10", "pytest-asyncio>=0.24,<2"]
