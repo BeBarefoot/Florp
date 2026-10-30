@@ -180,3 +180,62 @@ def test_opening_height_and_source_alignment_guard(client):
     assert c.put(path, json={"expected_version": 0, "document": d}).status_code == 200
     d["objects"][-1]["sill_m"] = 2
     assert c.put(path, json={"expected_version": 1, "document": d}).status_code == 422
+
+
+def test_straightening_creates_new_plan_preserves_source_and_reference(
+    client, tmp_path, monkeypatch
+):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "storage_path", str(tmp_path / "storage"))
+    c, bid = client
+    d = document()
+    d["reference"] = {"start": [200, 200], "end": [500, 200], "length_cm": 300}
+    saved = c.put(
+        f"/blueprints/{bid}/workspace", json={"expected_version": 0, "document": d}
+    )
+    assert saved.status_code == 200
+    result = c.post(
+        f"/blueprints/{bid}/workspace/straighten",
+        json={
+            "expected_version": 1,
+            "corners": [[70, 40], [740, 80], [700, 550], [50, 520]],
+            "page_aspect_ratio": 1.41421356,
+        },
+    )
+    assert result.status_code == 200, result.text
+    target = result.json()["id"]
+    assert target != bid and result.json()["reference_preserved"]
+    original = c.get(f"/blueprints/{bid}/workspace").json()
+    assert original["version"] == 1 and original["document"]["objects"]
+    normalized = c.get(f"/blueprints/{target}/workspace").json()
+    assert normalized["document"]["reference"]["length_cm"] == 300
+    assert normalized["document"]["objects"] == []
+    assert (
+        c.post(
+            f"/blueprints/{bid}/workspace/straighten",
+            json={
+                "expected_version": 0,
+                "corners": [[70, 40], [740, 80], [700, 550], [50, 520]],
+                "page_aspect_ratio": 1.414,
+            },
+        ).status_code
+        == 409
+    )
+
+
+def test_isolated_diagonal_evidence_is_retained(tmp_path):
+    import cv2, numpy as np
+    from app.workspace_worker import build
+
+    image = np.full((400, 500, 3), 255, np.uint8)
+    cv2.line(image, (70, 70), (350, 320), (100, 100, 200), 12)
+    file = tmp_path / "diagonal.png"
+    cv2.imwrite(str(file), image)
+    doc = build(file)
+    assert any(
+        o.id.startswith("diagonal-")
+        and abs(o.end.x - o.start.x) > 100
+        and abs(o.end.y - o.start.y) > 100
+        for o in doc.objects
+    )

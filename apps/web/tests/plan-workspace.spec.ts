@@ -1,5 +1,5 @@
 import { test, expect, Page } from "@playwright/test";
-import {moveEndpoint,geometry} from "../lib/planWorkspace";
+import { moveEndpoint, geometry } from "../lib/planWorkspace";
 const base = {
   width: 1000,
   height: 700,
@@ -165,4 +165,61 @@ test("shared endpoint edit preserves hosted opening fractions", async () => {
   expect(g.openings).toHaveLength(1);
   expect(g.openings[0].wall_id).toBe("a");
   expect(g.openings[0].width_m).toBeGreaterThan(2);
+});
+
+test("photo straightening collects four corners and creates a separate plan", async ({
+  page,
+}) => {
+  await setup(page);
+  let payload: any;
+  await page.route("**/blueprints/p/workspace/straighten", async (route) => {
+    payload = route.request().postDataJSON();
+    await route.fulfill({
+      json: { id: "rectified", reference_preserved: false },
+    });
+  });
+  await page.route("**/blueprints/rectified/info", (r) =>
+    r.fulfill({
+      json: {
+        id: "rectified",
+        project_id: "house",
+        filename: "Straightened plan",
+        width: 1000,
+        height: 700,
+      },
+    }),
+  );
+  await page.route("**/blueprints/rectified/workspace", (r) =>
+    r.fulfill({
+      json: {
+        version: 1,
+        document: base,
+        derived: {
+          px_per_meter: null,
+          rooms: [],
+          bounds_px: null,
+          margin_px: null,
+        },
+      },
+    }),
+  );
+  await page.getByText("Source notes", { exact: true }).click();
+  await page
+    .getByRole("button", { name: "Straighten photographed sheet", exact: true })
+    .click();
+  for (const [x, y] of [
+    [50, 50],
+    [950, 80],
+    [900, 650],
+    [60, 620],
+  ]) {
+    const p = await at(page, x, y);
+    await page.mouse.click(p.x, p.y);
+  }
+  await expect(page.getByText("4 / 4 corners")).toBeVisible();
+  await page.getByLabel("Custom page ratio").fill("1.5");
+  await page.getByRole("button", { name: "Create straightened plan" }).click();
+  await expect(page).toHaveURL("/plan/rectified");
+  expect(payload.page_aspect_ratio).toBe(1.5);
+  expect(payload.corners).toHaveLength(4);
 });

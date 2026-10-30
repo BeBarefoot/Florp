@@ -28,13 +28,14 @@ export default function PlanWorkspace() {
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState("");
   const [tool, setTool] = useState<
-    "select" | "measure" | "wall" | "door" | "window" | "host"
+    "select" | "measure" | "wall" | "door" | "window" | "host" | "straighten"
   >("select");
   const [view, setView] = useState<"clean" | "overlay" | "original">("clean");
   const [three, setThree] = useState(false);
   const [points, setPoints] = useState<Pt[]>([]);
   const [pointer, setPointer] = useState<Pt | null>(null);
   const [distance, setDistance] = useState("");
+  const [aspect, setAspect] = useState("1.41421356");
   const [unit, setUnit] = useState("m");
   const [zoom, setZoom] = useState(1);
   const [past, setPast] = useState<PlanDoc[]>([]);
@@ -111,6 +112,10 @@ export default function PlanWorkspace() {
         );
         return;
       }
+      result.document.reference = current.reference;
+      result.document.warnings = [
+        ...new Set([...result.document.warnings, ...current.warnings]),
+      ];
       if (current.objects.length) {
         if (
           !window.confirm(
@@ -119,6 +124,9 @@ export default function PlanWorkspace() {
         )
           return;
         result.document.reference = current.reference;
+        result.document.warnings = [
+          ...new Set([...result.document.warnings, ...current.warnings]),
+        ];
         setPast((p) => [...p, clone(current)]);
       }
       live.current = result.document;
@@ -241,6 +249,10 @@ export default function PlanWorkspace() {
   function canvasClick(e: React.PointerEvent<SVGSVGElement>) {
     if (tool === "select" || tool === "host") return;
     const p = point(e);
+    if (tool === "straighten") {
+      setPoints((old) => (old.length < 4 ? [...old, p] : old));
+      return;
+    }
     if (!points.length) {
       setPoints([p]);
       setPointer(p);
@@ -665,6 +677,14 @@ export default function PlanWorkspace() {
                     }}
                   />
                 ))}
+                {tool === "straighten" && points.length > 1 && (
+                  <polyline
+                    points={points.map((p) => `${p.x},${p.y}`).join(" ")}
+                    fill="none"
+                    stroke="#ed8e22"
+                    strokeWidth={3}
+                  />
+                )}
                 {d.reference && (
                   <line
                     x1={d.reference.start[0]}
@@ -697,6 +717,83 @@ export default function PlanWorkspace() {
               <h2>Reading your plan</h2>
               <p>Building walls and checking openings…</p>
               <progress />
+            </>
+          ) : tool === "straighten" ? (
+            <>
+              <h2>Straighten photographed sheet</h2>
+              <p>
+                Click the four paper corners: top-left, top-right, bottom-right,
+                bottom-left. Use known page proportions, not the building
+                outline.
+              </p>
+              <p>{points.length} / 4 corners</p>
+              <label>
+                Page width / height
+                <select
+                  aria-label="Page proportions"
+                  value={aspect}
+                  onChange={(e) => setAspect(e.target.value)}
+                >
+                  <option value="1.41421356">A-series landscape</option>
+                  <option value="0.70710678">A-series portrait</option>
+                  <option value="1">Square</option>
+                </select>
+              </label>
+              <label>
+                Custom width / height ratio
+                <input
+                  aria-label="Custom page ratio"
+                  type="number"
+                  min=".1"
+                  max="10"
+                  step=".01"
+                  value={aspect}
+                  onChange={(e) => setAspect(e.target.value)}
+                />
+              </label>
+              <p>
+                This creates a new plan and keeps the original. Lens distortion
+                cannot be corrected by this planar operation.
+              </p>
+              <button
+                disabled={
+                  points.length !== 4 ||
+                  dirty ||
+                  !(Number(aspect) >= 0.1 && Number(aspect) <= 10)
+                }
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    const result = await request<{ id: string }>(
+                      `/blueprints/${id}/workspace/straighten`,
+                      {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          corners: points.map((p) => [p.x, p.y]),
+                          page_aspect_ratio: Number(aspect),
+                          expected_version: version.current,
+                        }),
+                      },
+                    );
+                    window.location.href = "/plan/" + result.id;
+                  } catch (e) {
+                    setError(String(e));
+                    setBusy(false);
+                  }
+                }}
+              >
+                Create straightened plan
+              </button>
+              <button onClick={() => setPoints([])}>Place corners again</button>
+              <button
+                onClick={() => {
+                  setPoints([]);
+                  setTool("select");
+                }}
+              >
+                Cancel
+              </button>
             </>
           ) : tool === "measure" ? (
             <>
@@ -941,6 +1038,17 @@ export default function PlanWorkspace() {
               )}
               <details>
                 <summary>Source notes</summary>
+                <button
+                  disabled={dirty || busy}
+                  onClick={() => {
+                    setTool("straighten");
+                    setView("original");
+                    setThree(false);
+                    setPoints([]);
+                  }}
+                >
+                  Straighten photographed sheet
+                </button>
                 {d.warnings.map((w, i) => (
                   <p key={i}>{w}</p>
                 ))}
