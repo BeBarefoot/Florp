@@ -268,3 +268,24 @@ def test_unhosted_openings_remain_saved_but_never_silently_export_as_solid_walls
         o["id"] == "pending"
         for o in c.get(f"/blueprints/{bid}/workspace").json()["document"]["objects"]
     )
+
+
+def test_unavailable_configured_model_reports_runtime_problem_and_preserves_saved_draft(
+    client, tmp_path, monkeypatch
+):
+    from app.config import settings
+
+    c, bid = client
+    path = f"/blueprints/{bid}/workspace"
+    saved = c.put(path, json={"expected_version": 0, "document": document()}).json()
+    monkeypatch.setattr(settings, "workspace_semantic_source", str(tmp_path))
+    monkeypatch.setattr(
+        settings, "workspace_semantic_weights", str(tmp_path / "missing.pkl")
+    )
+    monkeypatch.setenv("WORKSPACE_SEMANTIC_SOURCE", str(tmp_path))
+    monkeypatch.setenv("WORKSPACE_SEMANTIC_WEIGHTS", str(tmp_path / "missing.pkl"))
+    result = c.post(path + "/extract?expected_version=1")
+    assert result.status_code == 503
+    assert "configuration" in result.json()["detail"]
+    assert c.get(path).json()["document"] == saved["document"]
+    assert c.get(path).json()["version"] == 1

@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     inference_border_min_px: int = 32
     wall_segmentation_weights: str = ''
     wall_segmentation_provider: str = 'yytsi'
+    # Explicit local evaluation only; no weights or upstream code downloaded.
+    workspace_semantic_source: str = ''
+    workspace_semantic_weights: str = ''
+    workspace_semantic_device: str = 'cpu'
+    workspace_semantic_rotations: int = 1
     yytsi_run_dir: str = './models/yytsi'
     yytsi_checkpoint: str = 'best.safetensors'
     yytsi_device: str = 'auto'
