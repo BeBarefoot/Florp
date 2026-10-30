@@ -351,6 +351,11 @@ def export(bid: str):
     ppm = scale(d)
     if not ppm:
         raise HTTPException(422, "Set one known measurement before metric export")
+    if any(o.kind != "wall" and not o.host_id for o in d.objects):
+        raise HTTPException(
+            422,
+            "An opening needs a host wall. Review its finding before exporting geometry.",
+        )
     from .deterministic_blueprint.export import normalize_metric, png, svg, dxf, bundle
 
     layers = {

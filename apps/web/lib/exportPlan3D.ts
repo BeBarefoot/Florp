@@ -5,6 +5,10 @@ export async function exportPlan3D(
   doc: PlanDoc,
   rooms: Workspace["derived"]["rooms"],
 ) {
+  if (doc.objects.some((o) => o.kind !== "wall" && !o.host_id))
+    throw Error(
+      "An opening needs a host wall. Review its finding before exporting 3D.",
+    );
   const g = geometry(doc, rooms),
     scale = g.px_per_meter;
   if (!scale) throw Error("Set one measurement first");

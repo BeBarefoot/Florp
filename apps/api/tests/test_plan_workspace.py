@@ -239,3 +239,32 @@ def test_isolated_diagonal_evidence_is_retained(tmp_path):
         and abs(o.end.y - o.start.y) > 100
         for o in doc.objects
     )
+
+
+def test_unhosted_openings_remain_saved_but_never_silently_export_as_solid_walls(
+    client,
+):
+    c, bid = client
+    d = document()
+    d["reference"] = {"start": [100, 100], "end": [700, 100], "length_cm": 600}
+    d["objects"].append(
+        {
+            "id": "pending",
+            "kind": "window",
+            "start": {"x": 200, "y": 100},
+            "end": {"x": 300, "y": 100},
+            "height_m": 1.2,
+            "sill_m": 0.9,
+        }
+    )
+    saved = c.put(
+        f"/blueprints/{bid}/workspace", json={"expected_version": 0, "document": d}
+    )
+    assert saved.status_code == 200
+    assert saved.json()["derived"]["px_per_meter"] == 100
+    exported = c.get(f"/blueprints/{bid}/workspace/export")
+    assert exported.status_code == 422 and "host wall" in exported.text
+    assert any(
+        o["id"] == "pending"
+        for o in c.get(f"/blueprints/{bid}/workspace").json()["document"]["objects"]
+    )

@@ -215,7 +215,9 @@ export default function PlanWorkspace() {
   const d = doc,
     scale = ppm(d),
     item = d.objects.find((o) => o.id === selected),
-    findings = d.objects.filter((o) => o.uncertain && !o.reviewed),
+    findings = d.objects.filter(
+      (o) => (o.uncertain && !o.reviewed) || (o.kind !== "wall" && !o.host_id),
+    ),
     currentRoom = state?.derived.rooms.find((r) => r.id === room);
   function point(e: React.PointerEvent<SVGSVGElement>): Pt {
     const matrix = svg.current?.getScreenCTM();
@@ -508,6 +510,12 @@ export default function PlanWorkspace() {
           {three ? (
             <div className="pw-three">
               <Viewer compact geometry={geometry(d, rooms)} />
+              {d.objects.some((o) => o.kind !== "wall" && !o.host_id) && (
+                <p className="notice">
+                  An opening needs a host wall. Review the finding to include
+                  its cutout in 3D.
+                </p>
+              )}
             </div>
           ) : (
             <div

@@ -236,3 +236,22 @@ test("mobile canvas and inspector remain bounded without covering footer", async
   expect(inspector!.y).toBeGreaterThanOrEqual(canvas!.y + canvas!.height);
   expect(footer!.y).toBeGreaterThanOrEqual(inspector!.y + inspector!.height);
 });
+
+test("cancelled opening-host selection remains an actionable finding", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.getByRole("button", { name: "Add window", exact: true }).click();
+  for (const [x, y] of [
+    [400, 350],
+    [550, 350],
+  ]) {
+    const p = await at(page, x, y);
+    await page.mouse.click(p.x, p.y);
+  }
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".pw-footer")).toContainText("2 findings");
+  await expect(
+    page.getByRole("button", { name: "Choose host wall", exact: true }),
+  ).toBeVisible();
+});
