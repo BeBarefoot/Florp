@@ -62,7 +62,7 @@ function WallMesh({edge,scale,color,openings}:{edge:Edge;scale:number;color:stri
    </mesh>)}
  </group>;
 }
-export default function Viewer3D({geometry}:{geometry:Geometry}){
+export default function Viewer3D({geometry,compact=false}:{geometry:Geometry;compact?:boolean}){
   const scale=geometry.px_per_meter||60;
   const data=useMemo(()=>{
     // Detector-derived walls are the authoritative solids; proposed room polygons
@@ -104,8 +104,8 @@ export default function Viewer3D({geometry}:{geometry:Geometry}){
     return {edges,floors,independent,hasModelWalls,hasPlaceholderRoom};
   },[geometry,scale]);
   const target:[number,number,number]=[geometry.width_px/(2*scale),0,geometry.height_px/(2*scale)];
-  return <div style={{height:440,width:'100%',background:'#f0f3f7',borderRadius:12}}>
-    <Canvas camera={{position:[target[0]+6,7,target[2]+8],fov:60}}>
+  return <div style={{height:compact?'100%':440,width:'100%',background:'#f0f3f7',borderRadius:12}}>
+    <Canvas camera={{position:[target[0]+Math.max(6,geometry.width_px/scale),Math.max(7,geometry.height_px/scale),target[2]+Math.max(8,geometry.height_px/scale)],fov:60}}>
       <ambientLight intensity={1.8}/><directionalLight position={[5,10,3]} intensity={2}/>
       <Grid infiniteGrid cellSize={1} sectionSize={5}/>
       {data.floors.map(f=><mesh key={f.id} geometry={f.mesh} position={[0,.015,0]}>
@@ -114,7 +114,7 @@ export default function Viewer3D({geometry}:{geometry:Geometry}){
       {data.independent.map(w=><WallMesh key={w.id} edge={{a:w.start,b:w.end,id:w.id,thickness:w.thickness_m,height:w.height_m}} scale={scale} openings={geometry.openings} color="#5b8aab"/>)}
       <OrbitControls makeDefault target={target}/>
     </Canvas>
-    <p className="notice">3D displays {data.independent.length+data.edges.length} stored wall segments, not the colored detection overlay. {data.hasPlaceholderRoom?'The original starter rectangle and its floor are hidden. ':''}Missing interior walls must be accepted or drawn in the 2D draft before they appear here.</p>
+    {!compact&&<p className="notice">3D displays {data.independent.length+data.edges.length} stored wall segments, not the colored detection overlay. {data.hasPlaceholderRoom?'The original starter rectangle and its floor are hidden. ':''}Missing interior walls must be accepted or drawn in the 2D draft before they appear here.</p>}
     {geometry.rooms.some(r=>!validPolygon(r.points))&&<p className="notice">A room polygon is invalid or self-intersecting; its 3D floor and boundary were skipped. Correct it in 2D.</p>}
   </div>;
 }

@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from PIL import Image, ImageOps
 import fitz
 from .config import settings
-from .models import Project, Blueprint, Layout, Render, WallAnnotation, ModelWallCorrection, FusionCandidateReview, ExtractionEvaluation, PlanGraphRevision
+from .models import Project, Blueprint, Layout, Render, WallAnnotation, ModelWallCorrection, FusionCandidateReview, ExtractionEvaluation, PlanGraphRevision, WorkspaceRevision
 from .geometry import Geometry, fallback_geometry, validate_geometry
 from .connectivity_preview import without_starter
 from .providers import extract_geometry, ProviderUnavailable, ProviderAuthenticationError, ProviderConfigurationError, ProviderOutputError
@@ -82,7 +82,7 @@ def delete_project(pid:str):
         plans=list(s.exec(select(Blueprint).where(Blueprint.project_id==pid)).all())
         ids=[bp.id for bp in plans]
         for bid in ids:
-            for table in (Render,ModelWallCorrection,WallAnnotation,FusionCandidateReview,ExtractionEvaluation,PlanGraphRevision,Layout):
+            for table in (WorkspaceRevision,Render,ModelWallCorrection,WallAnnotation,FusionCandidateReview,ExtractionEvaluation,PlanGraphRevision,Layout):
                 for row in s.exec(select(table).where(table.blueprint_id==bid)).all():
                     s.delete(row)
         for bp in plans:s.delete(bp)
@@ -98,14 +98,14 @@ def delete_project(pid:str):
 def blueprints(pid:str):
     with Session(engine) as s:return list(s.exec(select(Blueprint).where(Blueprint.project_id==pid)).all())
 @app.post('/projects/{pid}/blueprints',response_model=Blueprint)
-async def upload(pid:str,file:UploadFile=File(...)):
+async def upload(pid:str,file:UploadFile=File(...),page_index:int=0):
     with Session(engine) as s:
         if not s.get(Project,pid):raise HTTPException(404,'Project not found')
     contents=await file.read(settings.max_upload_mb*1024*1024+1)
     if len(contents)>settings.max_upload_mb*1024*1024:raise HTTPException(413,'Upload exceeds configured size')
     if contents.startswith(b'%PDF-'):
         try:
-            pdf=fitz.open(stream=contents,filetype='pdf');page=pdf[0];pix=page.get_pixmap(matrix=fitz.Matrix(2,2),alpha=False)
+            pdf=fitz.open(stream=contents,filetype='pdf');assert 0<=page_index<len(pdf),'Page out of range';page=pdf[page_index];pix=page.get_pixmap(matrix=fitz.Matrix(2,2),alpha=False)
             image=Image.open(io.BytesIO(pix.tobytes('png'))).convert('RGB')
         except Exception:raise HTTPException(422,'Could not read PDF')
     else:
@@ -119,11 +119,6 @@ async def upload(pid:str,file:UploadFile=File(...)):
     preview=folder/'preview.png';image.save(preview)
     bp.local_path=str(raw);bp.preview_path=str(preview)
     starting=Geometry(width_px=bp.width,height_px=bp.height,warnings=['No extracted geometry yet. Extract or draw structural walls.'])
-    evidence=inspect_plan(raw,preview)
-    if evidence.automatic_scale:
-        starting.px_per_meter=evidence.automatic_scale.px_per_meter
-        starting.scale_source='provisional_auto'
-        starting.warnings.append('Automatic metric scale is provisional: review a recognized dimension')
     layout=Layout(blueprint_id=bp.id,geometry=starting.model_dump())
     with Session(engine) as s:s.add(bp);s.add(layout);s.commit();s.refresh(bp)
     return bp
@@ -1280,3 +1275,6 @@ def resolve_pending_opening(bid:str, revision_id:str, body:ResolvePendingOpening
             require_valid(plan)
         except ValueError as e:raise HTTPException(422,str(e)) from e
         return _append_graph(session,latest,plan.model_dump(mode='json'),{'kind':'resolve_opening','original':original.model_dump(),'replacement':body.replacement,'reason':body.reason})
+
+from .plan_workspace import router as workspace_router
+app.include_router(workspace_router)

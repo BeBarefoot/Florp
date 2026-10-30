@@ -96,3 +96,11 @@ class PlanGraphRevision(SQLModel, table=True):
     operation: dict = Field(default_factory=dict,sa_type=JSON)
     graph: dict = Field(default_factory=dict,sa_type=JSON)
     created_at: datetime = Field(default_factory=now)
+
+class WorkspaceRevision(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint('blueprint_id','version',name='uq_workspace_version'),)
+    id: str = Field(default_factory=uid,primary_key=True)
+    blueprint_id: str = Field(index=True,foreign_key='blueprint.id')
+    version: int
+    document: dict = Field(sa_type=JSON)
+    created_at: datetime = Field(default_factory=now)
