@@ -12,7 +12,16 @@ and [measured validation results](docs/deterministic-engine/VALIDATION.md).
 This is a measured extraction baseline; photographed-plan accuracy still needs
 independent ground truth, and ambiguous output is explicitly flagged for review.
 
-## Current 2D workflow
+## Main plan workspace
+
+Upload a plan and Florp automatically creates editable wall/opening proposals.
+Set one known distance with a live two-click line to enable metric dimensions,
+3D and exports. The main `/blueprint/:id` and `/plan/:id` routes share this
+workspace; the historical editor is retained at `/blueprint/:id/legacy`.
+No dataset or training setup is required. See
+[workspace behavior and validation limits](docs/UNIFIED_WORKSPACE_ACCEPTANCE.md).
+
+## Historical 2D workflow
 
 Extract → review model candidates → apply reviewed walls/openings → inspect
 **Rooms & gaps** → confirm scale/dimensions → save. Training is a separate

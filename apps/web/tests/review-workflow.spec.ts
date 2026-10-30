@@ -42,7 +42,7 @@ async function api(page:Page,{graph=false,stale=false,unresolved=false,rooms=fal
   return reply([]);
  });
  page.on('dialog',d=>d.accept());
- await page.goto('/blueprint/test');
+ await page.goto('/blueprint/test/legacy');
  await expect(page.getByRole('button',{name:'3 · Save corrected draft',exact:true})).toBeVisible();
  return state;
 }
