@@ -118,6 +118,7 @@ def propose(image, objects):
                     thickness_px=host.thickness_px,
                     host_id=host.id,
                     uncertain=True,
+                    confidence=0.6 if kind == "window" else 0.55,
                     height_m=2.1 if kind == "door" else 1.2,
                     sill_m=0 if kind == "door" else 0.9,
                 )

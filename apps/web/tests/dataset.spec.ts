@@ -14,7 +14,7 @@ test('mask annotation autosaves and a ready error preserves the draft',async({pa
   if(path.endsWith('/preview'))return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"/>'});
   return reply([]);
  });
- await page.goto('/dataset');
+ await page.goto('/admin/dataset');
  await page.getByRole('button',{name:'sample.png · unlabeled'}).click();
  await expect(page.getByRole('status')).toContainText('Automatic detection is unavailable');
  const canvas=page.getByLabel('Training mask editor');
@@ -37,7 +37,7 @@ test('inspection is collapsed and never pushes the plan off screen',async({page}
   if(path==='/dataset/cases')return reply([{id:'plan',name:'plan.png',width_px:300,height_px:200,annotation:{revision:1,group_id:'g',split:'train',reviewer:'',independent_reviewer:'',complete:false,rights_confirmed:false,objects:[],status:'draft',reconstruction:{issues}}}]);
   return reply([]);
  });
- await page.goto('/dataset');await page.getByRole('button',{name:'plan.png · draft'}).click();
+ await page.goto('/admin/dataset');await page.getByRole('button',{name:'plan.png · draft'}).click();
  await expect(page.getByLabel('Training mask editor')).toBeVisible();
  await expect(page.getByRole('button',{name:'Short walls · 1 object'}).first()).toBeHidden();
  await page.getByText('Advanced diagnostics (300)').click();
@@ -56,7 +56,7 @@ test('nearby warnings share a marker and all issue types remain selectable',asyn
   const value=path==='/dataset/cases'?[{id:'plan',name:'plan.png',width_px:300,height_px:200,annotation:{revision:1,group_id:'g',split:'train',reviewer:'',independent_reviewer:'',complete:false,rights_confirmed:false,objects,status:'draft',reconstruction:{issues}}}]:[];
   return route.fulfill({contentType:'application/json',headers:{'Access-Control-Allow-Origin':'*'},body:JSON.stringify(value)});
  });
- await page.goto('/dataset');await page.getByRole('button',{name:'plan.png · draft'}).click();
+ await page.goto('/admin/dataset');await page.getByRole('button',{name:'plan.png · draft'}).click();
  const marker=page.getByRole('button',{name:'Inspection marker, 2 regions'});await expect(marker).toHaveCount(0);
  await page.getByRole('button',{name:'Start review'}).click();
  await expect(page.getByText('Selected: wall')).toBeVisible();
@@ -69,7 +69,7 @@ test('snapshot readiness explains drafts and missing splits',async({page})=>{
   const value=path==='/dataset/cases'?[{id:'plan',name:'draft.png',width_px:300,height_px:200,annotation:{revision:1,group_id:'g',split:'train',reviewer:'',independent_reviewer:'',complete:false,rights_confirmed:false,objects:[],status:'draft'}}]:[];
   return route.fulfill({contentType:'application/json',headers:{'Access-Control-Allow-Origin':'*'},body:JSON.stringify(value)});
  });
- await page.goto('/dataset');await page.getByText('4. Dataset Snapshots').click();
+ await page.goto('/admin/dataset');await page.getByText('4. Dataset Snapshots').click();
  await expect(page.getByText('0 of 1 plans ready')).toBeVisible();
  await expect(page.getByText(/Review a plan from the Annotation Queue/)).toBeVisible();
  await expect(page.getByText(/Train 0 · Validation 0 · Test 0/)).toBeVisible();
@@ -86,7 +86,7 @@ test('import opens the plan only after it is visible in the queue',async({page})
   if(path.endsWith('/preview'))return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"/>'});
   return reply([]);
  });
- await page.goto('/dataset');
+ await page.goto('/admin/dataset');
  await page.locator('input[type=file]').first().setInputFiles({name:'plan.png',mimeType:'image/png',buffer:Buffer.from('fixture')});
  await expect(page.getByRole('button',{name:'plan.png · unlabeled'})).toBeVisible();
  await expect(page.getByRole('heading',{name:'plan.png'})).toBeVisible();
@@ -103,7 +103,7 @@ test('calibration previews over a finding and saves the chosen distance',async({
   if(path==='/dataset/cases/plan'){const b=route.request().postDataJSON();saved={...ann,...b,revision:b.expected_revision+1,status:'draft'};return reply(saved)}
   if(path.endsWith('/preview'))return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"/>'});return reply([]);
  });
- await page.goto('/dataset');await page.getByRole('button',{name:'plan.png · draft'}).click();
+ await page.goto('/admin/dataset');await page.getByRole('button',{name:'plan.png · draft'}).click();
  await page.getByRole('button',{name:'Calibrate known length'}).click();
  const svg=page.getByLabel('Training mask editor');const box=await svg.boundingBox();if(!box)throw Error('no canvas');
  // SVG letterboxing can introduce padding: use its actual SVG-to-screen transform.
@@ -124,7 +124,7 @@ test('review decisions are saved, can be undone, and reclassify a finding',async
   if(path==='/dataset/cases/plan'){const b=route.request().postDataJSON();saved={...ann,...b,revision:b.expected_revision+1,status:'draft'};return reply(saved)}
   if(path.endsWith('/preview'))return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"/>'});return reply([]);
  });
- await page.goto('/dataset');await page.getByRole('button',{name:'plan.png · draft'}).click();await page.getByRole('button',{name:'Start review'}).click();
+ await page.goto('/admin/dataset');await page.getByRole('button',{name:'plan.png · draft'}).click();await page.getByRole('button',{name:'Start review'}).click();
  await page.getByRole('button',{name:'False detection'}).click();await expect.poll(()=>saved?.excluded_objects).toEqual([0]);
  await page.getByRole('button',{name:'Undo masks'}).click();await expect.poll(()=>saved?.excluded_objects||[]).toEqual([]);
  await page.getByRole('button',{name:'Start review'}).click();await page.getByRole('button',{name:'Window',exact:true}).click();await expect.poll(()=>saved?.objects[0].kind).toBe('window');
@@ -138,7 +138,7 @@ test('newly opened plan automatically shows reconstructed wall lines',async({pag
   const data=path==='/dataset/cases'?[{id:'plan',name:'plan.png',width_px:300,height_px:200,annotation:null}]:path==='/dataset/cases/plan/seed'?{annotation,warning:'Review model proposals'}:[];
   return route.fulfill({contentType:'application/json',headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'Content-Type','Access-Control-Allow-Methods':'GET, POST, OPTIONS'},body:JSON.stringify(data)});
  });
- await page.goto('/dataset');await page.getByRole('button',{name:'plan.png · unlabeled'}).click();
+ await page.goto('/admin/dataset');await page.getByRole('button',{name:'plan.png · unlabeled'}).click();
  await expect(page.getByRole('status')).toContainText('Review model proposals');
  await expect(page.getByLabel('Training mask editor').locator('line[stroke="#147eb1"]')).toHaveCount(1);
  await expect(page.getByLabel('Training mask editor').locator('circle')).toHaveCount(0);
@@ -154,7 +154,7 @@ test('review controls wait for an in-flight save instead of dropping the next de
   if(path==='/dataset/cases/plan'){saving=true;await gate;const b=route.request().postDataJSON();return reply({...ann,...b,revision:2,status:'draft'})}
   if(path.endsWith('/preview'))return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"/>'});return reply([]);
  });
- await page.goto('/dataset');await page.getByRole('button',{name:'plan.png · draft'}).click();await page.getByRole('button',{name:'Start review'}).click();
+ await page.goto('/admin/dataset');await page.getByRole('button',{name:'plan.png · draft'}).click();await page.getByRole('button',{name:'Start review'}).click();
  await page.getByRole('button',{name:'False detection'}).click();await expect.poll(()=>saving).toBe(true);
  await expect(page.getByRole('button',{name:'Wall',exact:true})).toBeDisabled();
  release();await expect(page.getByRole('button',{name:'Wall',exact:true})).toBeEnabled();

@@ -8,7 +8,7 @@ import numpy as np
 from .plan_workspace import Segment, Point
 
 
-def structural_runs(mask, min_length=10):
+def structural_runs(mask, min_length=10, pier_factor=2):
     tracks = []
     for horizontal in (True, False):
         raster = mask if horizontal else mask.T
@@ -50,7 +50,7 @@ def structural_runs(mask, min_length=10):
             lo = float(np.median(data[:, 1]))
             hi = float(np.median(data[:, 2]))
             thickness = int(data[-1, 0] - data[0, 0] + 1)
-            if hi - lo < max(min_length - 1, thickness * 2):
+            if hi - lo < max(min_length - 1, thickness * pier_factor):
                 continue
             center = float((data[0, 0] + data[-1, 0]) / 2)
             start = Point(x=lo, y=center) if horizontal else Point(x=center, y=lo)

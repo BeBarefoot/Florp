@@ -104,3 +104,11 @@ class WorkspaceRevision(SQLModel, table=True):
     version: int
     document: dict = Field(sa_type=JSON)
     created_at: datetime = Field(default_factory=now)
+
+class PlanRevision(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint('blueprint_id','revision',name='uq_plan_revision'),)
+    id: str = Field(default_factory=uid,primary_key=True)
+    blueprint_id: str = Field(index=True,foreign_key='blueprint.id')
+    revision: int
+    model: dict = Field(sa_type=JSON)
+    created_at: datetime = Field(default_factory=now)

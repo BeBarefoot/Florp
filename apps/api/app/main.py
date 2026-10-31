@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from PIL import Image, ImageOps
 import fitz
 from .config import settings
-from .models import Project, Blueprint, Layout, Render, WallAnnotation, ModelWallCorrection, FusionCandidateReview, ExtractionEvaluation, PlanGraphRevision, WorkspaceRevision
+from .models import Project, Blueprint, Layout, Render, WallAnnotation, ModelWallCorrection, FusionCandidateReview, ExtractionEvaluation, PlanGraphRevision, WorkspaceRevision, PlanRevision
 from .geometry import Geometry, fallback_geometry, validate_geometry
 from .connectivity_preview import without_starter
 from .providers import extract_geometry, ProviderUnavailable, ProviderAuthenticationError, ProviderConfigurationError, ProviderOutputError
@@ -82,7 +82,7 @@ def delete_project(pid:str):
         plans=list(s.exec(select(Blueprint).where(Blueprint.project_id==pid)).all())
         ids=[bp.id for bp in plans]
         for bid in ids:
-            for table in (WorkspaceRevision,Render,ModelWallCorrection,WallAnnotation,FusionCandidateReview,ExtractionEvaluation,PlanGraphRevision,Layout):
+            for table in (PlanRevision,WorkspaceRevision,Render,ModelWallCorrection,WallAnnotation,FusionCandidateReview,ExtractionEvaluation,PlanGraphRevision,Layout):
                 for row in s.exec(select(table).where(table.blueprint_id==bid)).all():
                     s.delete(row)
         for bp in plans:s.delete(bp)
@@ -1276,5 +1276,5 @@ def resolve_pending_opening(bid:str, revision_id:str, body:ResolvePendingOpening
         except ValueError as e:raise HTTPException(422,str(e)) from e
         return _append_graph(session,latest,plan.model_dump(mode='json'),{'kind':'resolve_opening','original':original.model_dump(),'replacement':body.replacement,'reason':body.reason})
 
-from .plan_workspace import router as workspace_router
-app.include_router(workspace_router)
+from .plan_api import router as plan_router
+app.include_router(plan_router)

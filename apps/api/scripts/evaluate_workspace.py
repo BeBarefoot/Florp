@@ -43,7 +43,7 @@ def render(document, source):
                 for ring in rings
             )
             elements.append(f'<path d="{path}" fill="{fill}" fill-rule="evenodd"/>')
-    for opening in [o for o in document.objects if o.kind == "window"]:
+    for opening in [o for o in document.objects if o.kind in ("window", "garage")]:
         p = footprint(opening)
         cv2.fillPoly(
             image, [np.rint(p.exterior.coords).astype(np.int32)], (220, 180, 90)
@@ -59,11 +59,49 @@ def render(document, source):
     return image, overlay, svg
 
 
+def debug_overlays(source, document, out: Path):
+    """Per-stage overlays: strips, thin ink, envelope, rejected components by reason, gap classes."""
+    from app.ink_layers import wall_strips
+
+    s = wall_strips(source)
+    h, w = source.shape[:2]
+    strips = np.full_like(source, 255)
+    strips[s.thin] = (210, 210, 210)
+    strips[s.dark] = (0, 0, 0)
+    strips[s.red] = (0, 0, 255)
+    strips[s.blue] = (255, 0, 0)
+    cv2.imwrite(str(out / "debug_strips.png"), strips)
+    colors = {
+        "too_thin": (0, 200, 255), "text": (255, 0, 255), "no_outline": (0, 180, 0),
+        "dashed": (255, 200, 0), "decor": (0, 120, 255),
+    }
+    rej = np.full_like(source, 255)
+    for name, mask in s.rejected.items():
+        rej[mask] = colors.get(name, (128, 128, 128))
+    cv2.imwrite(str(out / "debug_rejected.png"), rej)
+    env = source.copy()
+    if document.envelope:
+        pts = np.array([(p.x, p.y) for p in document.envelope], np.int32)
+        cv2.polylines(env, [pts], True, (0, 160, 0), 2)
+    cv2.imwrite(str(out / "debug_envelope.png"), env)
+    gaps = source.copy()
+    kinds = {"door": (0, 0, 230), "window": (230, 140, 0), "garage": (200, 0, 200)}
+    for o in document.objects:
+        if o.kind in kinds:
+            cv2.line(gaps, (int(o.start.x), int(o.start.y)), (int(o.end.x), int(o.end.y)), kinds[o.kind], 3)
+    for p in document.passages:
+        cv2.circle(gaps, (int(p.x), int(p.y)), 5, (0, 160, 0), 2)
+    cv2.imwrite(str(out / "debug_gaps.png"), gaps)
+
+
 def main():
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--runs", type=int, default=3)
+    parser.add_argument("--debug", action="store_true", help="write per-stage overlays")
+    parser.add_argument("--gold", type=Path, help="data/gold/<name> directory; writes score.json")
+    parser.add_argument("--update-thresholds", action="store_true", help="ratchet gold thresholds up")
     args = parser.parse_args()
     if not 1 <= args.runs <= 10:
         parser.error("--runs must be 1..10")
@@ -101,11 +139,33 @@ def main():
         "under_5_seconds": all(t < 5 for t in times),
         "under_20_seconds": all(t < 20 for t in times),
         "walls": sum(o.kind == "wall" for o in document.objects),
+        "open_passages": len(document.passages),
         "openings": sum(o.kind != "wall" for o in document.objects),
         "physical_scale_confirmed": document.reference is not None,
         "warnings": document.warnings,
         "accuracy": "Not measured by this script; compare output to independent annotations.",
     }
+    if args.debug:
+        debug_overlays(source, document, args.output)
+    if args.gold:
+        from app.plan_model import PlanModel
+        from app.plan_reconstruct import reconstruct
+        from app.plan_score import score
+
+        gold = PlanModel.model_validate_json((args.gold / "gold.json").read_text())
+        result = score(reconstruct(document, gold.id), gold)
+        report["score"] = result
+        (args.output / "score.json").write_text(json.dumps(result, indent=2))
+        if args.update_thresholds:
+            flat = {
+                "wall_precision": result["wall_precision"],
+                "wall_recall": result["wall_recall"],
+                "door_f1": result["openings"]["door"]["f1"],
+                "window_f1": result["openings"]["window"]["f1"],
+            }
+            path = args.gold / "thresholds.json"
+            old = json.loads(path.read_text()) if path.exists() else {}
+            path.write_text(json.dumps({k: round(max(old.get(k, 0), v - 0.02), 3) for k, v in flat.items()}, indent=2))
     (args.output / "report.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(report, indent=2))
 
