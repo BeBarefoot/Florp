@@ -342,8 +342,8 @@ def wall_strips(image: np.ndarray) -> Strips:
                 continue
             # digits and symbols: compact boxes
             if (
-                long < 8 * w_wall
-                and short > 0.45 * long
+                long < 4 * w_wall
+                and short > 0.6 * long
                 and area / max(1, bw * bh) < 0.72
             ):
                 rejected["text"] |= comp
@@ -354,14 +354,15 @@ def wall_strips(image: np.ndarray) -> Strips:
                 continue
             if density_dilate:
                 solid = float(cand[comp].mean())
-                if solid < 0.8:
-                    edge = comp & ~(
-                        cv2.erode(comp.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
-                    )
-                    near = float(outline_ink[edge].mean()) if edge.any() else 0.0
-                    if near < 0.45:
-                        rejected["no_outline"] |= comp
-                        continue
+                # Solid red text and exterior dimension bars need boundary
+                # evidence too; colour alone does not make them walls.
+                edge = comp & ~(
+                    cv2.erode(comp.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+                )
+                near = float(outline_ink[edge].mean()) if edge.any() else 0.0
+                if near < (0.45 if solid < 0.8 else 0.25):
+                    rejected["no_outline"] |= comp
+                    continue
             keep |= comp
         return keep
 
@@ -391,15 +392,15 @@ def wall_strips(image: np.ndarray) -> Strips:
         blue = np.zeros_like(blue)
         stats["dark_walls"] = True
     elif red.sum() + blue.sum() > max(100, 0.003 * h * w):
-        # Window rails and stair treads are thin neutral strokes in a coloured
-        # architectural plan. Do not let them become solid wall bands.
-        kd = max(3, int(round(min(stats["classes"]))))
-        dark = (
-            cv2.morphologyEx(
-                dark.astype(np.uint8), cv2.MORPH_OPEN, np.ones((kd, kd), np.uint8)
-            )
-            > 0
-        )
+        # In colour-dominated drawings, neutral ink describes outlines and
+        # symbols, not an independent structural layer. Only retain the dark
+        # edge of a coloured wall. A thickness filter alone kept black window
+        # rails, furniture and foliage, closing real openings before detection.
+        colour_edge = cv2.dilate(
+            (red | blue).astype(np.uint8), np.ones((3, 3), np.uint8)
+        ) > 0
+        rejected["neutral_without_wall_colour"] = dark & ~colour_edge
+        dark &= colour_edge
     # Hatched walls carry their own dark outlines; those belong to the strip, not to thin ink.
     strip = dark | red | blue
     grown = cv2.dilate(strip.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
