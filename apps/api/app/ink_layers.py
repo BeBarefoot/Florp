@@ -216,8 +216,9 @@ def _pale_bands(outlines, colour, delta, classes, period):
                 profile = np.convolve(candidate.mean(axis=0), kernel, "same")
                 tint = np.convolve(np.maximum(da, 0).mean(axis=0), kernel, "same")
                 valid = (profile >= 0.18) & (tint >= 1.2)
-                if valid.mean() < 0.55:
-                    continue
+                # Evaluate supported sub-runs independently. Windows can
+                # occupy most of a long boundary pair; that must not reject
+                # the genuine wall sections on either side of them.
                 edges = np.diff(np.r_[False, valid, False].astype(np.int8))
                 for u, v in zip(
                     np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)
@@ -231,51 +232,6 @@ def _pale_bands(outlines, colour, delta, classes, period):
                     )
                     cv2.rectangle(result, tuple(map(int, p)), tuple(map(int, q)), 1, -1)
     return result > 0
-
-
-def _bounded_red(red, recovered, outlines, wall_width):
-    """Keep red bands with two drawn sides, not entire connected components.
-
-    Annotation bars can touch a real corner. A component-level decision would
-    then preserve the bar as a wall extension. Evaluate each straight run and
-    retain short junctions only near a supported band.
-    """
-    from .structural_runs import structural_runs
-
-    h, w = red.shape
-    supported = recovered.astype(np.uint8).copy()
-    runs = structural_runs(
-        red.astype(np.uint8), min_length=max(12, round(3 * wall_width))
-    )
-    for run in runs:
-        horizontal = abs(run.end.x - run.start.x) >= abs(run.end.y - run.start.y)
-        a, b = (run.start.x, run.end.x) if horizontal else (run.start.y, run.end.y)
-        c = (run.start.y + run.end.y) / 2 if horizontal else (run.start.x + run.end.x) / 2
-        along = np.linspace(min(a, b), max(a, b), max(8, round(abs(b - a))))
-        side_support = []
-        tolerance = max(2, round(0.25 * run.thickness_px))
-        for side in (-1, 1):
-            hits = np.zeros(along.size, bool)
-            for offset in range(-tolerance, tolerance + 1):
-                cross = np.full(along.shape, c + side * run.thickness_px / 2 + offset)
-                xs, ys = (along, cross) if horizontal else (cross, along)
-                xi, yi = np.rint(xs).astype(int), np.rint(ys).astype(int)
-                valid = (xi >= 0) & (xi < w) & (yi >= 0) & (yi < h)
-                hits[valid] |= outlines[yi[valid], xi[valid]]
-            side_support.append(float(hits.mean()))
-        if min(side_support) < 0.5:
-            continue
-        cv2.line(
-            supported,
-            (round(run.start.x), round(run.start.y)),
-            (round(run.end.x), round(run.end.y)),
-            1, max(1, round(run.thickness_px)),
-        )
-    # A small junction allowance preserves piers and corner returns without
-    # retaining an arbitrarily long annotation attached to a valid wall.
-    radius = max(1, round(wall_width))
-    nearby = cv2.dilate(supported, np.ones((2 * radius + 1, 2 * radius + 1), np.uint8)) > 0
-    return red & nearby
 
 
 def wall_strips(image: np.ndarray) -> Strips:
@@ -400,16 +356,15 @@ def wall_strips(image: np.ndarray) -> Strips:
                 continue
             if density_dilate:
                 solid = float(cand[comp].mean())
-                # Solid red text and exterior dimension bars need boundary
-                # evidence too; colour alone does not make them walls.
+                # Hatch fusion needs nearby drawn boundary evidence.
                 edge = comp & ~(
                     cv2.erode(comp.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
                 )
                 near = float(outline_ink[edge].mean()) if edge.any() else 0.0
                 # Judge hatch reconstruction here. Do not discard a complete
                 # connected partition network because its solid interior has
-                # few *external* outline pixels. Local boundaries below
-                # discriminate solid annotation strokes from wall bands.
+                # few *external* outline pixels. Boundary recovery adds
+                # supported runs; it must not veto existing wall evidence.
                 if solid < 0.8 and near < 0.45:
                     rejected["no_outline"] |= comp
                     continue
@@ -442,7 +397,6 @@ def wall_strips(image: np.ndarray) -> Strips:
         blue = np.zeros_like(blue)
         stats["dark_walls"] = True
     elif red.sum() + blue.sum() > max(100, 0.003 * h * w):
-        red = _bounded_red(red, recovered, outline_cand, w_wall)
         # In colour-dominated drawings, neutral ink describes outlines and
         # symbols, not an independent structural layer. Only retain the dark
         # edge of a coloured wall. A thickness filter alone kept black window
