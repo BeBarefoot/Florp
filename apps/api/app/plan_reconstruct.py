@@ -1,7 +1,7 @@
 """Turn raw extractor segments into a connected PlanModel v2.
 
 Order: straighten near-axis runs, merge collinear fragments (bridging a gap only
-when it is short or covered by opening evidence), snap L/T junctions to shared
+when covered by classified opening evidence), snap L/T junctions to shared
 nodes, split at T-junctions and crossings, prune dangling stubs, then host
 openings on the consolidated walls. Openings the pipeline is unsure about stay
 ``proposed`` until the user decides; nothing is auto-confirmed below threshold.
@@ -18,10 +18,24 @@ from .plan_workspace import Document
 @dataclass
 class ReconstructConfig:
     straighten_deg: float = 3.0
-    gap_merge_factor: float = 1.5
+    gap_merge_factor: float = 1.5  # compatibility only; plain gaps are never filled
     opening_gap_cover: float = 0.6
     auto_confirm: float = 0.85
+    auto_confirm_by_kind: dict[str, float] = field(default_factory=dict)
     min_length_px: float = 12.0
+
+
+def configured_config():
+    cfg = ReconstructConfig()
+    from .config import settings
+
+    if settings.opening_confidence_profile:
+        from .opening_calibration import load_profile
+
+        cfg.auto_confirm_by_kind = load_profile(
+            settings.opening_confidence_profile
+        ).thresholds
+    return cfg
 
 
 @dataclass
@@ -88,6 +102,20 @@ def _majority(values, weights):
     return max(score, key=score.get)
 
 
+def _run_thickness(parts, weights):
+    """Reject a width outlier within one supported run, not across the house.
+
+    Three independent pieces are needed to identify an outlier. Using the
+    unweighted centre first prevents one long, bloated piece from dominating
+    the subsequent length-weighted estimate.
+    """
+    values = [p.t for p in parts]
+    if len(values) >= 3:
+        centre = median(values)
+        values = [v if 0.6 * centre <= v <= 1.6 * centre else centre for v in values]
+    return _weighted_median(values, weights)
+
+
 def _merge_collinear(runs, openings, t_med, cfg, counters, gaps):
     """Collinear non-maximum suppression on axis-aligned runs.
 
@@ -103,11 +131,11 @@ def _merge_collinear(runs, openings, t_med, cfg, counters, gaps):
         clusters = []
         for r in group:
             for c in clusters:
-                if abs(r.a[cross] - c["cross"]) <= max(r.t, c["t"]) / 2 + 2:
+                if abs(r.a[cross] - c["cross"]) <= median([r.t, c["t"], t_med]) / 2 + 2:
                     c["runs"].append(r)
                     total = sum(x.length for x in c["runs"])
                     c["cross"] = sum(x.a[cross] * x.length for x in c["runs"]) / total
-                    c["t"] = max(c["t"], r.t)
+                    c["t"] = median([p.t for p in c["runs"]])
                     break
             else:
                 clusters.append({"cross": r.a[cross], "t": r.t, "runs": [r]})
@@ -123,17 +151,25 @@ def _merge_collinear(runs, openings, t_med, cfg, counters, gaps):
                     m = merged[-1]
                     gap = r.a[axis] - m["hi"]
                     t = max(m["t"], r.t)
-                    covered = 0.0
+                    intervals = []
                     if gap > 0:
                         for o, oc in zip(openings, spans):
                             if abs(oc - c["cross"]) > t + 2:
                                 continue
-                            lo = min(getattr(o.start, "xy"[axis]), getattr(o.end, "xy"[axis]))
-                            hi = max(getattr(o.start, "xy"[axis]), getattr(o.end, "xy"[axis]))
-                            covered += max(0, min(hi, r.a[axis]) - max(lo, m["hi"]))
-                    if gap <= 0 or gap <= cfg.gap_merge_factor * max(t, min(t_med, 1.5 * t)) or (
-                        covered >= cfg.opening_gap_cover * gap
-                    ):
+                            lo = min(
+                                getattr(o.start, "xy"[axis]), getattr(o.end, "xy"[axis])
+                            )
+                            hi = max(
+                                getattr(o.start, "xy"[axis]), getattr(o.end, "xy"[axis])
+                            )
+                            lo, hi = max(lo, m["hi"]), min(hi, r.a[axis])
+                            if hi > lo:
+                                intervals.append((lo, hi))
+                    covered, right = 0.0, float("-inf")
+                    for lo, hi in sorted(intervals):
+                        covered += max(0, hi - max(lo, right))
+                        right = max(right, hi)
+                    if gap <= 0 or (covered >= cfg.opening_gap_cover * gap):
                         if gap <= 0:
                             counters.merged_duplicates += 1
                         elif gap > 1:
@@ -141,7 +177,9 @@ def _merge_collinear(runs, openings, t_med, cfg, counters, gaps):
                         m["hi"] = max(m["hi"], r.b[axis])
                         m["parts"].append(r)
                         continue
-                merged.append({"lo": r.a[axis], "hi": r.b[axis], "t": r.t, "parts": [r]})
+                merged.append(
+                    {"lo": r.a[axis], "hi": r.b[axis], "t": r.t, "parts": [r]}
+                )
             for m in merged:
                 parts = m["parts"]
                 weights = [max(1, p.length) for p in parts]
@@ -154,7 +192,7 @@ def _merge_collinear(runs, openings, t_med, cfg, counters, gaps):
                     Run(
                         a=a,
                         b=b,
-                        t=_weighted_median([p.t for p in parts], weights),
+                        t=_run_thickness(parts, weights),
                         material=_majority([p.material for p in parts], weights),
                         exterior=_majority([p.exterior for p in parts], weights),
                         confidence=min(p.confidence for p in parts),
@@ -302,11 +340,16 @@ def _merge_degree_two(points, edges):
             l1, l2 = math.hypot(*d1), math.hypot(*d2)
             if l1 < 1e-6 or l2 < 1e-6:
                 continue
-            if abs(d1[0] * d2[1] - d1[1] * d2[0]) / (l1 * l2) > math.sin(math.radians(2)):
+            if abs(d1[0] * d2[1] - d1[1] * d2[0]) / (l1 * l2) > math.sin(
+                math.radians(2)
+            ):
                 continue
             if d1[0] * d2[0] + d1[1] * d2[1] <= 0:
                 continue
-            if abs(r1.t - r2.t) > max(2, 0.35 * max(r1.t, r2.t)) or r1.material != r2.material:
+            if (
+                abs(r1.t - r2.t) > max(2, 0.35 * max(r1.t, r2.t))
+                or r1.material != r2.material
+            ):
                 continue
             keep = r1 if l1 >= l2 else r2
             edges.remove(pair[0])
@@ -349,8 +392,12 @@ def _prune(points, edges, t_med, cfg, counters):
             length = math.hypot(q[0] - p[0], q[1] - p[1])
             dangling = deg[u] == 1 or deg[v] == 1
             isolated = deg[u] == 1 and deg[v] == 1
-            if (dangling and length < limit) or (isolated and length < max(2 * limit, 5 * r.t)):
-                if length >= 1.5 * r.t and _collinear_sibling(points, edges, (u, v, r), 24 * r.t):
+            if (dangling and length < limit) or (
+                isolated and length < max(2 * limit, 5 * r.t)
+            ):
+                if length >= 1.5 * r.t and _collinear_sibling(
+                    points, edges, (u, v, r), 24 * r.t
+                ):
                     keep.append([u, v, r])
                     continue
                 counters.pruned_fragments += 1
@@ -390,7 +437,9 @@ def _host_openings(model_nodes, walls, raw, gaps, cfg):
                 continue
             candidates.append((perp, w, a, u, length, lo, hi))
         status = "proposed"
-        confidence = o.confidence if o.confidence is not None else (0.5 if o.uncertain else 0.9)
+        confidence = (
+            o.confidence if o.confidence is not None else (0.5 if o.uncertain else 0.9)
+        )
         if not candidates:
             out.append(
                 Opening(
@@ -419,7 +468,11 @@ def _host_openings(model_nodes, walls, raw, gaps, cfg):
             if overlap > 0.5 * min(hi - lo, g[1] - g[0]):
                 lo, hi = max(0, g[0]), min(length, g[1])
                 break
-        if confidence >= cfg.auto_confirm and not ambiguous and o.kind != "garage":
+        if (
+            confidence >= cfg.auto_confirm_by_kind.get(o.kind, cfg.auto_confirm)
+            and not ambiguous
+            and o.kind != "garage"
+        ):
             status = "confirmed"
         hinge, swing = "start", None
         if o.kind == "door":
@@ -436,7 +489,9 @@ def _host_openings(model_nodes, walls, raw, gaps, cfg):
                 offset_px=lo,
                 width_px=hi - lo,
                 span=(Pt(x=s[0], y=s[1]), Pt(x=e[0], y=e[1])),
-                height_m=min(o.height_m, w.height_m - (o.sill_m if o.kind == "window" else 0)),
+                height_m=min(
+                    o.height_m, w.height_m - (o.sill_m if o.kind == "window" else 0)
+                ),
                 sill_m=o.sill_m if o.kind == "window" else 0,
                 swing=swing,
                 hinge=hinge,
@@ -448,7 +503,8 @@ def _host_openings(model_nodes, walls, raw, gaps, cfg):
 
 
 def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = None):
-    cfg = cfg or ReconstructConfig()
+    if cfg is None:
+        cfg = configured_config()
     counters = Counters()
     runs = [
         Run(
@@ -510,11 +566,14 @@ def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = Non
     )
     from .plan_derive import derive
 
-    return derive(model, counters={
-        "merged_duplicates": counters.merged_duplicates,
-        "pruned_fragments": counters.pruned_fragments,
-        "passages": [(p.x, p.y) for p in doc.passages],
-    })
+    return derive(
+        model,
+        counters={
+            "merged_duplicates": counters.merged_duplicates,
+            "pruned_fragments": counters.pruned_fragments,
+            "passages": [(p.x, p.y) for p in doc.passages],
+        },
+    )
 
 
 def extend_dangling(objects, ink, factor: float = 4.0, cover: float = 0.8):
@@ -532,7 +591,9 @@ def extend_dangling(objects, ink, factor: float = 4.0, cover: float = 0.8):
     horizontal = {}
     for o in walls:
         dx, dy = abs(o.end.x - o.start.x), abs(o.end.y - o.start.y)
-        horizontal[o.id] = True if dy <= 0.2 * dx + 1 else False if dx <= 0.2 * dy + 1 else None
+        horizontal[o.id] = (
+            True if dy <= 0.2 * dx + 1 else False if dx <= 0.2 * dy + 1 else None
+        )
 
     def body_distance(px, py, skip):
         best = None
@@ -574,7 +635,11 @@ def extend_dangling(objects, ink, factor: float = 4.0, cover: float = 0.8):
                     dist = (qy - p.y) * direction[1]
                     ok = lo - q.thickness_px / 2 <= p.x <= hi + q.thickness_px / 2
                     stop = qy - direction[1] * q.thickness_px / 2
-                if ok and 0 < dist <= reach + q.thickness_px / 2 and (target is None or dist < target[0]):
+                if (
+                    ok
+                    and 0 < dist <= reach + q.thickness_px / 2
+                    and (target is None or dist < target[0])
+                ):
                     target = (dist, stop)
             if not target:
                 continue
@@ -585,7 +650,10 @@ def extend_dangling(objects, ink, factor: float = 4.0, cover: float = 0.8):
             reach_px = max(1, int(o.thickness_px / 2))
             near = np.zeros(n, bool)
             for dx in range(-reach_px, reach_px + 1):
-                near |= ink[(ys + (0 if axis else dx)).clip(0, h - 1), (xs + (dx if axis else 0)).clip(0, w - 1)]
+                near |= ink[
+                    (ys + (dx if axis else 0)).clip(0, h - 1),
+                    (xs + (0 if axis else dx)).clip(0, w - 1),
+                ]
             if near.mean() >= cover:
                 setattr(o, end, type(p)(x=float(nx), y=float(ny)))
                 count += 1

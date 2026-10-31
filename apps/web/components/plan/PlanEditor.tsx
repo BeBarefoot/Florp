@@ -38,6 +38,7 @@ export default function PlanEditor({ id }: { id: string }) {
   const saved = useRef("");
   const live = useRef<PlanModel | null>(null);
   const saving = useRef(false);
+  const saveDone = useRef<Promise<void> | null>(null);
   const recoveryKey = "florp-plan-v2-" + id;
   const dirty = !!model && JSON.stringify(model) !== saved.current;
 
@@ -86,8 +87,10 @@ export default function PlanEditor({ id }: { id: string }) {
     setModel(next);
   }
   async function persist(next: PlanModel) {
-    if (saving.current) return;
+    if (saving.current) return false;
     saving.current = true;
+    let finish!: () => void;
+    saveDone.current = new Promise<void>((resolve) => { finish = resolve; });
     setStatus("Saving…");
     try {
       const r = await request<PlanResponse>(`/blueprints/${id}/plan`, {
@@ -101,16 +104,33 @@ export default function PlanEditor({ id }: { id: string }) {
         adopt(r);
         setStatus("Saved");
         localStorage.removeItem(recoveryKey);
+        return true;
       } else {
         saved.current = JSON.stringify(r.model);
         setStatus("Unsaved changes");
+        return false;
       }
     } catch (e) {
       setError(String(e));
       setStatus("Save failed — edits kept on this device");
+      return false;
     } finally {
       saving.current = false;
+      finish();
+      saveDone.current = null;
     }
+  }
+  async function commitOutline(envelope: Pt[]) {
+    setBusy(true);
+    // A corrected outline triggers extraction. Preserve pending manual edits
+    // as a server revision before replacing the displayed geometry.
+    if (saveDone.current) await saveDone.current;
+    const current = live.current;
+    if (current && JSON.stringify(current) !== saved.current && !(await persist(current))) {
+      setBusy(false);
+      return;
+    }
+    await extract(revision.current, true, envelope);
   }
   async function extract(expected: number, replacing: boolean, envelope?: Pt[]) {
     if (replacing && !envelope && !window.confirm("Replace the current plan with a fresh extraction? Saved revisions are kept in history.")) return;
@@ -318,7 +338,7 @@ export default function PlanEditor({ id }: { id: string }) {
       focus={focus}
       outline={outline}
       setOutline={setOutline}
-      commitOutline={(o) => void extract(revision.current, true, o)}
+      commitOutline={(o) => void commitOutline(o)}
     >
       {({ toScreen }) =>
         tool === "measure" && measure.length === 2 ? (

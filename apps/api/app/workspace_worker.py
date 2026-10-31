@@ -17,7 +17,7 @@ def _remeasure(objects, strip_mask, classes):
     """Thickness from the strip's own local width along each run, not from scan-band extents."""
     h, w = strip_mask.shape
     dt = cv2.distanceTransform((strip_mask > 0).astype(np.uint8), cv2.DIST_L2, 3)
-    cap = 2.5 * max(classes)
+    cap = 1.6 * max(classes)
     for o in objects:
         xs = np.rint(np.linspace(o.start.x, o.end.x, 25)).astype(int).clip(0, w - 1)
         ys = np.rint(np.linspace(o.start.y, o.end.y, 25)).astype(int).clip(0, h - 1)

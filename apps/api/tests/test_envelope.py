@@ -25,7 +25,12 @@ def scene():
     building(img)
     # site context: pink hatched terrace and a neighbour's wall fragment, dimension lines and text
     region = hatch(img, 600, 100, 780, 300)
-    img[~region & (img[:, :, 0] != 255) & (img[:, :, 2] == 245) & (np.arange(W)[None, :] > 590)] = img[0, 0]
+    img[
+        ~region
+        & (img[:, :, 0] != 255)
+        & (img[:, :, 2] == 245)
+        & (np.arange(W)[None, :] > 590)
+    ] = img[0, 0]
     cv2.rectangle(img, (40, 400), (120, 440), (0, 0, 0), 8)
     for x in range(150, 560, 16):
         cv2.line(img, (x, 40), (x + 8, 40), (0, 0, 255), 1)
@@ -64,8 +69,12 @@ def test_worker_ignores_marks_outside_the_building_and_reports_them(tmp_path):
     doc = build(path)
     walls = [o for o in doc.objects if o.kind == "wall"]
     assert doc.envelope
-    assert all(max(o.start.x, o.end.x) <= 600 for o in walls)  # nothing from the terrace
-    assert not any(o.start.y > 395 for o in walls)  # nothing from the neighbour's fragment
+    assert all(
+        max(o.start.x, o.end.x) <= 600 for o in walls
+    )  # nothing from the terrace
+    assert not any(
+        o.start.y > 395 for o in walls
+    )  # nothing from the neighbour's fragment
     assert any("outside the building" in w for w in doc.warnings)
 
 
@@ -75,3 +84,39 @@ def test_worker_honours_a_user_outline(tmp_path):
     doc = build(path, roi=[(20, 380), (200, 380), (200, 460), (20, 460)])
     walls = [o for o in doc.objects if o.kind == "wall"]
     assert walls and all(o.start.y > 370 and o.end.y > 370 for o in walls)
+
+
+def test_open_envelope_keeps_a_side_wall_beyond_short_window_piers():
+    mask = np.zeros((440, 1000), np.uint8)
+    # Long roof/floor spans start to the right of the actual left boundary.
+    cv2.rectangle(mask, (160, 75), (870, 85), 255, -1)
+    cv2.rectangle(mask, (580, 425), (850, 438), 255, -1)
+    # The left side has windows; short roof and floor piers still attach it.
+    cv2.rectangle(mask, (85, 78), (101, 112), 255, -1)
+    cv2.rectangle(mask, (85, 205), (98, 265), 255, -1)
+    cv2.rectangle(mask, (85, 398), (98, 438), 255, -1)
+    cv2.rectangle(mask, (90, 428), (151, 438), 255, -1)
+    cv2.rectangle(mask, (847, 80), (860, 438), 255, -1)
+    # Separate site leader does not have a horizontal architectural junction.
+    cv2.rectangle(mask, (927, 0), (935, 410), 255, -1)
+    polygon, region = building_envelope(mask, 7)
+    assert polygon
+    assert region[220, 90] and region[432, 90]
+    assert not region[220, 930]
+
+
+def test_band_crop_does_not_follow_disconnected_garden_context():
+    mask = np.zeros((400, 1300), np.uint8)
+    cv2.rectangle(mask, (250, 55), (1035, 66), 255, -1)
+    cv2.rectangle(mask, (250, 390), (1010, 399), 255, -1)
+    cv2.rectangle(mask, (250, 55), (262, 140), 255, -1)
+    cv2.rectangle(mask, (250, 280), (262, 399), 255, -1)
+    cv2.rectangle(mask, (730, 215), (1010, 228), 255, -1)
+    cv2.rectangle(mask, (730, 215), (743, 399), 255, -1)
+    cv2.rectangle(mask, (1040, 55), (1050, 175), 255, -1)
+    cv2.rectangle(mask, (990, 55), (1050, 66), 255, -1)
+    cv2.rectangle(mask, (20, 10), (90, 45), 255, 5)
+    cv2.rectangle(mask, (1095, 0), (1100, 399), 255, -1)
+    polygon, region = building_envelope(mask, 10)
+    assert polygon and region[300, 256] and region[100, 1045]
+    assert not region[25, 50] and not region[200, 1097]

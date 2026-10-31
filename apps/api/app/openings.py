@@ -72,7 +72,9 @@ def _pieces(walls):
             for cl in clusters:
                 if abs(cross - cl["cross"]) <= max(t, cl["t"]) / 2 + 1.5:
                     cl["items"].append((lo, hi, t))
-                    cl["cross"] = sum([cl["cross"] * (len(cl["items"]) - 1), cross]) / len(cl["items"])
+                    cl["cross"] = sum(
+                        [cl["cross"] * (len(cl["items"]) - 1), cross]
+                    ) / len(cl["items"])
                     cl["t"] = max(cl["t"], t)
                     break
             else:
@@ -114,12 +116,16 @@ def enumerate_gaps(walls, size, min_factor=2.2, max_factor=32.0):
         perp = [p for p in pieces if p[0] != horizontal]
         for i, (lo, hi, t) in enumerate(merged):
             for end, direction in ((lo, -1), (hi, 1)):
-                nxt = merged[i + direction] if 0 <= i + direction < len(merged) else None
+                nxt = (
+                    merged[i + direction] if 0 <= i + direction < len(merged) else None
+                )
                 if nxt and abs((nxt[1] if direction < 0 else nxt[0]) - end) <= limit(t):
                     continue  # handled as a collinear gap
                 best = None
                 for _, pcross, pm in perp:
-                    if (pcross - end) * direction < 0 or abs(pcross - end) > limit(t) + t:
+                    if (pcross - end) * direction < 0 or abs(pcross - end) > limit(
+                        t
+                    ) + t:
                         continue
                     pt = max(x[2] for x in pm)
                     if not any(a - t <= cross <= b + t for a, b, _ in pm):
@@ -140,7 +146,13 @@ def _line_ink(image, strips):
     line = gray < 0.8 * paper
     if strips.ink is not None:
         line |= strips.ink
-    grown = cv2.dilate((strips.red | strips.blue | strips.dark).astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+    grown = (
+        cv2.dilate(
+            (strips.red | strips.blue | strips.dark).astype(np.uint8),
+            np.ones((3, 3), np.uint8),
+        )
+        > 0
+    )
     return line & ~grown
 
 
@@ -176,33 +188,41 @@ def _door(line_dil, gap: Gap):
     h, w = line_dil.shape
     g = gap.hi - gap.lo
     best = None
-    angles = np.radians(np.linspace(8, 82, 19))
     for hinge_at_lo in (True, False):
         for side in (-1, 1):
             hinge = gap.lo if hinge_at_lo else gap.hi
             toward = 1 if hinge_at_lo else -1
             for r in (0.85 * g, 0.95 * g, g, 1.08 * g):
-                a = hinge + toward * r * np.cos(angles)
-                c = gap.cross + side * r * np.sin(angles)
-                xs, ys = (a, c) if gap.horizontal else (c, a)
-                xi, yi = np.rint(xs).astype(int), np.rint(ys).astype(int)
-                ok = (xi >= 0) & (xi < w) & (yi >= 0) & (yi < h)
-                if ok.sum() < 0.8 * len(angles):
-                    continue
-                arc = float(line_dil[yi[ok], xi[ok]].mean())
-                steps = np.linspace(gap.t / 2 + 1, 0.95 * r, max(4, int(r)))
-                la = np.full_like(steps, hinge)
-                lc = gap.cross + side * steps
-                lx, ly = (la, lc) if gap.horizontal else (lc, la)
-                lxi, lyi = np.rint(lx).astype(int), np.rint(ly).astype(int)
-                lok = (lxi >= 0) & (lxi < w) & (lyi >= 0) & (lyi < h)
-                leaf = float(line_dil[lyi[lok], lxi[lok]].mean()) if lok.any() else 0.0
-                score = arc + 0.25 * leaf
-                if best is None or score > best[0]:
-                    best = (score, arc, leaf, hinge_at_lo, side)
-    if best and best[1] >= 0.65:
-        return best
-    return None
+                for opening_angle in (45, 60, 90):
+                    angles = np.radians(
+                        np.linspace(0.12 * opening_angle, 0.88 * opening_angle, 19)
+                    )
+                    a = hinge + toward * r * np.cos(angles)
+                    c = gap.cross + side * r * np.sin(angles)
+                    xs, ys = (a, c) if gap.horizontal else (c, a)
+                    xi, yi = np.rint(xs).astype(int), np.rint(ys).astype(int)
+                    ok = (xi >= 0) & (xi < w) & (yi >= 0) & (yi < h)
+                    if ok.sum() < 0.8 * len(angles):
+                        continue
+                    arc = float(line_dil[yi[ok], xi[ok]].mean())
+                    theta = math.radians(opening_angle)
+                    steps = np.linspace(gap.t / 2 + 1, 0.95 * r, max(4, int(r)))
+                    la = hinge + toward * steps * math.cos(theta)
+                    lc = gap.cross + side * steps * math.sin(theta)
+                    lx, ly = (la, lc) if gap.horizontal else (lc, la)
+                    lxi, lyi = np.rint(lx).astype(int), np.rint(ly).astype(int)
+                    lok = (lxi >= 0) & (lxi < w) & (lyi >= 0) & (lyi < h)
+                    leaf = (
+                        float(line_dil[lyi[lok], lxi[lok]].mean()) if lok.any() else 0.0
+                    )
+                    score = arc + 0.25 * leaf
+                    if (
+                        arc >= 0.65
+                        and leaf >= 0.5
+                        and (best is None or score > best[0])
+                    ):
+                        best = (score, arc, leaf, hinge_at_lo, side)
+    return best
 
 
 def _dashes(line, gap: Gap):
@@ -215,7 +235,31 @@ def _dashes(line, gap: Gap):
         band = line[max(0, c - half) : c + half + 1, max(0, lo) : min(w, hi)]
     else:
         band = line[max(0, lo) : min(h, hi), max(0, c - half) : c + half + 1]
-    return float(band.mean()) if band.size else 0.0
+    if not gap.horizontal:
+        band = band.T
+    if not band.size:
+        return 0.0
+    best = 0.0
+    for row in band:
+        edges = np.diff(np.r_[False, row, False].astype(np.int8))
+        intervals = [
+            (a, b)
+            for a, b in zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1))
+            if 2 <= b - a <= 0.35 * len(row)
+        ]
+        if len(intervals) < 3:
+            continue
+        gaps = [b[0] - a[1] for a, b in zip(intervals, intervals[1:])]
+        lengths = [b - a for a, b in intervals]
+        coverage = sum(lengths) / len(row)
+        if (
+            0.12 <= coverage <= 0.8
+            and np.mean(gaps) > 1
+            and np.std(gaps) / np.mean(gaps) < 0.6
+            and np.std(lengths) / np.mean(lengths) < 0.6
+        ):
+            best = max(best, coverage)
+    return best
 
 
 def _on_exterior(exterior, gap: Gap):
@@ -229,11 +273,18 @@ def _on_exterior(exterior, gap: Gap):
 
 def _yolo(gap: Gap, boxes):
     """Boxes whose area contains the gap centre (expanded by a wall thickness)."""
-    cx, cy = (((gap.lo + gap.hi) / 2, gap.cross) if gap.horizontal else (gap.cross, (gap.lo + gap.hi) / 2))
+    cx, cy = (
+        ((gap.lo + gap.hi) / 2, gap.cross)
+        if gap.horizontal
+        else (gap.cross, (gap.lo + gap.hi) / 2)
+    )
     m = gap.t
     hits = [
-        b for b in boxes
-        if b.category in ("door", "window") and b.x1 - m <= cx <= b.x2 + m and b.y1 - m <= cy <= b.y2 + m
+        b
+        for b in boxes
+        if b.category in ("door", "window")
+        and b.x1 - m <= cx <= b.x2 + m
+        and b.y1 - m <= cy <= b.y2 + m
     ]
     if not hits:
         return None
@@ -296,10 +347,16 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
             if door:
                 kind = "door"
                 conf = 0.5 + 0.3 * min(1.0, door[1]) + (0.1 if door[2] >= 0.6 else 0)
-            elif width >= 8 * gap.t and _on_exterior(exterior, gap):
-                # A wide gap on the outer wall with no window rails or door arc: overhead door, or
-                # an unmarked entrance. Never trusted without approval.
-                kind, conf = "garage", 0.4 + (0.1 if 0.03 <= _dashes(line, gap) <= 0.8 else 0)
+            elif (
+                width >= 8 * gap.t
+                and _on_exterior(exterior, gap)
+                and _dashes(line, gap) > 0
+            ):
+                # Repeated overhead-door dashes corroborate a wide outer gap.
+                # A blank gap alone does not establish a garage opening.
+                kind, conf = "garage", 0.4 + (
+                    0.1 if 0.03 <= _dashes(line, gap) <= 0.8 else 0
+                )
         box = _yolo(gap, boxes)
         if kind:
             if box:
@@ -309,7 +366,11 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
             door = None
         if not kind:
             result.passages.append(
-                (((gap.lo + gap.hi) / 2, gap.cross) if gap.horizontal else (gap.cross, (gap.lo + gap.hi) / 2))
+                (
+                    ((gap.lo + gap.hi) / 2, gap.cross)
+                    if gap.horizontal
+                    else (gap.cross, (gap.lo + gap.hi) / 2)
+                )
             )
             result.gaps.append((gap, None, 0.0))
             continue

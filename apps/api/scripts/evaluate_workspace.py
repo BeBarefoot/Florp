@@ -72,8 +72,11 @@ def debug_overlays(source, document, out: Path):
     strips[s.blue] = (255, 0, 0)
     cv2.imwrite(str(out / "debug_strips.png"), strips)
     colors = {
-        "too_thin": (0, 200, 255), "text": (255, 0, 255), "no_outline": (0, 180, 0),
-        "dashed": (255, 200, 0), "decor": (0, 120, 255),
+        "too_thin": (0, 200, 255),
+        "text": (255, 0, 255),
+        "no_outline": (0, 180, 0),
+        "dashed": (255, 200, 0),
+        "decor": (0, 120, 255),
     }
     rej = np.full_like(source, 255)
     for name, mask in s.rejected.items():
@@ -88,7 +91,13 @@ def debug_overlays(source, document, out: Path):
     kinds = {"door": (0, 0, 230), "window": (230, 140, 0), "garage": (200, 0, 200)}
     for o in document.objects:
         if o.kind in kinds:
-            cv2.line(gaps, (int(o.start.x), int(o.start.y)), (int(o.end.x), int(o.end.y)), kinds[o.kind], 3)
+            cv2.line(
+                gaps,
+                (int(o.start.x), int(o.start.y)),
+                (int(o.end.x), int(o.end.y)),
+                kinds[o.kind],
+                3,
+            )
     for p in document.passages:
         cv2.circle(gaps, (int(p.x), int(p.y)), 5, (0, 160, 0), 2)
     cv2.imwrite(str(out / "debug_gaps.png"), gaps)
@@ -100,11 +109,29 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--debug", action="store_true", help="write per-stage overlays")
-    parser.add_argument("--gold", type=Path, help="data/gold/<name> directory; writes score.json")
-    parser.add_argument("--update-thresholds", action="store_true", help="ratchet gold thresholds up")
+    parser.add_argument(
+        "--gold", type=Path, help="data/gold/<name> directory; writes score.json"
+    )
+    parser.add_argument(
+        "--update-thresholds", action="store_true", help="ratchet gold thresholds up"
+    )
     args = parser.parse_args()
     if not 1 <= args.runs <= 10:
         parser.error("--runs must be 1..10")
+    gold = None
+    if args.gold:
+        from app.opening_calibration import load_gold
+
+        try:
+            _, gold, identity = load_gold(args.gold)
+            if hashlib.sha256(args.image.read_bytes()).hexdigest() != identity:
+                parser.error(
+                    "The evaluation image does not match the gold snapshot source"
+                )
+        except (ValueError, OSError) as exc:
+            parser.error(str(exc))
+    if args.update_thresholds and not args.gold:
+        parser.error("--update-thresholds requires --gold")
     args.output.mkdir(parents=True, exist_ok=True)
     result = args.output / "document.json"
     times = []
@@ -150,22 +177,26 @@ def main():
     if args.gold:
         from app.plan_model import PlanModel
         from app.plan_reconstruct import reconstruct
-        from app.plan_score import score
+        from app.plan_score import score, flat_metrics, minimum_thresholds
 
-        gold = PlanModel.model_validate_json((args.gold / "gold.json").read_text())
         result = score(reconstruct(document, gold.id), gold)
         report["score"] = result
         (args.output / "score.json").write_text(json.dumps(result, indent=2))
         if args.update_thresholds:
-            flat = {
-                "wall_precision": result["wall_precision"],
-                "wall_recall": result["wall_recall"],
-                "door_f1": result["openings"]["door"]["f1"],
-                "window_f1": result["openings"]["window"]["f1"],
-            }
+            flat = flat_metrics(result)
             path = args.gold / "thresholds.json"
-            old = json.loads(path.read_text()) if path.exists() else {}
-            path.write_text(json.dumps({k: round(max(old.get(k, 0), v - 0.02), 3) for k, v in flat.items()}, indent=2))
+            old = minimum_thresholds(
+                json.loads(path.read_text()) if path.exists() else {}
+            )
+            path.write_text(
+                json.dumps(
+                    {
+                        k: round(max(old.get(k, 0), v - 0.02), 3)
+                        for k, v in flat.items()
+                    },
+                    indent=2,
+                )
+            )
     (args.output / "report.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(report, indent=2))
 
