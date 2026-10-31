@@ -9,7 +9,11 @@ from pathlib import Path
 import pytest
 
 GOLD = Path(__file__).resolve().parents[1] / "data" / "gold"
-CASES = sorted(p for p in GOLD.glob("*") if (p / "gold.json").exists()) if GOLD.exists() else []
+CASES = (
+    sorted(p for p in GOLD.glob("*") if (p / "gold.json").exists())
+    if GOLD.exists()
+    else []
+)
 
 pytestmark = pytest.mark.skipif(not CASES, reason="no gold plans in data/gold")
 
@@ -26,18 +30,22 @@ def run_case(case: Path):
 
 
 def metrics(result):
-    flat = {
-        "wall_precision": result["wall_precision"],
-        "wall_recall": result["wall_recall"],
-        "door_f1": result["openings"]["door"]["f1"],
-        "window_f1": result["openings"]["window"]["f1"],
-    }
-    return flat
+    from app.plan_score import flat_metrics
+
+    return flat_metrics(result)
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda p: p.name)
 def test_gold_case(case):
-    thresholds = json.loads((case / "thresholds.json").read_text()) if (case / "thresholds.json").exists() else {}
+    from app.plan_score import minimum_thresholds
+
+    thresholds = minimum_thresholds(
+        json.loads((case / "thresholds.json").read_text())
+        if (case / "thresholds.json").exists()
+        else {}
+    )
     got = metrics(run_case(case))
     for key, minimum in thresholds.items():
-        assert got[key] >= minimum - 1e-9, f"{case.name}: {key} {got[key]:.3f} < {minimum:.3f}"
+        assert (
+            got[key] >= minimum - 1e-9
+        ), f"{case.name}: {key} {got[key]:.3f} < {minimum:.3f}"

@@ -61,6 +61,7 @@ async function setup(page: Page, opts: { empty?: boolean; model?: PlanModel } = 
   let current: PlanModel | null = opts.empty ? null : opts.model || fixture();
   let revision = current ? 1 : 0;
   const puts: PlanModel[] = [];
+  const extractions: { envelope?: { x: number; y: number }[] }[] = [];
   await page.route("**/blueprints/p/info", (r) =>
     r.fulfill({ json: { id: "p", project_id: "house", filename: "My house", width: 1000, height: 700 } }),
   );
@@ -69,7 +70,9 @@ async function setup(page: Page, opts: { empty?: boolean; model?: PlanModel } = 
     const req = r.request(),
       url = req.url();
     if (url.includes("/extract")) {
-      current = fixture();
+      const body = req.postData() ? req.postDataJSON() : {};
+      extractions.push(body);
+      current = fixture({ envelope: body.envelope || opts.model?.envelope || null });
       revision++;
       return r.fulfill({ json: { revision, model: current } });
     }
@@ -84,7 +87,7 @@ async function setup(page: Page, opts: { empty?: boolean; model?: PlanModel } = 
   });
   await page.goto("/plan/p");
   await expect(page.getByText("My house", { exact: true })).toBeVisible();
-  return { puts };
+  return { puts, extractions };
 }
 
 async function screen(page: Page, x: number, y: number) {
@@ -189,4 +192,57 @@ test("pure ops: corner move keeps hosted openings, T-split, metric mesh", async 
   const pieces = wallPieces(decideOpening(m, "maybe", "confirm")!);
   expect(pieces.find((p) => p.id === "w0")!.lengthM).toBeCloseTo(4, 6);
   expect(pieces.find((p) => p.id === "w3")!.chunks.length).toBe(3);
+});
+
+test("building outline toggles cleanly and re-extracts only after corner release", async ({ page }) => {
+  const envelope = [{ x: 100, y: 100 }, { x: 900, y: 100 }, { x: 900, y: 600 }, { x: 100, y: 600 }];
+  const { extractions } = await setup(page, { model: fixture({ envelope }) });
+  const toggle = page.getByRole("checkbox", { name: "Building outline" });
+  await expect(page.getByTestId("building-outline")).toHaveCount(0);
+  await toggle.check();
+  await expect(page.getByTestId("outline-handle")).toHaveCount(4);
+  const from = await screen(page, 100, 100), to = await screen(page, 70, 80);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 5 });
+  expect(extractions).toHaveLength(0);
+  await page.mouse.up();
+  await expect.poll(() => extractions.length).toBe(1);
+  expect(extractions[0].envelope![0].x).toBeCloseTo(70, 0);
+  expect(extractions[0].envelope![0].y).toBeCloseTo(80, 0);
+  expect(extractions[0].envelope!.slice(1)).toEqual(envelope.slice(1));
+  await toggle.uncheck();
+  await expect(page.getByTestId("building-outline")).toHaveCount(0);
+  expect(extractions).toHaveLength(1);
+});
+
+test("door hinge flip persists independently of its span and swing", async ({ page }) => {
+  const model = fixture();
+  model.openings[1].swing = "left";
+  const { puts } = await setup(page, { model });
+  await clickAt(page, 705, 600);
+  await expect(page.getByRole("button", { name: "Flip hinge" })).toBeVisible();
+  await page.getByRole("button", { name: "Flip hinge" }).click();
+  await expect.poll(() => puts.length).toBeGreaterThan(0);
+  const saved = puts.at(-1)!.openings.find((o) => o.id === "maybe")!;
+  expect(saved.hinge).toBe("end");
+  expect(saved.swing).toBe("left");
+  expect(saved.widthPx).toBe(90);
+  expect(saved.offsetPx).toBe(150);
+  expect(saved.hostWallId).toBe("w3");
+});
+
+test("outline re-extraction saves pending approval edits first", async ({ page }) => {
+  const envelope = [{ x: 100, y: 100 }, { x: 900, y: 100 }, { x: 900, y: 600 }, { x: 100, y: 600 }];
+  const { puts, extractions } = await setup(page, { model: fixture({ envelope }) });
+  await page.getByRole("checkbox", { name: "Building outline" }).check();
+  await page.getByRole("button", { name: "Approve door" }).click();
+  const from = await screen(page, 100, 100), to = await screen(page, 75, 90);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y);
+  await page.mouse.up();
+  await expect.poll(() => extractions.length).toBe(1);
+  expect(puts.length).toBeGreaterThan(0);
+  expect(puts[0].openings.find((o) => o.id === "maybe")!.status).toBe("confirmed");
 });

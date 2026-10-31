@@ -159,3 +159,31 @@ def test_unavailable_configured_model_reports_runtime_problem_and_keeps_saved_pl
     assert result.status_code == 503
     assert "configuration" in result.json()["detail"]
     assert c.get(path).json() == {"revision": 1, "model": saved["model"]}
+
+
+def test_invalid_outline_does_not_run_extraction_or_replace_saved_model(client,monkeypatch):
+    from app import plan_api
+    c,bid=client
+    route=f'/blueprints/{bid}/plan'
+    before=c.put(route,json={'expectedRevision':0,'model':plan()}).json()
+    async def forbidden(*args,**kwargs):
+        raise AssertionError('invalid outline reached extraction')
+    monkeypatch.setattr(plan_api,'run_worker',forbidden)
+    for outline in [[{'x':-10,'y':100},{'x':700,'y':100},{'x':700,'y':500}],
+                    [{'x':100,'y':100},{'x':700,'y':500},{'x':100,'y':500},{'x':700,'y':100}]]:
+        result=c.post(route+'/extract?expected_revision=1',json={'envelope':outline})
+        assert result.status_code==422
+    assert c.get(route).json()==before
+
+
+def test_invalid_approval_profile_keeps_saved_revision_and_skips_worker(client,tmp_path,monkeypatch):
+    from app.config import settings
+    from app import plan_api
+    c,bid=client;route=f'/blueprints/{bid}/plan'
+    before=c.put(route,json={'expectedRevision':0,'model':plan()}).json()
+    monkeypatch.setattr(settings,'opening_confidence_profile',str(tmp_path/'missing.json'))
+    async def forbidden(*args,**kwargs):raise AssertionError('invalid configuration reached worker')
+    monkeypatch.setattr(plan_api,'run_worker',forbidden)
+    result=c.post(route+'/extract?expected_revision=1')
+    assert result.status_code==503
+    assert c.get(route).json()==before

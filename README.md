@@ -542,3 +542,10 @@ uv run pytest -q
 ## Extraction accuracy sprint
 
 Start with the [complete Mac-first action plan](docs/ACCURACY_ACTION_PLAN.md): a simplified Extract → Correct → Measure workflow, source-locked SQLite evaluations, JSON exports, benchmarking criteria, and commercial-license decision gates. Do not deploy research checkpoints without verifying commercial rights.
+
+## Extraction accuracy v2 completion
+
+The remaining reconstruction, photographed-hatch, outline, thin-partition,
+opening-review and automated-test work is documented in
+[the implementation handoff](docs/EXTRACTION_V2_COMPLETION.md), including the
+user app check and optional gold-based approval-threshold procedure.

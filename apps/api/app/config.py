@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     workspace_semantic_weights: str = ''
     workspace_semantic_device: str = 'cpu'
     workspace_semantic_rotations: int = 1
+    opening_confidence_profile: str = ''
     yytsi_run_dir: str = './models/yytsi'
     yytsi_checkpoint: str = 'best.safetensors'
     yytsi_device: str = 'auto'

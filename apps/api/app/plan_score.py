@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import math
+from statistics import median
 from shapely.geometry import LineString, Polygon
 from shapely.ops import unary_union
 from .plan_model import PlanModel
@@ -51,9 +52,11 @@ def _match_openings(pred, gold, kinds):
     out = {}
     for kind in kinds:
         g = [(o, geo) for o, geo in gp if o.kind == kind and geo]
-        p = [(o, geo) for o, geo in pp if o.kind == kind and geo]
+        p = [(o, geo) for o, geo in pp if o.kind == kind]
         used, pairs = set(), []
         for po, pg in p:
+            if pg is None:
+                continue  # still counted as a false positive in the denominator
             _, a, b = pg
             horizontal = abs(b[0] - a[0]) >= abs(b[1] - a[1])
             best = None
@@ -64,7 +67,11 @@ def _match_openings(pred, gold, kinds):
                 if horizontal != (abs(d[0] - c[0]) >= abs(d[1] - c[1])):
                     continue
                 t = max(gw.thickness_px, pg[0].thickness_px, 6)
-                cross = abs(((a[1] + b[1]) - (c[1] + d[1])) / 2 if horizontal else ((a[0] + b[0]) - (c[0] + d[0])) / 2)
+                cross = abs(
+                    ((a[1] + b[1]) - (c[1] + d[1])) / 2
+                    if horizontal
+                    else ((a[0] + b[0]) - (c[0] + d[0])) / 2
+                )
                 if cross > t:
                     continue
                 i1, i2 = _interval(a, b, horizontal), _interval(c, d, horizontal)
@@ -79,8 +86,17 @@ def _match_openings(pred, gold, kinds):
         tp = len(pairs)
         precision = tp / len(p) if p else (1.0 if not g else 0.0)
         recall = tp / len(g) if g else 1.0
-        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-        out[kind] = {"f1": f1, "precision": precision, "recall": recall, "matched": pairs, "gold": len(g), "predicted": len(p)}
+        f1 = (
+            2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        )
+        out[kind] = {
+            "f1": f1,
+            "precision": precision,
+            "recall": recall,
+            "matched": pairs,
+            "gold": len(g),
+            "predicted": len(p),
+        }
     return out
 
 
@@ -98,9 +114,10 @@ def score(pred: PlanModel, gold: PlanModel) -> dict:
     pl, gl = _wall_lines(pred), _wall_lines(gold)
     gold_union = unary_union([l for _, l in gl]) if gl else Polygon()
     pred_union = unary_union([l for _, l in pl]) if pl else Polygon()
-    tol = lambda w: max(w.thickness_px, 6)
-    precision = _coverage(pl, gold_union, tol)
-    recall = _coverage(gl, pred_union, tol)
+    # A bloated prediction must not widen its own scoring tolerance.
+    reference_width = median([w.thickness_px for w, _ in gl]) if gl else 6
+    precision = _coverage(pl, gold_union, lambda _: max(reference_width, 6))
+    recall = _coverage(gl, pred_union, lambda w: max(w.thickness_px, 6))
     env = _envelope(gold)
     outside = sum(l.difference(env).length for _, l in pl) if not env.is_empty else 0.0
     openings = _match_openings(pred, gold, ("door", "window", "garage"))
@@ -118,12 +135,55 @@ def score(pred: PlanModel, gold: PlanModel) -> dict:
         "wall_recall": recall,
         "false_wall_px_outside_envelope": outside,
         "openings": {
-            k: {kk: vv for kk, vv in v.items() if kk != "matched"} for k, v in openings.items()
+            k: {kk: vv for kk, vv in v.items() if kk != "matched"}
+            for k, v in openings.items()
         },
         "door_swing_accuracy": swing_ok / swing_total if swing_total else None,
         "rooms": {
             "gold": len(gold.rooms),
             "predicted": len(pred.rooms),
             "area_error": abs(pa - ga) / ga if ga else None,
+        },
+    }
+
+
+def opening_observations(pred, gold):
+    """Confidence/correctness samples, including unhosted false positives."""
+    result = _match_openings(pred, gold, ("door", "window"))
+    observations = {}
+    for kind, matched in result.items():
+        correct = {p.id for p, _ in matched["matched"]}
+        observations[kind] = [
+            (o.confidence, o.id in correct)
+            for o in pred.openings
+            if o.kind == kind and o.status != "rejected"
+        ]
+    return observations
+
+
+READINESS_MINIMUMS = {
+    "wall_precision": 0.9,
+    "wall_recall": 0.9,
+    "door_f1": 0.8,
+    "window_f1": 0.8,
+    "garage_f1": 0.8,
+}
+
+
+def minimum_thresholds(existing):
+    if set(existing) - set(READINESS_MINIMUMS) or any(
+        not math.isfinite(v) or not 0 <= v <= 1 for v in existing.values()
+    ):
+        raise ValueError("Invalid gold regression thresholds")
+    return {k: max(v, existing.get(k, v)) for k, v in READINESS_MINIMUMS.items()}
+
+
+def flat_metrics(result):
+    return {
+        "wall_precision": result["wall_precision"],
+        "wall_recall": result["wall_recall"],
+        **{
+            kind + "_f1": result["openings"][kind]["f1"]
+            for kind in ("door", "window", "garage")
         },
     }

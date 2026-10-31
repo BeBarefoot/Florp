@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 from .models import Blueprint, PlanRevision
 from .plan_model import PlanModel, ImageTransform, Reference, Pt, wall_length
 from .plan_derive import derive
-from .plan_reconstruct import reconstruct
+from .plan_reconstruct import reconstruct, configured_config
 from .plan_workspace import Document
 
 router = APIRouter()
@@ -155,8 +155,18 @@ async def extract(bid: str, expected_revision: int = 0, body: Extract | None = N
             raise HTTPException(409, "Plan changed before extraction")
         path = bp.preview_path
         previous = PlanModel.model_validate(row.model) if row else None
+        if body and body.envelope:
+            from .envelope import validate_polygon
+            try:
+                validate_polygon([(p.x,p.y) for p in body.envelope],(bp.height,bp.width))
+            except ValueError as exc:
+                raise HTTPException(422,str(exc)) from exc
+    try:
+        config=configured_config()
+    except (OSError,ValueError) as exc:
+        raise HTTPException(503,'Opening approval profile is unavailable or invalid; saved geometry is unchanged') from exc
     doc = await run_worker(path, body.envelope if body else None)
-    model = reconstruct(doc, bid)
+    model = reconstruct(doc, bid, config)
     if previous and previous.scale.reference:
         model.scale = previous.scale.model_copy(deep=True)
         model = PlanModel.model_validate(model.dump())

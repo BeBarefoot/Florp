@@ -1,4 +1,4 @@
-"""Conservative local opening proposals at supported collinear wall gaps.
+"""Deprecated compatibility helper; production extraction uses openings.detect.
 
 Two parallel dark rails suggest a window; hinge-localized circular evidence
 suggests a door. Proposals remain uncertain and never invent an entire envelope.
