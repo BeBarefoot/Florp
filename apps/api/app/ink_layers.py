@@ -174,8 +174,11 @@ def _pale_bands(outlines, colour, delta, classes, period):
     )
     if raw is None:
         return result.astype(bool)
+    # OpenCV bindings may return (N, 1, 4) or (N, 4). Normalize before
+    # limiting the line count; indexing [:, 0] turns the latter into scalars.
+    raw = np.asarray(raw).reshape(-1, 4)
     groups = {True: [], False: []}
-    for x1, y1, x2, y2 in raw[:, 0][:1200]:
+    for x1, y1, x2, y2 in raw[:1200]:
         dx, dy = abs(x2 - x1), abs(y2 - y1)
         if dy <= 1 and dx >= minimum:
             groups[True].append(((y1 + y2) / 2, min(x1, x2), max(x1, x2)))
