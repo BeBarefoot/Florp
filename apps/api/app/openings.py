@@ -253,6 +253,65 @@ def _door(line_dil, gap: Gap, continuous=False):
     return best
 
 
+def _photo_door(line_dil, gap):
+    # The drawn hinge is on a wall face, not necessarily its centreline.
+    # Adjust the evidence probe only; the opening stays on its physical host.
+    best = None
+    for shift in (0, -0.5 * gap.t, 0.5 * gap.t):
+        probe = Gap(gap.horizontal, gap.cross + shift, gap.lo, gap.hi, gap.t)
+        candidate = _door(line_dil, probe, continuous=True)
+        if candidate is not None and (best is None or candidate[0] > best[0]):
+            best = candidate
+    return best
+
+
+def _photo_windows(edges, colour, gap):
+    """Find supported window spans within an incompletely recovered wall gap.
+
+    Do not stretch a window to the entire distance between surviving walls.
+    A long gap may include a window plus a missing pier or several windows.
+    Each returned interval must independently carry parallel frame edges.
+    """
+    h, w = edges.shape
+    lo = max(0, math.ceil(gap.lo) + 1)
+    hi = min(w if gap.horizontal else h, math.floor(gap.hi))
+    if hi - lo < max(12, 2.2 * gap.t):
+        return []
+    along = np.arange(lo, hi)
+    half = math.ceil(gap.t / 2 + 1.5)
+    offsets = np.arange(-half, half + 1)[:, None]
+    best = []
+    for drift in (0, -0.03 * len(along), 0.03 * len(along)):
+        across = np.rint(gap.cross + offsets + np.linspace(-drift / 2, drift / 2, len(along))).astype(int)
+        axis = np.broadcast_to(along, across.shape)
+        xs, ys = (axis, across) if gap.horizontal else (across, axis)
+        valid = (xs >= 0) & (xs < w) & (ys >= 0) & (ys < h)
+        samples = np.zeros(valid.shape, bool)
+        samples[valid] = edges[ys[valid], xs[valid]]
+        rows = np.arange(samples.shape[0])[:, None]
+        first = np.where(samples, rows, samples.shape[0]).min(axis=0)
+        last = np.where(samples, rows, -1).max(axis=0)
+        supported = (samples.sum(axis=0) >= 2) & (last - first >= max(3, 0.35 * gap.t))
+        if colour is not None:
+            coloured = np.zeros(valid.shape, bool)
+            coloured[valid] = colour[ys[valid], xs[valid]]
+            # Continuous wall tint is masonry, not a blurred frame.
+            supported &= coloured.mean(axis=0) < 0.4
+        supported = np.convolve(np.pad(supported.astype(float), 2, mode="edge"), np.ones(5) / 5, "valid") >= 0.8
+        changes = np.diff(np.r_[False, supported, False].astype(np.int8))
+        spans = []
+        for a, b in zip(np.flatnonzero(changes == 1), np.flatnonzero(changes == -1)):
+            if b - a < max(12, 2.2 * gap.t):
+                continue
+            sub = Gap(gap.horizontal, gap.cross, float(along[a]), float(along[b - 1]), gap.t)
+            count, confidence = _rails(edges, sub, min_separation=max(3, 0.35 * gap.t))
+            if count >= 2:
+                spans.append((sub, confidence))
+        if sum(g.hi - g.lo for g, _ in spans) > sum(g.hi - g.lo for g, _ in best):
+            best = spans
+    return best
+
+
 def _dashes(line, gap: Gap):
     """Sparse thin ink along an overhead-door gap: present but not a continuous rail."""
     half = int(math.ceil(gap.t * 1.5))
@@ -362,7 +421,7 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
     gaps = enumerate_gaps(walls, (h, w))
     line = _line_ink(image, strips)
     line_dil = cv2.dilate(line.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
-    photographic = bool(strips.stats.get("paired_boundaries"))
+    photographic = bool(strips.stats.get("coloured_walls") or strips.stats.get("paired_boundaries"))
     frame_edges = None
     if photographic:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -375,7 +434,14 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
         annotation = (hsv[:, :, 1] >= 35) & ((hsv[:, :, 0] < 25) | (hsv[:, :, 0] > 160))
         if strips.structural_colour is not None:
             annotation |= strips.structural_colour
-        neutral = line & ~annotation
+        # Faint photographed arcs can be lighter than the old 0.8*paper ink
+        # threshold. Recover local dark strokes, not shaded paper or room fill.
+        local = cv2.GaussianBlur(gray.astype(np.float32), (0, 0), 2)
+        paper = _local_paper(gray).astype(np.float32)
+        faint = (gray < 0.94 * paper) & (gray < local - 0.015 * paper)
+        grown = cv2.dilate(strips.mask, np.ones((3, 3), np.uint8)) > 0
+        neutral = (line | faint) & ~annotation & ~grown
+        line = neutral
         line_dil = cv2.dilate(neutral.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
     index = 0
     for gap in gaps:
@@ -405,13 +471,23 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
             edge_rails, edge_min = _rails(frame_edges, gap, min_separation=max(3, 0.35 * gap.t))
             if edge_rails >= 2:
                 rails, rail_min = edge_rails, edge_min
+            else:
+                windows = _photo_windows(frame_edges, colour, gap)
+                if windows:
+                    for sub, support in windows:
+                        conf = min(0.86, 0.62 + 0.12 * support)
+                        result.gaps.append((sub, "window", conf))
+                        result.objects.extend(_segment(sub, "window", conf, index))
+                        index += 1
+                    continue
         if rails >= 2:
             kind = "window"
             conf = 0.62 + (0.12 if rails >= 3 else 0) + (0.12 if rail_min >= 0.9 else 0)
         else:
             # Thin partitions can host ordinary doors much wider than nine
             # times their thickness. Require arc/leaf evidence, not that ratio.
-            door = _door(line_dil, gap, continuous=photographic) if width <= 20 * gap.t else None
+            if width <= 20 * gap.t:
+                door = _photo_door(line_dil, gap) if photographic else _door(line_dil, gap)
             if door:
                 kind = "door"
                 conf = 0.5 + 0.3 * min(1.0, door[1]) + (0.1 if door[2] >= 0.6 else 0)

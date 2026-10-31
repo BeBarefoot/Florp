@@ -438,6 +438,7 @@ def wall_strips(image: np.ndarray) -> Strips:
         blue = np.zeros_like(blue)
         stats["dark_walls"] = True
     elif red.sum() + blue.sum() > max(100, 0.003 * h * w):
+        stats["coloured_walls"] = True
         # Use independent local boundary evidence for coloured plans. Neither
         # an entire connected hatch component nor a red dimension stroke is
         # a wall by itself. Keep the dark-wall branch above exactly as before.
@@ -445,6 +446,10 @@ def wall_strips(image: np.ndarray) -> Strips:
 
         bounded, widths, annotation_bars = bounded_red_bands(gray, paper, pale_colour, da, w_wall)
         stats["paired_boundary_px"] = int(bounded.sum())
+        # Bar rejection has its own local evidence. It must not depend on
+        # recovering an unrelated positive wall pair elsewhere in the image.
+        rejected["unbounded_colour"] = red & annotation_bars
+        red &= ~annotation_bars
         if widths:
             boundary_mask = bounded
             glyphs = _glyph_components(red)
@@ -452,8 +457,7 @@ def wall_strips(image: np.ndarray) -> Strips:
             # Recovery is additive. Only positive local annotation evidence
             # removes old pixels; incomplete boundary proposals cannot wipe
             # out previously extracted rooms or a whole side of the house.
-            rejected["unbounded_colour"] = red & annotation_bars
-            red = (red & ~glyphs & ~annotation_bars) | bounded
+            red = (red & ~glyphs) | bounded
             stats["paired_boundaries"] = True
             stats.update(estimate_widths(bounded | blue))
         else:
