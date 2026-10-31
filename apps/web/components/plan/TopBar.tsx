@@ -21,9 +21,13 @@ export default function TopBar(p: {
   export3D: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  function gotoHome(): void {
+    window.location.href = "/";
+  }
+
   return (
     <header className="fe-top">
-      <strong className="fe-brand">✦ Florp</strong>
+      <strong className="fe-brand" onClick={() => gotoHome()}>✦ Florp</strong>
       <span className="fe-title" title={p.title}>{p.title}</span>
       <span className="fe-status" role="status">{p.status}</span>
       <span className="fe-spacer" />
