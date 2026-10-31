@@ -103,6 +103,8 @@ def build(path, roi=None):
         xs = np.rint(np.linspace(o.start.x, o.end.x, 25)).astype(int).clip(0, w - 1)
         ys = np.rint(np.linspace(o.start.y, o.end.y, 25)).astype(int).clip(0, h - 1)
         o.material = "concrete" if np.mean(blue[ys, xs] > 0) > 0.5 else "block"
+        if strips.boundary_mask is not None:
+            o.boundary_supported = bool(np.mean(strips.boundary_mask[ys, xs]) >= 0.8)
         if exterior_zone is not None:
             o.exterior = bool(exterior_zone[int(ys[12]), int(xs[12])])
     # Preserve isolated genuine diagonal runs rather than forcing Manhattan axes.

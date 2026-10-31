@@ -156,7 +156,7 @@ def _line_ink(image, strips):
     return line & ~grown
 
 
-def _rails(line, gap: Gap):
+def _rails(line, gap: Gap, min_separation=2):
     """Full-length parallel lines inside the gap band (window glass)."""
     half = int(math.ceil(gap.t / 2 + 1.5))
     lo, hi = int(gap.lo) + 1, int(gap.hi) - 1
@@ -188,7 +188,7 @@ def _rails(line, gap: Gap):
         centres = [g.mean() for g in groups]
         distinct = [centres[0]]
         for x in centres[1:]:
-            if x - distinct[-1] >= 2:
+            if x - distinct[-1] >= min_separation:
                 distinct.append(x)
         candidate = (len(distinct), float(min(prof[rails])))
         if candidate > best:
@@ -196,7 +196,7 @@ def _rails(line, gap: Gap):
     return best
 
 
-def _door(line_dil, gap: Gap):
+def _door(line_dil, gap: Gap, continuous=False):
     """Quarter-circle arc centred on one gap end, plus a leaf line. Returns best candidate or None."""
     h, w = line_dil.shape
     g = gap.hi - gap.lo
@@ -207,9 +207,11 @@ def _door(line_dil, gap: Gap):
             toward = 1 if hinge_at_lo else -1
             for r in (0.85 * g, 0.95 * g, g, 1.08 * g):
                 for opening_angle in (45, 60, 90):
-                    angles = np.radians(
-                        np.linspace(0.12 * opening_angle, 0.88 * opening_angle, 19)
-                    )
+                    angles = np.radians(np.linspace(
+                        (0.05 if continuous else 0.12) * opening_angle,
+                        (0.95 if continuous else 0.88) * opening_angle,
+                        max(32, math.ceil(r * math.radians(opening_angle))) if continuous else 19,
+                    ))
                     a = hinge + toward * r * np.cos(angles)
                     c = gap.cross + side * r * np.sin(angles)
                     xs, ys = (a, c) if gap.horizontal else (c, a)
@@ -218,6 +220,19 @@ def _door(line_dil, gap: Gap):
                     if ok.sum() < 0.8 * len(angles):
                         continue
                     arc = float(line_dil[yi[ok], xi[ok]].mean())
+                    if continuous:
+                        # Sample at roughly one-pixel arc length. Independent
+                        # hits on text/car/furniture must not make a door arc:
+                        # every quarter of the sweep must carry drawn ink and
+                        # there cannot be a long unsupported break in it.
+                        evidence = np.zeros(len(angles), bool)
+                        evidence[ok] = line_dil[yi[ok], xi[ok]]
+                        if any(part.mean() < 0.7 for part in np.array_split(evidence, 4)):
+                            continue
+                        missing = np.diff(np.r_[False, ~evidence, False].astype(np.int8))
+                        spans = np.flatnonzero(missing == -1) - np.flatnonzero(missing == 1)
+                        if spans.size and spans.max() > max(2, 0.12 * len(evidence)):
+                            continue
                     theta = math.radians(opening_angle)
                     steps = np.linspace(gap.t / 2 + 1, 0.95 * r, max(4, int(r)))
                     la = hinge + toward * steps * math.cos(theta)
@@ -347,6 +362,21 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
     gaps = enumerate_gaps(walls, (h, w))
     line = _line_ink(image, strips)
     line_dil = cv2.dilate(line.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+    photographic = bool(strips.stats.get("paired_boundaries"))
+    frame_edges = None
+    if photographic:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        relative = gray.astype(np.float32) / np.maximum(_local_paper(gray), 1)
+        normalized = np.rint(np.clip(relative, 0, 1) * 255).astype(np.uint8)
+        frame_edges = cv2.Canny(normalized, 25, 65) > 0
+        # Red annotations are not door arcs. Keep neutral outline ink, while
+        # retaining the existing dark-plan line/arc behaviour unchanged.
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        annotation = (hsv[:, :, 1] >= 35) & ((hsv[:, :, 0] < 25) | (hsv[:, :, 0] > 160))
+        if strips.structural_colour is not None:
+            annotation |= strips.structural_colour
+        neutral = line & ~annotation
+        line_dil = cv2.dilate(neutral.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
     index = 0
     for gap in gaps:
         width = gap.hi - gap.lo
@@ -368,13 +398,20 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
                 continue
         kind, conf, door = None, 0.0, None
         rails, rail_min = _rails(line, gap)
+        if photographic and rails < 2:
+            # In a small photograph two glass rails can blur into one dark
+            # frame. Its separated edges still span the gap. Require spacing
+            # proportional to the wall to exclude a lone thin dimension line.
+            edge_rails, edge_min = _rails(frame_edges, gap, min_separation=max(3, 0.35 * gap.t))
+            if edge_rails >= 2:
+                rails, rail_min = edge_rails, edge_min
         if rails >= 2:
             kind = "window"
             conf = 0.62 + (0.12 if rails >= 3 else 0) + (0.12 if rail_min >= 0.9 else 0)
         else:
             # Thin partitions can host ordinary doors much wider than nine
             # times their thickness. Require arc/leaf evidence, not that ratio.
-            door = _door(line_dil, gap) if width <= 20 * gap.t else None
+            door = _door(line_dil, gap, continuous=photographic) if width <= 20 * gap.t else None
             if door:
                 kind = "door"
                 conf = 0.5 + 0.3 * min(1.0, door[1]) + (0.1 if door[2] >= 0.6 else 0)
