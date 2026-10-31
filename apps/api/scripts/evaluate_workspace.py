@@ -14,7 +14,8 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app.plan_workspace import Document, footprint
+from app.plan_workspace import Document, Segment, Point, footprint
+from app.plan_reconstruct import reconstruct
 from shapely.ops import unary_union
 
 
@@ -64,6 +65,10 @@ def debug_overlays(source, document, out: Path):
     from app.ink_layers import wall_strips
 
     s = wall_strips(source)
+    (out / "debug_stats.json").write_text(json.dumps({
+        **s.stats,
+        "rejected_pixels": {key: int(mask.sum()) for key, mask in s.rejected.items()},
+    }, indent=2))
     h, w = source.shape[:2]
     strips = np.full_like(source, 255)
     strips[s.thin] = (210, 210, 210)
@@ -101,6 +106,40 @@ def debug_overlays(source, document, out: Path):
     for p in document.passages:
         cv2.circle(gaps, (int(p.x), int(p.y)), 5, (0, 160, 0), 2)
     cv2.imwrite(str(out / "debug_gaps.png"), gaps)
+
+    # The editor displays reconstructed geometry, not raw worker segments.
+    # Save both so pixel retention and graph/pruning failures are distinguishable.
+    model = reconstruct(document, "diagnostic")
+    (out / "model.json").write_text(model.model_dump_json())
+    nodes = {node.id: node for node in model.nodes}
+    walls = {wall.id: wall for wall in model.walls}
+    objects = [Segment(
+        id=wall.id,
+        start=Point(x=nodes[wall.a].x, y=nodes[wall.a].y),
+        end=Point(x=nodes[wall.b].x, y=nodes[wall.b].y),
+        thickness_px=wall.thickness_px, material=wall.material,
+        height_m=wall.height_m,
+    ) for wall in model.walls]
+    for opening in model.openings:
+        if opening.status == "rejected" or not opening.host_wall_id or opening.width_px < 2:
+            continue
+        wall = walls[opening.host_wall_id]
+        a, b = nodes[wall.a], nodes[wall.b]
+        direction = np.array([b.x - a.x, b.y - a.y])
+        direction /= np.linalg.norm(direction)
+        start = np.array([a.x, a.y]) + direction * opening.offset_px
+        end = start + direction * opening.width_px
+        objects.append(Segment(
+            id=opening.id, kind=opening.kind, host_id=wall.id,
+            start=Point(x=start[0], y=start[1]), end=Point(x=end[0], y=end[1]),
+            thickness_px=wall.thickness_px, height_m=opening.height_m,
+            sill_m=opening.sill_m,
+        ))
+    reconstructed = Document(width=document.width, height=document.height, objects=objects)
+    clean, overlay, svg = render(reconstructed, source)
+    cv2.imwrite(str(out / "model-clean.png"), clean)
+    cv2.imwrite(str(out / "model-overlay.png"), overlay)
+    (out / "model.svg").write_text(svg)
 
 
 def main():

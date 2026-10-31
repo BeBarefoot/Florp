@@ -86,8 +86,11 @@ def build(path, roi=None):
         monochrome = True
         notes.append("No wall strips found; monochrome fallback: review structural runs against the source.")
     classes = stats["classes"]
+    coloured = bool(strips.red.any() or strips.blue.any())
     objects = structural_runs(
-        mask, min_length=max(7, int(1.4 * min(classes))), pier_factor=1.4
+        mask,
+        min_length=max(7, round(0.8 * min(classes))) if coloured else max(7, int(1.4 * min(classes))),
+        pier_factor=1.0 if coloured else 1.4,
     )
     _remeasure(objects, mask, classes)
     exterior_zone = None
