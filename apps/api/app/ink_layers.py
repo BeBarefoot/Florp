@@ -225,7 +225,7 @@ def _pale_bands(outlines, colour, delta, classes, period):
                         if horizontal
                         else ((a, start + u), (b, start + v - 1))
                     )
-                    cv2.rectangle(result, p, q, 1, -1)
+                    cv2.rectangle(result, tuple(map(int, p)), tuple(map(int, q)), 1, -1)
     return result > 0
 
 

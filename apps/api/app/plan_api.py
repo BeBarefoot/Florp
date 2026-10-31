@@ -1,7 +1,7 @@
 """PlanModel v2 routes: one append-only, revisioned model per blueprint."""
 
 from __future__ import annotations
-import asyncio, hashlib, json, math, os, shutil, signal, sys, tempfile
+import asyncio, hashlib, json, logging, math, os, shutil, signal, sys, tempfile
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
@@ -86,7 +86,7 @@ async def run_worker(path: str, roi=None) -> Document:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            await asyncio.wait_for(proc.communicate(), WORKER_BUDGET_S)
+            _, stderr = await asyncio.wait_for(proc.communicate(), WORKER_BUDGET_S)
         except (asyncio.TimeoutError, asyncio.CancelledError):
             try:
                 os.killpg(proc.pid, signal.SIGKILL)
@@ -97,6 +97,10 @@ async def run_worker(path: str, roi=None) -> Document:
                 504, "Extraction exceeded its budget; saved geometry is unchanged"
             )
         if proc.returncode:
+            logging.getLogger(__name__).error(
+                "Extraction worker failed (exit %s): %s",
+                proc.returncode, stderr.decode("utf-8", errors="replace")[-12000:],
+            )
             from .config import settings
 
             if settings.workspace_semantic_source or settings.workspace_semantic_weights:
@@ -105,8 +109,8 @@ async def run_worker(path: str, roi=None) -> Document:
                     "Local semantic evaluation failed. Check the trusted source, checkpoint, optional runtime and device configuration. Saved geometry is unchanged.",
                 )
             raise HTTPException(
-                422,
-                "Unable to extract supported walls. Try a clearer, flat scan or add a wall directly.",
+                500,
+                "The extraction worker failed. Saved geometry is unchanged. The API log contains the failure details.",
             )
         return Document.model_validate_json(output.read_bytes())
 

@@ -644,6 +644,12 @@ def extend_dangling(objects, ink, factor: float = 4.0, cover: float = 0.8):
             if not target:
                 continue
             nx, ny = (target[1], p.y) if axis else (p.x, target[1])
+            # A wall face can project beyond a cropped photograph. Sampling
+            # with clipped indices must not authorize out-of-image geometry.
+            if not (0 <= nx < w and 0 <= ny < h):
+                continue
+            if math.hypot(nx - other.x, ny - other.y) < 2:
+                continue
             n = max(2, int(math.hypot(nx - p.x, ny - p.y)))
             xs = np.rint(np.linspace(p.x, nx, n)).astype(int).clip(0, w - 1)
             ys = np.rint(np.linspace(p.y, ny, n)).astype(int).clip(0, h - 1)
