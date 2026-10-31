@@ -110,7 +110,7 @@ def structural_runs(mask, min_length=10, pier_factor=2):
     return result
 
 
-def join_intersections(objects):
+def join_intersections(objects, image_shape=None):
     """Project endpoints to nearby perpendicular junctions without chain averaging."""
     import copy
 
@@ -143,6 +143,10 @@ def join_intersections(objects):
                     and -radius / other_length <= s <= 1 + radius / other_length
                 ):
                     choices.append((distance, intersection))
+            if image_shape is not None:
+                h, w = image_shape[:2]
+                choices = [(d, pt) for d, pt in choices
+                           if 0 <= pt[0] < w and 0 <= pt[1] < h]
             if choices:
                 _, p = min(choices, key=lambda c: c[0])
                 setattr(o, end, Point(x=float(p[0]), y=float(p[1])))

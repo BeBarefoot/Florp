@@ -82,6 +82,7 @@ def build(path, roi=None):
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         ink = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
         mask = cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+        mask[~env_mask] = 0
         monochrome = True
         notes.append("No wall strips found; monochrome fallback: review structural runs against the source.")
     classes = stats["classes"]
@@ -139,7 +140,7 @@ def build(path, roi=None):
                 uncertain=True,
             )
         )
-    objects = join_intersections(objects)
+    objects = join_intersections(objects, image.shape)
     if strips.ink is not None:
         extend_dangling(objects, strips.ink | (mask > 0))
     boxes, detector_ok = _detector_boxes(path, w, h)
