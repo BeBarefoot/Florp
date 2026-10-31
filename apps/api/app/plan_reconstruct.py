@@ -382,7 +382,7 @@ def _collinear_sibling(points, edges, edge, reach):
     return False
 
 
-def _prune(points, edges, t_med, cfg, counters):
+def _prune(points, edges, t_med, cfg, counters, supported_sources=frozenset()):
     for _ in range(3):
         deg = _degrees(edges)
         keep = []
@@ -392,6 +392,12 @@ def _prune(points, edges, t_med, cfg, counters):
             limit = max(2 * min(t_med, r.t), cfg.min_length_px)
             p, q = points[u], points[v]
             length = math.hypot(q[0] - p[0], q[1] - p[1])
+            if length >= max(2, 0.5 * r.t) and any(source in supported_sources for source in r.sources):
+                # A short pier or return with two observed wall faces is not
+                # an unsupported stub. The default dark-plan path has no
+                # boundary-supported sources and follows the original rules.
+                keep.append([u, v, r])
+                continue
             dangling = deg[u] == 1 or deg[v] == 1
             isolated = deg[u] == 1 and deg[v] == 1
             if (dangling and length < limit) or (
@@ -530,7 +536,8 @@ def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = Non
     runs = _snap_junctions(runs)
     points, edges = _build_graph(runs)
     edges = _merge_degree_two(points, edges)
-    edges = _prune(points, edges, t_med, cfg, counters)
+    supported_sources = {o.id for o in doc.objects if o.kind == "wall" and o.boundary_supported}
+    edges = _prune(points, edges, t_med, cfg, counters, supported_sources)
     used = sorted({k for u, v, _ in edges for k in (u, v)})
     index = {k: i for i, k in enumerate(used)}
     w, h = doc.width, doc.height

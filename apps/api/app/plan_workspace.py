@@ -30,6 +30,7 @@ class Segment(BaseModel):
     height_m: float = Field(default=2.8, gt=0, le=20)
     sill_m: float = Field(default=0, ge=0, le=10)
     confidence: float | None = Field(default=None, ge=0, le=1)
+    boundary_supported: bool = False  # two observed faces; protect short photo piers/returns
     leaf: Point | None = None  # unit vector from the hinge across the wall: where a door's leaf opens
 
 

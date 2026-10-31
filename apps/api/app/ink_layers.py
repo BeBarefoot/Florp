@@ -22,6 +22,7 @@ class Strips:
     rejected: dict = field(default_factory=dict)
     ink: np.ndarray | None = None
     structural_colour: np.ndarray | None = None
+    boundary_mask: np.ndarray | None = None
 
     @property
     def mask(self):
@@ -269,6 +270,7 @@ def _glyph_components(mask, min_holes=2):
 
 def wall_strips(image: np.ndarray) -> Strips:
     h, w = image.shape[:2]
+    boundary_mask = None
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     lab_u8 = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
     lab = lab_u8.astype(np.int16)
@@ -436,9 +438,30 @@ def wall_strips(image: np.ndarray) -> Strips:
         blue = np.zeros_like(blue)
         stats["dark_walls"] = True
     elif red.sum() + blue.sum() > max(100, 0.003 * h * w):
-        glyphs = _glyph_components(red)
-        rejected["colour_digits"] = glyphs
-        red &= ~glyphs
+        # Use independent local boundary evidence for coloured plans. Neither
+        # an entire connected hatch component nor a red dimension stroke is
+        # a wall by itself. Keep the dark-wall branch above exactly as before.
+        from .photo_bands import bounded_red_bands
+
+        bounded, widths, annotation_bars = bounded_red_bands(gray, paper, pale_colour, da, w_wall)
+        stats["paired_boundary_px"] = int(bounded.sum())
+        if widths:
+            boundary_mask = bounded
+            glyphs = _glyph_components(red)
+            rejected["colour_digits"] = glyphs & ~bounded
+            # Recovery is additive. Only positive local annotation evidence
+            # removes old pixels; incomplete boundary proposals cannot wipe
+            # out previously extracted rooms or a whole side of the house.
+            rejected["unbounded_colour"] = red & annotation_bars
+            red = (red & ~glyphs & ~annotation_bars) | bounded
+            stats["paired_boundaries"] = True
+            stats.update(estimate_widths(bounded | blue))
+        else:
+            # Unsupported styles retain the previous proposals for review;
+            # failure to establish boundary pairs must not erase a document.
+            glyphs = _glyph_components(red)
+            rejected["colour_digits"] = glyphs
+            red &= ~glyphs
         # In colour-dominated drawings, neutral ink describes outlines and
         # symbols, not an independent structural layer. Only retain the dark
         # edge of a coloured wall. A thickness filter alone kept black window
@@ -462,4 +485,5 @@ def wall_strips(image: np.ndarray) -> Strips:
         rejected=rejected,
         ink=ink,
         structural_colour=None if stats.get("dark_walls") else red_cand | blue_cand,
+        boundary_mask=boundary_mask,
     )
