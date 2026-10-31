@@ -64,7 +64,10 @@ def detect_page(image):
     lines = cv2.HoughLinesP(
         edges, 1, np.pi / 360, 70, minLineLength=min(gray.shape) // 4, maxLineGap=20
     )
-    if lines is None or len(lines) < 4:
+    if lines is None:
+        return None
+    lines = np.asarray(lines).reshape(-1, 4)
+    if len(lines) < 4:
         return None
     contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
     for cnt in sorted(contours, key=cv2.contourArea, reverse=True)[:12]:
@@ -95,7 +98,7 @@ def detect_page(image):
         supported = 0
         for a, b in zip(q, np.roll(q, -1, axis=0)):
             v = b - a
-            for raw in lines[:, 0]:
+            for raw in lines:
                 c, d = raw[:2], raw[2:]
                 u = d - c
                 if (
