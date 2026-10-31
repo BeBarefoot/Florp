@@ -234,6 +234,39 @@ def _pale_bands(outlines, colour, delta, classes, period):
     return result > 0
 
 
+def _glyph_components(mask, min_holes=2):
+    """Find compact glyph-like loops using local stroke width.
+
+    This is a noise heuristic, not OCR. Large room holes and tiny hatch
+    pinholes are excluded. The caller chooses single or repeated loops.
+    """
+    rejected = np.zeros(mask.shape, bool)
+    n, labels, stats = _components(mask)
+    maximum = 0.18 * max(mask.shape)
+    for i in range(1, n):
+        x, y, w, h, area = stats[i]
+        if max(w, h) > maximum or min(w, h) < 5:
+            continue
+        comp = (labels[y:y+h, x:x+w] == i).astype(np.uint8)
+        contours, hierarchy = cv2.findContours(comp, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+        if hierarchy is None:
+            continue
+        holes = [c for c, entry in zip(contours, hierarchy[0]) if entry[3] >= 0 and cv2.contourArea(c) >= 3]
+        # Before hatch fusion, a digit can be a separate single-loop glyph.
+        # After fusion require repeated loops to protect attached fixtures.
+        if len(holes) < min_holes:
+            continue
+        dt = cv2.distanceTransform(np.pad(comp, 1), cv2.DIST_L2, 3)[1:-1, 1:-1]
+        widths = 2 * dt[comp > 0]
+        stroke = max(1.0, float(np.percentile(widths, 75)))
+        # Hatch pinholes are smaller than a stroke. Counting them as digit
+        # loops would delete a genuine closed/hatched wall component.
+        holes = [c for c in holes if min(cv2.boundingRect(c)[2:]) >= stroke]
+        if len(holes) >= min_holes and all(max(cv2.boundingRect(c)[2:]) <= 5 * stroke for c in holes):
+            rejected[y:y+h, x:x+w] |= comp > 0
+    return rejected
+
+
 def wall_strips(image: np.ndarray) -> Strips:
     h, w = image.shape[:2]
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -279,6 +312,10 @@ def wall_strips(image: np.ndarray) -> Strips:
     )
     outline_cand = (gray < 0.82 * paper.astype(np.float32)) & ~red_cand & ~blue_cand
 
+    # Remove digit loops before hatch closing can join adjacent characters
+    # to each other or to a real wall. Their widths must not become wall classes.
+    raw_digits = _glyph_components(red_cand, min_holes=1)
+    red_cand &= ~raw_digits
     ink = dark_cand | red_cand | blue_cand
     stats = estimate_widths(ink)
     w_line, w_wall = stats["w_line"], stats["w_wall"]
@@ -288,6 +325,7 @@ def wall_strips(image: np.ndarray) -> Strips:
         "text": np.zeros((h, w), bool),
         "no_outline": np.zeros((h, w), bool),
         "dashed": np.zeros((h, w), bool),
+        "raw_colour_digits": raw_digits,
     }
 
     def strips_from(cand, hatch_ok, recover_thin=False):
@@ -344,7 +382,8 @@ def wall_strips(image: np.ndarray) -> Strips:
                 continue
             # digits and symbols: compact boxes
             if (
-                long < 4 * w_wall
+                not hatch_ok
+                and long < 4 * w_wall
                 and short > 0.6 * long
                 and area / max(1, bw * bh) < 0.72
             ):
@@ -397,6 +436,9 @@ def wall_strips(image: np.ndarray) -> Strips:
         blue = np.zeros_like(blue)
         stats["dark_walls"] = True
     elif red.sum() + blue.sum() > max(100, 0.003 * h * w):
+        glyphs = _glyph_components(red)
+        rejected["colour_digits"] = glyphs
+        red &= ~glyphs
         # In colour-dominated drawings, neutral ink describes outlines and
         # symbols, not an independent structural layer. Only retain the dark
         # edge of a coloured wall. A thickness filter alone kept black window

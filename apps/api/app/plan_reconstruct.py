@@ -383,11 +383,13 @@ def _collinear_sibling(points, edges, edge, reach):
 
 
 def _prune(points, edges, t_med, cfg, counters):
-    limit = max(2 * t_med, cfg.min_length_px)
     for _ in range(3):
         deg = _degrees(edges)
         keep = []
         for u, v, r in edges:
+            # A thick exterior wall must not set the minimum return length
+            # for a much thinner interior partition.
+            limit = max(2 * min(t_med, r.t), cfg.min_length_px)
             p, q = points[u], points[v]
             length = math.hypot(q[0] - p[0], q[1] - p[1])
             dangling = deg[u] == 1 or deg[v] == 1
