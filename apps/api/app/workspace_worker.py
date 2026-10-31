@@ -142,7 +142,10 @@ def build(path, roi=None):
         )
     objects = join_intersections(objects, image.shape)
     if strips.ink is not None:
-        extend_dangling(objects, strips.ink | (mask > 0))
+        # On coloured plans, raw ink also includes dimension leaders and
+        # furniture. It cannot justify extending a structural wall.
+        extension_ink = (mask > 0) if (strips.red.any() or strips.blue.any()) else strips.ink | (mask > 0)
+        extend_dangling(objects, extension_ink & env_mask)
     boxes, detector_ok = _detector_boxes(path, w, h)
     if not detector_ok:
         notes.append(

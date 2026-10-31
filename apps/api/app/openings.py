@@ -350,6 +350,22 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
     index = 0
     for gap in gaps:
         width = gap.hi - gap.lo
+        colour = strips.structural_colour
+        if colour is not None:
+            # A break in a faint wall mask is not a doorway. If the original
+            # structural colour continues through the middle of the gap,
+            # leave it unresolved rather than fitting an arc to nearby text.
+            along = np.linspace(gap.lo + 0.15 * width, gap.hi - 0.15 * width, max(8, round(width)))
+            offsets = np.linspace(-0.3 * gap.t, 0.3 * gap.t, 5)[:, None]
+            axis = np.broadcast_to(along, (5, along.size))
+            cross = np.broadcast_to(gap.cross + offsets, axis.shape)
+            xs, ys = (axis, cross) if gap.horizontal else (cross, axis)
+            xi, yi = np.rint(xs).astype(int), np.rint(ys).astype(int)
+            valid = (xi >= 0) & (xi < w) & (yi >= 0) & (yi < h)
+            evidence = np.zeros(valid.shape, bool)
+            evidence[valid] = colour[yi[valid], xi[valid]]
+            if np.mean(evidence.mean(axis=0) >= 0.4) > 0.5:
+                continue
         kind, conf, door = None, 0.0, None
         rails, rail_min = _rails(line, gap)
         if rails >= 2:
