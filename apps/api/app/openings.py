@@ -164,23 +164,36 @@ def _rails(line, gap: Gap):
     h, w = line.shape
     if hi - lo < 4:
         return 0, 0.0
-    if gap.horizontal:
-        band = line[max(0, c - half) : c + half + 1, max(0, lo) : min(w, hi)]
-        prof = band.mean(axis=1) if band.size else np.zeros(1)
-    else:
-        band = line[max(0, lo) : min(h, hi), max(0, c - half) : c + half + 1]
-        prof = band.mean(axis=0) if band.size else np.zeros(1)
-    rails = np.flatnonzero(prof >= 0.75)
-    if not len(rails):
+    # Sample parallel rails at small slopes: a photographed window can drift
+    # several pixels over its span and never occupy 75% of one raster row.
+    along = np.arange(max(0, lo), min(w if gap.horizontal else h, hi))
+    if along.size < 4:
         return 0, 0.0
-    groups = np.split(rails, np.flatnonzero(np.diff(rails) > 1) + 1)
-    centres = [g.mean() for g in groups]
-    # distinct lines at least 2px apart
-    distinct = [centres[0]]
-    for x in centres[1:]:
-        if x - distinct[-1] >= 2:
-            distinct.append(x)
-    return len(distinct), float(min(prof[rails]))
+    offsets = np.arange(-half, half + 1)[:, None]
+    position = np.linspace(-0.5, 0.5, along.size)[None, :]
+    best = (0, 0.0)
+    drift = min(8.0, 0.05 * along.size)
+    for shift in np.linspace(-drift, drift, 9):
+        across = np.rint(c + offsets + shift * position).astype(int)
+        axis = np.broadcast_to(along, across.shape)
+        xs, ys = (axis, across) if gap.horizontal else (across, axis)
+        valid = (xs >= 0) & (xs < w) & (ys >= 0) & (ys < h)
+        samples = np.zeros(valid.shape, bool)
+        samples[valid] = line[ys[valid], xs[valid]]
+        prof = samples.mean(axis=1)
+        rails = np.flatnonzero(prof >= 0.75)
+        if not len(rails):
+            continue
+        groups = np.split(rails, np.flatnonzero(np.diff(rails) > 1) + 1)
+        centres = [g.mean() for g in groups]
+        distinct = [centres[0]]
+        for x in centres[1:]:
+            if x - distinct[-1] >= 2:
+                distinct.append(x)
+        candidate = (len(distinct), float(min(prof[rails])))
+        if candidate > best:
+            best = candidate
+    return best
 
 
 def _door(line_dil, gap: Gap):
@@ -217,8 +230,8 @@ def _door(line_dil, gap: Gap):
                     )
                     score = arc + 0.25 * leaf
                     if (
-                        arc >= 0.65
-                        and leaf >= 0.5
+                        arc >= 0.8
+                        and leaf >= 0.75
                         and (best is None or score > best[0])
                     ):
                         best = (score, arc, leaf, hinge_at_lo, side)
@@ -343,7 +356,9 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
             kind = "window"
             conf = 0.62 + (0.12 if rails >= 3 else 0) + (0.12 if rail_min >= 0.9 else 0)
         else:
-            door = _door(line_dil, gap) if width <= 9 * gap.t else None
+            # Thin partitions can host ordinary doors much wider than nine
+            # times their thickness. Require arc/leaf evidence, not that ratio.
+            door = _door(line_dil, gap) if width <= 20 * gap.t else None
             if door:
                 kind = "door"
                 conf = 0.5 + 0.3 * min(1.0, door[1]) + (0.1 if door[2] >= 0.6 else 0)
@@ -361,9 +376,6 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
         if kind:
             if box:
                 conf += YOLO_AGREE if box.category == kind else -YOLO_DISAGREE
-        elif box:
-            kind, conf = box.category, 0.35 + YOLO_AGREE * min(1.0, box.confidence)
-            door = None
         if not kind:
             result.passages.append(
                 (
