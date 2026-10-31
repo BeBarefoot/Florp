@@ -66,7 +66,14 @@ def build(path, roi=None):
         polygon = [(float(x), float(y)) for x, y in roi]
         env_mask = mask_from_polygon(polygon, image.shape)
     else:
-        polygon, env_mask = building_envelope(strips.mask, w_wall)
+        if stats.get("coloured_walls"):
+            # A mask inferred from incomplete hatch is not a building outline.
+            # Its inward notches crop the very walls/openings being recovered
+            # and later masquerade as a user-editable authoritative boundary.
+            # Only an explicit user ROI may clip coloured-plan extraction.
+            polygon, env_mask = None, np.ones((h, w), dtype=bool)
+        else:
+            polygon, env_mask = building_envelope(strips.mask, w_wall)
     outside = strips.mask.astype(bool) & ~env_mask
     if outside.any():
         n, _, st, _ = cv2.connectedComponentsWithStats(outside.astype(np.uint8), connectivity=8)

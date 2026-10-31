@@ -41,6 +41,33 @@ def _smooth(values, size):
     return np.convolve(np.pad(values, radius, mode="edge"), np.ones(size) / size, "valid")
 
 
+def _coalesce_boundaries(proposals, maximum_gap):
+    """Join fragmented proposals, never their pixels or the resulting walls.
+
+    Parallel faces frequently stop at hatch crossings or text. Pairing only
+    the original Hough intervals requires both faces to have an uninterrupted
+    overlap. Join collinear fragments first; the existing per-pixel support
+    check still splits the wall at every unsupported interval afterwards.
+    """
+    joined = []
+    for candidate in sorted(set(proposals), key=lambda p: (-(p.hi - p.lo), p.lo, p.intercept, p.slope)):
+        for i, existing in enumerate(joined):
+            if max(existing.lo, candidate.lo) - min(existing.hi, candidate.hi) > maximum_gap:
+                continue
+            if abs(candidate.slope - existing.slope) > 0.01:
+                continue
+            lo, hi = min(existing.lo, candidate.lo), max(existing.hi, candidate.hi)
+            if max(abs(candidate.at(lo) - existing.at(lo)), abs(candidate.at(hi) - existing.at(hi))) > 1.25:
+                continue
+            # Keep the longest fragment's line equation as the anchor. Do not
+            # average repeatedly and drift from the drawn face along a chain.
+            joined[i] = Boundary(lo, hi, existing.slope, existing.intercept)
+            break
+        else:
+            joined.append(candidate)
+    return joined
+
+
 def bounded_red_bands(gray, paper, red, delta, wall_width):
     """Return wall bands, boundary separations, and unsupported red bar pixels.
 
@@ -83,6 +110,7 @@ def bounded_red_bands(gray, paper, red, delta, wall_width):
     # can coexist in the same photograph.
     maximum = max(6.0, min(2 * wall_width + 4, 0.065 * min(h, w)))
     for horizontal, proposals in groups.items():
+        proposals = _coalesce_boundaries(proposals, max(4, 2 * wall_width))
         # Prefer long evidence if the image has many text/furniture edges.
         proposals = sorted(set(proposals), key=lambda p: (-(p.hi - p.lo), p.lo, p.intercept, p.slope))[:1000]
         for i, first in enumerate(proposals):
