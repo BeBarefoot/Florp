@@ -265,6 +265,61 @@ def _photo_door(line_dil, gap):
     return best
 
 
+def _photo_voids(walls, colour):
+    """Propose source-colour voids *inside* fitted wall runs, not just between them.
+
+    Scan-band union and closing can leave a continuous run across glazing or a
+    doorway. Such runs still contain openings in the original pixels. A void
+    is only a proposal: the normal rail/arc+leaf checks must corroborate it.
+    """
+    if colour is None:
+        return []
+    h, w = colour.shape
+    out = []
+    for horizontal, cross, intervals in _pieces(walls):
+        for start, stop, thickness in intervals:
+            # A missing corner/pier can leave the first window outside the
+            # surviving run. Probe its continuation too, bounded by source
+            # material jambs below; do not extend the wall geometry itself.
+            reach = min(16 * thickness, 0.25 * max(h, w))
+            lo, hi = max(0, math.ceil(start - reach)), min(w - 1 if horizontal else h - 1, math.floor(stop + reach))
+            if hi - lo < max(8, 2.2 * thickness):
+                continue
+            along = np.arange(lo, hi + 1)
+            across = np.rint(cross + np.linspace(-0.3 * thickness, 0.3 * thickness, 5)[:, None]).astype(int)
+            across = np.broadcast_to(across, (5, along.size))
+            axis = np.broadcast_to(along, across.shape)
+            xs, ys = (axis, across) if horizontal else (across, axis)
+            valid = (xs >= 0) & (xs < w) & (ys >= 0) & (ys < h)
+            evidence = np.ones(valid.shape, bool)  # off-page is not an opening
+            evidence[valid] = colour[ys[valid], xs[valid]]
+            raw_profile = evidence.mean(axis=0)
+            # Require a sustained absence of material, not one pale hatch gap.
+            profile = np.convolve(np.pad(raw_profile, 2, mode="edge"), np.ones(5) / 5, "valid")
+            absent = profile <= 0.2
+            changes = np.diff(np.r_[False, absent, False].astype(np.int8))
+            for a, b in zip(np.flatnonzero(changes == 1), np.flatnonzero(changes == -1)):
+                span = b - a - 1
+                if max(8, 2.2 * thickness) <= span <= min(32 * thickness, 0.35 * max(h, w)):
+                    margin = max(3, math.ceil(1.5 * thickness))
+                    before = raw_profile[max(0, a - margin):a]
+                    after = raw_profile[b:min(raw_profile.size, b + margin)]
+                    if not np.any(before >= 0.4) or not np.any(after >= 0.4):
+                        continue  # no two observed material jambs
+                    out.append(Gap(horizontal, cross, float(along[a]), float(along[b - 1]), thickness))
+    return out
+
+
+def _overlaps_opening(gap, accepted):
+    for other in accepted:
+        if gap.horizontal != other.horizontal or abs(gap.cross - other.cross) > max(2, 0.5 * max(gap.t, other.t)):
+            continue
+        overlap = min(gap.hi, other.hi) - max(gap.lo, other.lo)
+        if overlap > 0.5 * min(gap.hi - gap.lo, other.hi - other.lo):
+            return True
+    return False
+
+
 def _photo_windows(edges, colour, gap):
     """Find supported window spans within an incompletely recovered wall gap.
 
@@ -422,6 +477,11 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
     line = _line_ink(image, strips)
     line_dil = cv2.dilate(line.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
     photographic = bool(strips.stats.get("coloured_walls") or strips.stats.get("paired_boundaries"))
+    if photographic:
+        gaps.extend(_photo_voids(walls, strips.structural_colour))
+        # Classify the locally bounded span before a broader incomplete gap.
+        gaps.sort(key=lambda gap: (gap.hi - gap.lo, gap.horizontal, gap.cross, gap.lo))
+    accepted = []
     frame_edges = None
     if photographic:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -439,12 +499,17 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
         local = cv2.GaussianBlur(gray.astype(np.float32), (0, 0), 2)
         paper = _local_paper(gray).astype(np.float32)
         faint = (gray < 0.94 * paper) & (gray < local - 0.015 * paper)
-        grown = cv2.dilate(strips.mask, np.ones((3, 3), np.uint8)) > 0
+        # A reconstructed strip may itself bridge this opening. Use original
+        # material evidence here so the recovery pass can still see its symbol.
+        material = strips.structural_colour if strips.structural_colour is not None else strips.mask > 0
+        grown = cv2.dilate(material.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
         neutral = (line | faint) & ~annotation & ~grown
         line = neutral
         line_dil = cv2.dilate(neutral.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
     index = 0
     for gap in gaps:
+        if photographic and _overlaps_opening(gap, accepted):
+            continue
         width = gap.hi - gap.lo
         colour = strips.structural_colour
         if colour is not None:
@@ -475,9 +540,12 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
                 windows = _photo_windows(frame_edges, colour, gap)
                 if windows:
                     for sub, support in windows:
+                        if _overlaps_opening(sub, accepted):
+                            continue
                         conf = min(0.86, 0.62 + 0.12 * support)
                         result.gaps.append((sub, "window", conf))
                         result.objects.extend(_segment(sub, "window", conf, index))
+                        accepted.append(sub)
                         index += 1
                     continue
         if rails >= 2:
@@ -519,5 +587,6 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
             conf = min(conf, 0.7)
         result.gaps.append((gap, kind, conf))
         result.objects.extend(_segment(gap, kind, conf, index, door))
+        accepted.append(gap)
         index += 1
     return result
