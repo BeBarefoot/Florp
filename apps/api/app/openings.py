@@ -310,6 +310,48 @@ def _photo_voids(walls, colour):
     return out
 
 
+def _photo_end_gaps(walls, size):
+    """Opening lanes between end caps of two parallel wall runs.
+
+    A recessed entry can have two horizontal jamb walls and no vertical wall
+    run at all. Existing collinear/perpendicular enumeration cannot establish
+    that missing lane. These are geometric proposals only, classified from
+    source rail/arc+leaf evidence in exactly the same way as other gaps.
+    """
+    h, w = size
+    out, seen = [], set()
+    for horizontal in (True, False):
+        ends = []
+        for orient, cross, intervals in _pieces(walls):
+            if orient != horizontal:
+                continue
+            for lo, hi, thickness in intervals:
+                ends.extend(((lo, cross, thickness), (hi, cross, thickness)))
+        ends.sort()
+        widest = max((end[2] for end in ends), default=0)
+        for i, (c1, a1, t1) in enumerate(ends):
+            for c2, a2, t2 in ends[i + 1:]:
+                if c2 - c1 > widest + 2:
+                    break
+                if c2 - c1 > (t1 + t2) / 2 + 2:
+                    continue
+                thickness = max(t1, t2)
+                if a1 < a2:
+                    lo, hi = a1 + t1 / 2, a2 - t2 / 2
+                else:
+                    lo, hi = a2 + t2 / 2, a1 - t1 / 2
+                if not 2.2 * thickness <= hi - lo <= min(20 * thickness, 0.25 * max(h, w)):
+                    continue
+                cross = (c1 + c2) / 2
+                key = (horizontal, round(cross), round(lo), round(hi))
+                if key in seen:
+                    continue
+                seen.add(key)
+                # The opening orientation is perpendicular to its jamb walls.
+                out.append(Gap(not horizontal, cross, lo, hi, thickness))
+    return out
+
+
 def _overlaps_opening(gap, accepted):
     for other in accepted:
         if gap.horizontal != other.horizontal or abs(gap.cross - other.cross) > max(2, 0.5 * max(gap.t, other.t)):
@@ -433,7 +475,7 @@ def _yolo(gap: Gap, boxes):
     return max(hits, key=lambda b: b.confidence)
 
 
-def _segment(gap: Gap, kind, confidence, index, door=None):
+def _segment(gap: Gap, kind, confidence, index, door=None, source_supported=False):
     def pt(a, c):
         return Point(x=a, y=c) if gap.horizontal else Point(x=c, y=a)
 
@@ -452,6 +494,7 @@ def _segment(gap: Gap, kind, confidence, index, door=None):
         end=pt(hi, gap.cross),
         thickness_px=gap.t,
         uncertain=False,
+        boundary_supported=source_supported,
     )
     opening = Segment(
         id=f"opening-{index}",
@@ -461,6 +504,7 @@ def _segment(gap: Gap, kind, confidence, index, door=None):
         thickness_px=gap.t,
         host_id=host.id,
         uncertain=True,
+        boundary_supported=source_supported,
         confidence=float(min(0.99, max(0.05, confidence))),
         height_m={"door": 2.1, "window": 1.2, "garage": 2.1}[kind],
         sill_m=0.9 if kind == "window" else 0,
@@ -479,6 +523,7 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
     photographic = bool(strips.stats.get("coloured_walls") or strips.stats.get("paired_boundaries"))
     if photographic:
         gaps.extend(_photo_voids(walls, strips.structural_colour))
+        gaps.extend(_photo_end_gaps(walls, (h, w)))
         # Classify the locally bounded span before a broader incomplete gap.
         gaps.sort(key=lambda gap: (gap.hi - gap.lo, gap.horizontal, gap.cross, gap.lo))
     accepted = []
@@ -544,7 +589,7 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
                             continue
                         conf = min(0.86, 0.62 + 0.12 * support)
                         result.gaps.append((sub, "window", conf))
-                        result.objects.extend(_segment(sub, "window", conf, index))
+                        result.objects.extend(_segment(sub, "window", conf, index, source_supported=True))
                         accepted.append(sub)
                         index += 1
                     continue
@@ -586,7 +631,7 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
         if kind == "garage":
             conf = min(conf, 0.7)
         result.gaps.append((gap, kind, conf))
-        result.objects.extend(_segment(gap, kind, conf, index, door))
+        result.objects.extend(_segment(gap, kind, conf, index, door, source_supported=photographic))
         accepted.append(gap)
         index += 1
     return result
