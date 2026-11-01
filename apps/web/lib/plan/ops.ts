@@ -1,6 +1,6 @@
 // Pure edits on PlanModel. Every op returns a new model with derived rooms refreshed.
 import type { Opening, PlanModel, Pt, Wall } from "./model";
-import { nodeMap, wallEnds, wallLength, withDerived } from "./derive";
+import { nodeMap, wallEnds, withDerived } from "./derive";
 
 const uid = (p: string) => p + "-" + Math.random().toString(36).slice(2, 10);
 const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -18,6 +18,17 @@ function project(a: Pt, b: Pt, p: Pt) {
 function clampOpening(o: Opening, length: number): Opening {
   const width = Math.min(o.widthPx, length);
   return { ...o, widthPx: width, offsetPx: Math.max(0, Math.min(length - width, o.offsetPx)) };
+}
+
+function onWall(o: Opening, a: Pt, b: Pt): Opening {
+  const length = dist(a, b);
+  const next = clampOpening(o, length);
+  const ux = length ? (b.x - a.x) / length : 0;
+  const uy = length ? (b.y - a.y) / length : 0;
+  return { ...next, span: [
+    { x: a.x + ux * next.offsetPx, y: a.y + uy * next.offsetPx },
+    { x: a.x + ux * (next.offsetPx + next.widthPx), y: a.y + uy * (next.offsetPx + next.widthPx) },
+  ] };
 }
 
 export function moveNode(m: PlanModel, id: string, p: Pt): PlanModel {
@@ -39,11 +50,14 @@ export function moveNode(m: PlanModel, id: string, p: Pt): PlanModel {
   next.openings = m.openings.map((o) => {
     const w = o.hostWallId ? touched.get(o.hostWallId) : undefined;
     if (!w) return o;
-    const old = wallLength(m, w, before),
-      now = wallLength(next, w, after);
-    // Keep the opening's centre at the same fraction along its host; width is physical.
-    const centre = old ? (o.offsetPx + o.widthPx / 2) / old : 0.5;
-    return clampOpening({ ...o, offsetPx: centre * now - o.widthPx / 2 }, now);
+    const [a, b] = wallEnds(m, w, before);
+    const [na, nb] = wallEnds(next, w, after);
+    const old = dist(a, b);
+    const along = o.offsetPx + o.widthPx / 2;
+    const centre = old ? { x: a.x + (b.x - a.x) * along / old, y: a.y + (b.y - a.y) * along / old } : a;
+    // Project the old image-space centre instead of moving the opening by a
+    // fraction of host length when an endpoint is extended. Keep physical width.
+    return onWall({ ...o, offsetPx: project(na, nb, centre).along - o.widthPx / 2 }, na, nb);
   });
   return withDerived(next);
 }
@@ -56,13 +70,12 @@ export function splitWall(m: PlanModel, wallId: string, p: Pt): { model: PlanMod
   const first: Wall = { ...w, id: uid("w"), b: nodeId };
   const second: Wall = { ...w, id: uid("w"), a: nodeId };
   const cut = pr.along;
-  const total = dist(a, b);
   const openings = m.openings.map((o) => {
     if (o.hostWallId !== wallId) return o;
     const centre = o.offsetPx + o.widthPx / 2;
     return centre <= cut
-      ? clampOpening({ ...o, hostWallId: first.id }, cut)
-      : clampOpening({ ...o, hostWallId: second.id, offsetPx: o.offsetPx - cut }, total - cut);
+      ? onWall({ ...o, hostWallId: first.id }, a, pr.point)
+      : onWall({ ...o, hostWallId: second.id, offsetPx: o.offsetPx - cut }, pr.point, b);
   });
   return {
     nodeId,
@@ -181,7 +194,8 @@ export function addOpening(m: PlanModel, kind: "door" | "window", p1: Pt, p2: Pt
     confidence: 1,
     status: "confirmed",
   };
-  return { openingId: id, model: { ...m, openings: [...m.openings, opening] } };
+  const [a, b] = wallEnds(m, wall);
+  return { openingId: id, model: { ...m, openings: [...m.openings, onWall(opening, a, b)] } };
 }
 
 export function patchOpening(m: PlanModel, id: string, values: Partial<Opening>): PlanModel {
@@ -191,7 +205,9 @@ export function patchOpening(m: PlanModel, id: string, values: Partial<Opening>)
       if (o.id !== id) return o;
       const next = { ...o, ...values };
       const w = m.walls.find((x) => x.id === next.hostWallId);
-      return w ? clampOpening(next, wallLength(m, w)) : next;
+      if (!w) return next;
+      const [a, b] = wallEnds(m, w);
+      return onWall(next, a, b);
     }),
   };
 }
