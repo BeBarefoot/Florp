@@ -443,6 +443,11 @@ def _host_openings(model_nodes, walls, raw, gaps, cfg):
             lo, hi = max(0, min(ts)), min(length, max(ts))
             if hi - lo < 1:
                 continue
+            if o.boundary_supported and (min(ts) < -1 or max(ts) > length + 1):
+                # A nearby short fragment is not a host for a longer observed
+                # photo opening. Keep it reviewable if no complete host fits,
+                # rather than silently clipping its measured source span.
+                continue
             candidates.append((perp, w, a, u, length, lo, hi))
         status = "proposed"
         confidence = (
@@ -461,12 +466,15 @@ def _host_openings(model_nodes, walls, raw, gaps, cfg):
                 )
             )
             continue
-        candidates.sort(key=lambda c: c[0])
+        if o.boundary_supported:
+            candidates.sort(key=lambda c: (max(0, math.dist(s, e) - (c[6] - c[5])), c[0]))
+        else:
+            candidates.sort(key=lambda c: c[0])
         ambiguous = len(candidates) > 1 and candidates[1][0] - candidates[0][0] < 2
         _, w, a, u, length, lo, hi = candidates[0]
         horizontal = abs(u[0]) >= abs(u[1])
         cross = a.y if horizontal else a.x
-        for gh, gc, glo, ghi in gaps:
+        for gh, gc, glo, ghi in (() if o.boundary_supported else gaps):
             if gh != horizontal or abs(gc - cross) > w.thickness_px + 2:
                 continue
             base = a.x if horizontal else a.y
@@ -496,7 +504,12 @@ def _host_openings(model_nodes, walls, raw, gaps, cfg):
                 host_wall_id=w.id,
                 offset_px=lo,
                 width_px=hi - lo,
-                span=(Pt(x=s[0], y=s[1]), Pt(x=e[0], y=e[1])),
+                span=(
+                    (Pt(x=a.x + u[0] * lo, y=a.y + u[1] * lo),
+                     Pt(x=a.x + u[0] * hi, y=a.y + u[1] * hi))
+                    if o.boundary_supported else
+                    (Pt(x=s[0], y=s[1]), Pt(x=e[0], y=e[1]))
+                ),
                 height_m=min(
                     o.height_m, w.height_m - (o.sill_m if o.kind == "window" else 0)
                 ),
