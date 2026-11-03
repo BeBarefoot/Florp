@@ -362,6 +362,31 @@ def _overlaps_opening(gap, accepted):
     return False
 
 
+def _material_jambs(colour, gap):
+    """A photo opening needs material at both ends, not just two ink rails.
+
+    Geometric gap proposals also cross dimension leaders, furniture and empty
+    space. Sample immediately outside each end across the host width, allowing
+    the enclosing perpendicular return to supply the jamb evidence.
+    """
+    if colour is None:
+        return False
+    h, w = colour.shape
+    depth = max(3, int(math.ceil(gap.t)))
+    offsets = np.linspace(-0.5 * gap.t, 0.5 * gap.t, max(3, math.ceil(gap.t)))[:, None]
+    for end, sign in ((gap.lo, -1), (gap.hi, 1)):
+        along = end + sign * np.arange(0, depth + 1)
+        axis, cross = np.broadcast_arrays(along, gap.cross + offsets)
+        xs, ys = (axis, cross) if gap.horizontal else (cross, axis)
+        xi, yi = np.rint(xs).astype(int), np.rint(ys).astype(int)
+        valid = (xi >= 0) & (xi < w) & (yi >= 0) & (yi < h)
+        samples = np.zeros(valid.shape, bool)
+        samples[valid] = colour[yi[valid], xi[valid]]
+        if np.count_nonzero(samples.mean(axis=0) >= 0.25) < 2:
+            return False
+    return True
+
+
 def _photo_windows(edges, colour, gap):
     """Find supported window spans within an incompletely recovered wall gap.
 
@@ -401,6 +426,8 @@ def _photo_windows(edges, colour, gap):
             if b - a < max(12, 2.2 * gap.t):
                 continue
             sub = Gap(gap.horizontal, gap.cross, float(along[a]), float(along[b - 1]), gap.t)
+            if not _material_jambs(colour, sub):
+                continue
             count, confidence = _rails(edges, sub, min_separation=max(3, 0.35 * gap.t))
             if count >= 2:
                 spans.append((sub, confidence))
@@ -574,6 +601,21 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
                 continue
         kind, conf, door = None, 0.0, None
         rails, rail_min = _rails(line, gap)
+        jambs = not photographic or _material_jambs(colour, gap)
+        if not jambs:
+            # A partial window inside a broad missing-wall interval can still
+            # have its own two jambs. Check those locally before abandoning
+            # the broad proposal; never turn the whole interval into a door.
+            windows = _photo_windows(frame_edges, colour, gap)
+            for sub, support in windows:
+                if _overlaps_opening(sub, accepted):
+                    continue
+                conf = min(0.86, 0.62 + 0.12 * support)
+                result.gaps.append((sub, "window", conf))
+                result.objects.extend(_segment(sub, "window", conf, index, source_supported=True))
+                accepted.append(sub)
+                index += 1
+            continue
         if photographic and rails < 2:
             # In a small photograph two glass rails can blur into one dark
             # frame. Its separated edges still span the gap. Require spacing

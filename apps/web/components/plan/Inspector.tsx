@@ -97,8 +97,9 @@ export default function Inspector(p: Props) {
         <section className="fe-card fe-accent">
           <h3>Add {p.tool}</h3>
           <p>
-            Click two points{p.tool === "wall" ? ". Ends snap to nearby corners and walls." : " along a wall."} Hold Shift
-            for a straight line. Esc cancels.
+            {p.tool === "wall"
+              ? "Click two points. Walls stay horizontal or vertical automatically. Ends snap to aligned corners and wall intersections. Moving a corner keeps connected walls square."
+              : "Click two points along a wall. Hold Shift to lock the drawing axis."} Esc cancels.
           </p>
         </section>
       )}
