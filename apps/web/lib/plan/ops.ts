@@ -33,20 +33,43 @@ function onWall(o: Opening, a: Pt, b: Pt): Opening {
 
 export function moveNode(m: PlanModel, id: string, p: Pt): PlanModel {
   const before = nodeMap(m);
+  if (!before.has(id)) return m;
+  // A corner belongs to both wall axes. Propagate each coordinate only
+  // through its parallel chain so moving a corner cannot tilt its neighbours.
+  const connected = (vertical: boolean) => {
+    const ids = new Set([id]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const w of m.walls) {
+        const [a, b] = wallEnds(m, w, before);
+        if ((Math.abs(b.y - a.y) > Math.abs(b.x - a.x)) !== vertical) continue;
+        if (!ids.has(w.a) && !ids.has(w.b)) continue;
+        for (const end of [w.a, w.b]) if (!ids.has(end)) {
+          ids.add(end);
+          changed = true;
+        }
+      }
+    }
+    return ids;
+  };
+  const xs = connected(true), ys = connected(false);
+  const x = Math.max(0, Math.min(m.imageTransform.width, p.x));
+  const y = Math.max(0, Math.min(m.imageTransform.height, p.y));
   const next: PlanModel = {
     ...m,
-    nodes: m.nodes.map((n) =>
-      n.id === id
-        ? {
-            ...n,
-            x: Math.max(0, Math.min(m.imageTransform.width, p.x)),
-            y: Math.max(0, Math.min(m.imageTransform.height, p.y)),
-          }
-        : n,
-    ),
+    nodes: m.nodes.map((n) => ({ ...n, x: xs.has(n.id) ? x : n.x, y: ys.has(n.id) ? y : n.y })),
   };
   const after = nodeMap(next);
-  const touched = new Map(m.walls.filter((w) => w.a === id || w.b === id).map((w) => [w.id, w]));
+  const touched = new Map(m.walls.filter((w) =>
+    [w.a, w.b].some((end) => xs.has(end) || ys.has(end)),
+  ).map((w) => [w.id, w]));
+  // Do not collapse or reverse a wall by dragging past its opposite end.
+  for (const w of touched.values()) {
+    const [a, b] = wallEnds(m, w, before), [na, nb] = wallEnds(next, w, after);
+    const axis = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y) ? "x" : "y";
+    if ((nb[axis] - na[axis]) * Math.sign(b[axis] - a[axis]) < 1) return m;
+  }
   next.openings = m.openings.map((o) => {
     const w = o.hostWallId ? touched.get(o.hostWallId) : undefined;
     if (!w) return o;
@@ -88,29 +111,62 @@ export function splitWall(m: PlanModel, wallId: string, p: Pt): { model: PlanMod
   };
 }
 
-/** Snap to an existing node, else T-split a nearby wall, else create a free node. */
-function snapNode(m: PlanModel, p: Pt, radius: number): { model: PlanModel; nodeId: string } {
+type WallTarget = { point: Pt; nodeId?: string; wallId?: string };
+
+/** Resolve snapping without mutation, shared by the preview and committed edit. */
+function wallTarget(m: PlanModel, p: Pt, radius: number, from?: Pt): WallTarget {
+  const horizontal = from ? Math.abs(p.x - from.x) >= Math.abs(p.y - from.y) : false;
+  const axis = horizontal ? "x" : "y", cross = horizontal ? "y" : "x";
+  const onAxis = (q: Pt) => !from || Math.abs(q[cross] - from[cross]) < 1e-7;
   const near = m.nodes
     .map((n) => ({ n, d: dist(n, p) }))
-    .filter((x) => x.d <= radius)
+    .filter((x) => x.d <= radius && onAxis(x.n))
     .sort((a, b) => a.d - b.d)[0];
-  if (near) return { model: m, nodeId: near.n.id };
+  if (near) return { point: near.n, nodeId: near.n.id };
   const nodes = nodeMap(m);
   const host = m.walls
-    .map((w) => {
+    .flatMap((w) => {
       const [a, b] = wallEnds(m, w, nodes);
-      return { w, pr: project(a, b, p) };
+      if (!from) return [{ w, pr: project(a, b, p) }];
+      // Intersect the host with the locked axis. Nearest-point projection can
+      // move the endpoint off that axis and reintroduce a diagonal wall.
+      const dc = b[cross] - a[cross];
+      if (Math.abs(dc) < 1e-7) return onAxis(a) ? [{ w, pr: project(a, b, p) }] : [];
+      const t = (from[cross] - a[cross]) / dc;
+      const point = { ...p, [axis]: a[axis] + t * (b[axis] - a[axis]), [cross]: from[cross] };
+      return [{ w, pr: { t, point, distance: dist(p, point), along: t * dist(a, b) } }];
     })
-    .filter(({ w, pr }) => pr.t > 0 && pr.t < 1 && pr.distance <= Math.max(radius, w.thicknessPx / 2))
+    .filter(({ w, pr }) => pr.t > 0 && pr.t < 1 &&
+      pr.distance <= (radius <= 1e-7 ? radius : Math.max(radius, w.thicknessPx / 2)) &&
+      !m.openings.some((o) => o.hostWallId === w.id && o.status !== "rejected" &&
+        pr.along > o.offsetPx + 1e-7 && pr.along < o.offsetPx + o.widthPx - 1e-7))
     .sort((a, b) => a.pr.distance - b.pr.distance)[0];
-  if (host) return splitWall(m, host.w.id, p);
+  if (host) return { point: host.pr.point, wallId: host.w.id };
+  return { point: p };
+}
+
+export function wallPlacement(m: PlanModel, p1: Pt, p2: Pt, radius = 10) {
+  const start = wallTarget(m, p1, radius);
+  const horizontal = Math.abs(p2.x - start.point.x) >= Math.abs(p2.y - start.point.y);
+  const p = horizontal ? { x: p2.x, y: start.point.y } : { x: start.point.x, y: p2.y };
+  const end = wallTarget(m, p, radius, start.point);
+  return { start, end };
+}
+
+function materializeTarget(m: PlanModel, target: WallTarget): { model: PlanModel; nodeId: string } {
+  if (target.nodeId && m.nodes.some((n) => n.id === target.nodeId)) return { model: m, nodeId: target.nodeId };
+  if (target.wallId && m.walls.some((w) => w.id === target.wallId)) return splitWall(m, target.wallId, target.point);
   const nodeId = uid("n");
-  return { model: { ...m, nodes: [...m.nodes, { id: nodeId, x: p.x, y: p.y }] }, nodeId };
+  return { model: { ...m, nodes: [...m.nodes, { id: nodeId, ...target.point }] }, nodeId };
 }
 
 export function addWall(m: PlanModel, p1: Pt, p2: Pt, thicknessPx: number, snap = 10): { model: PlanModel; wallId: string } {
-  const first = snapNode(m, p1, snap);
-  const second = snapNode(first.model, p2, snap);
+  const placement = wallPlacement(m, p1, p2, snap);
+  if (dist(placement.start.point, placement.end.point) < 3) return { model: m, wallId: "" };
+  const first = materializeTarget(m, placement.start);
+  // Re-resolve against any host segments created by the first T-junction.
+  const target = wallTarget(first.model, placement.end.point, 1e-7, placement.start.point);
+  const second = materializeTarget(first.model, target);
   const wallId = uid("w");
   if (first.nodeId === second.nodeId) return { model: m, wallId: "" };
   return {

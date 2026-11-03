@@ -130,6 +130,16 @@ def bounded_red_bands(gray, paper, red, delta, wall_width):
                     continue
                 if abs(d0 - d1) > max(2, 0.1 * (d0 + d1)):
                     continue  # crossing furniture edges, not parallel wall faces
+                # A short fragment on one face must not truncate a longer
+                # wall. Expand the inspection range only when the extrapolated
+                # faces still form a parallel band; otherwise retain the
+                # already validated overlap. Every pixel still needs support.
+                outer_lo, outer_hi = min(first.lo, second.lo), max(first.hi, second.hi)
+                e0 = upper.at(outer_lo) - lower.at(outer_lo)
+                e1 = upper.at(outer_hi) - lower.at(outer_hi)
+                if (min(e0, e1) >= 2.5 and max(e0, e1) <= maximum
+                        and abs(e0 - e1) <= max(2, 0.1 * (e0 + e1))):
+                    lo, hi = outer_lo, outer_hi
                 along = np.arange(lo, hi + 1)
                 a, b = lower.at(along), upper.at(along)
                 thickness = b - a

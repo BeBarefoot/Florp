@@ -2,13 +2,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Finding, Opening, PlanModel, Pt } from "../../lib/plan/model";
 import { metersPerPixel, nodeMap, openingEnds, wallEnds } from "../../lib/plan/derive";
-import { addOpening, addWall, attachOpening, moveNode, patchOpening } from "../../lib/plan/ops";
+import { addOpening, addWall, attachOpening, moveNode, patchOpening, wallPlacement } from "../../lib/plan/ops";
 import type { Focus, Selection, Tool, ViewMode } from "./types";
 
 type Box = { x: number; y: number; w: number; h: number };
 type Drag =
   | { kind: "pan"; start: Pt; box: Box; scale: number; room: string | null; moved: boolean }
-  | { kind: "node"; id: string }
+  | { kind: "node"; id: string; original: PlanModel }
   | { kind: "opening"; id: string; part: "move" | "start" | "end"; grab: number }
   | { kind: "measure"; index: number }
   | { kind: "outline"; index: number }
@@ -123,7 +123,7 @@ export default function PlanCanvas(props: {
       setDraft(p);
       return;
     }
-    const end = axisSnap(draft, p, e.shiftKey);
+    const end = tool === "wall" ? p : axisSnap(draft, p, e.shiftKey);
     setDraft(null);
     if (Math.hypot(end.x - draft.x, end.y - draft.y) < 3) return;
     if (tool === "wall") {
@@ -156,7 +156,7 @@ export default function PlanCanvas(props: {
       d.moved = true;
       setBox({ ...d.box, x: d.box.x - dx, y: d.box.y - dy });
     } else if (d.kind === "node") {
-      props.edit(moveNode(m, d.id, p), false);
+      props.edit(moveNode(d.original, d.id, p), false);
     } else if (d.kind === "outline" && props.outline) {
       props.setOutline?.(props.outline.map((q, i) => (i === d.index ? p : q)));
     } else if (d.kind === "measure") {
@@ -209,6 +209,10 @@ export default function PlanCanvas(props: {
   const selOpening = selection?.type === "opening" ? m.openings.find((o) => o.id === selection.id) : undefined;
   const handleR = 6 * px;
   const rubberFrom = tool === "measure" && props.measure.length === 1 ? props.measure[0] : draft;
+  const placement = tool === "wall" && draft && pointer
+    ? wallPlacement(m, draft, pointer, Math.max(6, 10 * px)) : null;
+  const previewFrom = placement?.start.point ?? rubberFrom;
+  const previewTo = placement?.end.point ?? pointer;
   const showFinding =
     props.activeFinding ||
     (selection && m.findings.find((f) => f.targetIds.includes(selection.id) || (selWall && (f.targetIds.includes(selWall.a) || f.targetIds.includes(selWall.b))))) ||
@@ -301,7 +305,7 @@ export default function PlanCanvas(props: {
                 cy={n.y}
                 r={handleR}
                 strokeWidth={2 * px}
-                onPointerDown={(e) => startDrag(e, { kind: "node", id })}
+                onPointerDown={(e) => startDrag(e, { kind: "node", id, original: m })}
               />
             );
           })}
@@ -389,13 +393,13 @@ export default function PlanCanvas(props: {
             pointerEvents="none"
           />
         )}
-        {rubberFrom && pointer && (
+        {previewFrom && previewTo && (
           <line
             data-testid="rubber-band"
-            x1={rubberFrom.x}
-            y1={rubberFrom.y}
-            x2={pointer.x}
-            y2={pointer.y}
+            x1={previewFrom.x}
+            y1={previewFrom.y}
+            x2={previewTo.x}
+            y2={previewTo.y}
             stroke="#e08a2c"
             strokeWidth={2 * px}
             strokeDasharray={`${5 * px} ${4 * px}`}
@@ -436,9 +440,9 @@ export default function PlanCanvas(props: {
         )}
       </svg>
       {props.children?.({ toScreen })}
-      {mpp && pointer && rubberFrom && (
+      {mpp && previewTo && previewFrom && (
         <div className="fe-readout">
-          {(Math.hypot(pointer.x - rubberFrom.x, pointer.y - rubberFrom.y) * mpp).toFixed(2)} m
+          {(Math.hypot(previewTo.x - previewFrom.x, previewTo.y - previewFrom.y) * mpp).toFixed(2)} m
         </div>
       )}
       <div className="fe-zoom">

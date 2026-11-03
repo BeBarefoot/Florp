@@ -430,6 +430,7 @@ def wall_strips(image: np.ndarray) -> Strips:
     dark = strips_from(dark_cand, False, recover_thin=True)
     red = strips_from(red_cand, True) | recovered
     blue = strips_from(blue_cand, False)
+    opening_material = red_cand | blue_cand
     # Coloured fills (window glass, door leaves, rugs) inside a plan whose walls are drawn dark
     # are decoration, not walls. Hatched-wall drawings have almost no dark band at all.
     if dark.sum() > 3 * (red.sum() + blue.sum()):
@@ -445,6 +446,12 @@ def wall_strips(image: np.ndarray) -> Strips:
         from .photo_bands import bounded_red_bands
 
         bounded, widths, annotation_bars = bounded_red_bands(gray, paper, pale_colour, da, w_wall)
+        # Opening classification must see the same pale masonry evidence as
+        # wall recovery. The stricter seed mask alone makes a recovered pale
+        # partition look empty, so its two outline strokes become a window.
+        # Boundary-supported pixels are local source evidence, not the broad
+        # morphological closing that can bridge actual openings.
+        opening_material = ((pale_colour & ~raw_digits & ~annotation_bars) | bounded | blue_cand)
         stats["paired_boundary_px"] = int(bounded.sum())
         # Bar rejection has its own local evidence. It must not depend on
         # recovering an unrelated positive wall pair elsewhere in the image.
@@ -488,6 +495,6 @@ def wall_strips(image: np.ndarray) -> Strips:
         stats=stats,
         rejected=rejected,
         ink=ink,
-        structural_colour=None if stats.get("dark_walls") else red_cand | blue_cand,
+        structural_colour=None if stats.get("dark_walls") else opening_material,
         boundary_mask=boundary_mask,
     )
