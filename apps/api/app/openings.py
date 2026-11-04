@@ -262,6 +262,20 @@ def _photo_door(line_dil, gap):
         candidate = _door(line_dil, probe, continuous=True)
         if candidate is not None and (best is None or candidate[0] > best[0]):
             best = candidate
+    if best is not None:
+        return best
+
+    # At a recessed return, the fitted wall face and the printed jamb can be
+    # a couple of pixels apart along the gap as well. Retry within that
+    # tolerance, still requiring the continuous arc and a straight leaf.
+    # Keep the observed gap fixed; these shifts only sample evidence.
+    delta = min(2.0, 0.35 * gap.t)
+    for sign in (-1, 1):
+        shift = sign * delta
+        probe = Gap(gap.horizontal, gap.cross, gap.lo + shift, gap.hi + shift, gap.t)
+        candidate = _door(line_dil, probe, continuous=True)
+        if candidate is not None and (best is None or candidate[0] > best[0]):
+            best = candidate
     return best
 
 
@@ -320,34 +334,37 @@ def _photo_end_gaps(walls, size):
     """
     h, w = size
     out, seen = [], set()
+    pieces = _pieces(walls)
     for horizontal in (True, False):
         ends = []
-        for orient, cross, intervals in _pieces(walls):
+        for orient, cross, intervals in pieces:
             if orient != horizontal:
                 continue
             for lo, hi, thickness in intervals:
+                # For horizontal jambs, sort by endpoint X (the cross
+                # coordinate of the vertical opening), not by the jamb's Y.
                 ends.extend(((lo, cross, thickness), (hi, cross, thickness)))
         ends.sort()
         widest = max((end[2] for end in ends), default=0)
-        for i, (c1, a1, t1) in enumerate(ends):
-            for c2, a2, t2 in ends[i + 1:]:
-                if c2 - c1 > widest + 2:
+        for i, (a1, c1, t1) in enumerate(ends):
+            for j in range(i + 1, len(ends)):
+                a2, c2, t2 = ends[j]
+                if a2 - a1 > min(8, widest + 2):
                     break
-                if c2 - c1 > (t1 + t2) / 2 + 2:
+                if a2 - a1 > (t1 + t2) / 2 + 2:
                     continue
                 thickness = max(t1, t2)
-                if a1 < a2:
-                    lo, hi = a1 + t1 / 2, a2 - t2 / 2
+                if c1 < c2:
+                    lo, hi = c1 + t1 / 2, c2 - t2 / 2
                 else:
-                    lo, hi = a2 + t2 / 2, a1 - t1 / 2
-                if not 2.2 * thickness <= hi - lo <= min(20 * thickness, 0.25 * max(h, w)):
+                    lo, hi = c2 + t2 / 2, c1 - t1 / 2
+                if not max(8, 2.2 * thickness) <= hi - lo <= min(20 * thickness, 0.25 * max(h, w)):
                     continue
-                cross = (c1 + c2) / 2
+                cross = (a1 + a2) / 2
                 key = (horizontal, round(cross), round(lo), round(hi))
                 if key in seen:
                     continue
                 seen.add(key)
-                # The opening orientation is perpendicular to its jamb walls.
                 out.append(Gap(not horizontal, cross, lo, hi, thickness))
     return out
 
@@ -617,32 +634,35 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
                 index += 1
             continue
         if photographic and rails < 2:
-            # In a small photograph two glass rails can blur into one dark
-            # frame. Its separated edges still span the gap. Require spacing
-            # proportional to the wall to exclude a lone thin dimension line.
+            # Blurred glazing can have one dark band but two full-length
+            # edges. Keep full rails ahead of swing evidence (some windows
+            # have a swing symbol too). Only partial rails yield to a door.
             edge_rails, edge_min = _rails(frame_edges, gap, min_separation=max(3, 0.35 * gap.t))
             if edge_rails >= 2:
                 rails, rail_min = edge_rails, edge_min
             else:
-                windows = _photo_windows(frame_edges, colour, gap)
-                if windows:
-                    for sub, support in windows:
-                        if _overlaps_opening(sub, accepted):
-                            continue
-                        conf = min(0.86, 0.62 + 0.12 * support)
-                        result.gaps.append((sub, "window", conf))
-                        result.objects.extend(_segment(sub, "window", conf, index, source_supported=True))
-                        accepted.append(sub)
-                        index += 1
-                    continue
+                if width <= 20 * gap.t:
+                    door = _photo_door(line_dil, gap)
+                if door is None:
+                    windows = _photo_windows(frame_edges, colour, gap)
+                    if windows:
+                        for sub, support in windows:
+                            if _overlaps_opening(sub, accepted):
+                                continue
+                            conf = min(0.86, 0.62 + 0.12 * support)
+                            result.gaps.append((sub, "window", conf))
+                            result.objects.extend(_segment(sub, "window", conf, index, source_supported=True))
+                            accepted.append(sub)
+                            index += 1
+                        continue
         if rails >= 2:
             kind = "window"
             conf = 0.62 + (0.12 if rails >= 3 else 0) + (0.12 if rail_min >= 0.9 else 0)
         else:
             # Thin partitions can host ordinary doors much wider than nine
             # times their thickness. Require arc/leaf evidence, not that ratio.
-            if width <= 20 * gap.t:
-                door = _photo_door(line_dil, gap) if photographic else _door(line_dil, gap)
+            if not photographic and width <= 20 * gap.t:
+                door = _door(line_dil, gap)
             if door:
                 kind = "door"
                 conf = 0.5 + 0.3 * min(1.0, door[1]) + (0.1 if door[2] >= 0.6 else 0)

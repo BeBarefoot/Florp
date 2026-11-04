@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from app.ink_layers import wall_strips
-from app.openings import Box, detect, enumerate_gaps
+from app.openings import Box, Gap, _photo_end_gaps, detect, enumerate_gaps
 from app.plan_reconstruct import reconstruct
 from app.plan_workspace import Document, Point, Segment
 
@@ -230,3 +230,14 @@ def test_half_open_diagonal_leaf_is_a_door_with_the_same_physical_gap():
     assert len(doors) == 1
     assert (doors[0].start.x, doors[0].end.x) == (250, 330)
     assert doors[0].leaf.y > 0
+
+
+
+def test_photo_opening_between_parallel_jamb_ends():
+    # The ends line up in X; the clear opening extends along Y between faces.
+    jambs = [wall(0, (120, 100), (200, 100), 6), wall(1, (120, 150), (200, 150), 10)]
+    assert Gap(False, 200, 103, 145, 10) in _photo_end_gaps(jambs, (H, W))
+
+    # Transpose the plan to exercise the horizontal doorway as well.
+    jambs = [wall(0, (100, 120), (100, 200), 6), wall(1, (150, 120), (150, 200), 10)]
+    assert Gap(True, 200, 103, 145, 10) in _photo_end_gaps(jambs, (H, W))
