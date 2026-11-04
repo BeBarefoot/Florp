@@ -202,6 +202,7 @@ def build(path, roi=None):
     objects = join_intersections(objects, image.shape)
     if strips.boundary_mask is not None:
         _trim_photo_edge_leaders(objects, strips.boundary_mask | strips.blue, w_wall)
+    solid = None
     if strips.ink is not None:
         # On coloured plans, raw ink also includes dimension leaders and
         # furniture. It cannot justify extending a structural wall.
@@ -224,6 +225,18 @@ def build(path, roi=None):
         image, [o for o in objects if o.kind == "wall"], strips, boxes, exterior_zone
     )
     objects.extend(found.objects)
+    if solid is not None:
+        # A detected swing provides the missing jamb, but the adjoining
+        # masonry can still be absent from the strip mask. Extend only the
+        # host wall, not the opening, across an uninterrupted material band.
+        door_flanks = {
+            o.host_id: 1.25 * math.hypot(o.end.x - o.start.x, o.end.y - o.start.y)
+            for o in found.objects
+            if o.kind == "door" and o.boundary_supported and o.host_id
+            and (o.confidence or 0) >= 0.85
+        }
+        if door_flanks:
+            extend_dangling(objects, solid & env_mask, cover=0.9, reach_by_wall=door_flanks)
     if strips.boundary_mask is not None:
         # A glazed facade may have no surviving raw horizontal run at its
         # corner. Its verified opening host can now identify the junction.
