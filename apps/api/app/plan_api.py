@@ -143,6 +143,22 @@ def save(bid: str, body: Save):
         return store(s, bid, derive(body.model), current + 1)
 
 
+@router.post("/blueprints/{bid}/plan/align-walls")
+def align_plan_walls(bid: str, body: Save):
+    """Return an aligned draft. The editor applies it as one undoable edit."""
+    from .wall_alignment import align_walls
+
+    with Session(get_engine()) as s:
+        bp = blueprint(s, bid)
+        t = body.model.image_transform
+        if (t.width, t.height) != (bp.width, bp.height):
+            raise HTTPException(422, "Source dimensions changed")
+        row = latest(s, bid)
+        if (row.revision if row else 0) != body.expected_revision:
+            raise HTTPException(409, "A newer revision exists. Reload before aligning walls.")
+    return derive(align_walls(body.model)).dump()
+
+
 class Extract(BaseModel):
     """Optional building outline (pixel polygon) that replaces the detected envelope."""
 
