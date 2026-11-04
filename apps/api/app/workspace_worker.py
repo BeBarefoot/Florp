@@ -6,6 +6,7 @@ openings (detector boxes only adjust confidence).
 """
 
 import json
+import math
 import sys
 from pathlib import Path
 import cv2, numpy as np
@@ -25,6 +26,52 @@ def _remeasure(objects, strip_mask, classes):
         vals = vals[vals > 0]
         if vals.size:
             o.thickness_px = float(np.clip(np.median(vals), 1, cap))
+
+
+def _trim_photo_edge_leaders(objects, supported, wall_width):
+    """Clip thin unsupported leaders that run from the page edge into a wall."""
+    h, w = supported.shape
+    for run in objects:
+        if run.kind != "wall" or run.id.startswith("gap-host-") or run.thickness_px > max(2, 0.4 * wall_width):
+            continue
+        a, b = run.start, run.end
+        vertical = abs(a.x - b.x) < 0.01
+        if not vertical and abs(a.y - b.y) >= 0.01:
+            continue
+        axis, cross = ("y", "x") if vertical else ("x", "y")
+        size = h if vertical else w
+        lane = getattr(a, cross)
+        if not 0 <= round(lane) < (w if vertical else h):
+            continue
+        for edge, inside in ((a, b), (b, a)):
+            start, stop = getattr(edge, axis), getattr(inside, axis)
+            if min(start, size - 1 - start) > 2:
+                continue
+            sign = 1 if stop > start else -1
+            joints = []
+            for other in objects:
+                if other is run or other.kind != "wall" or other.thickness_px < 2 * run.thickness_px:
+                    continue
+                p, q = other.start, other.end
+                if abs(getattr(p, axis) - getattr(q, axis)) > 0.1:
+                    continue
+                l, r = sorted((getattr(p, cross), getattr(q, cross)))
+                hit = getattr(p, axis)
+                pad = max(2, 0.65 * other.thickness_px) if other.id.startswith("gap-host-") else 2
+                if l - pad <= lane <= r + pad and 2 * wall_width < sign * (hit - start) < abs(stop - start) - 2:
+                    joints.append(hit)
+            for hit in sorted(joints, key=lambda v: abs(v - start)):
+                along = np.arange(max(0, math.ceil(min(start, hit))), min(size, math.floor(max(start, hit))))
+                if not along.size:
+                    continue
+                across = np.arange(max(0, round(lane) - 2), min(w if vertical else h, round(lane) + 3))
+                if vertical:
+                    patch = supported[np.ix_(along, across)]
+                else:
+                    patch = supported[np.ix_(across, along)]
+                if float(patch.mean()) < 0.08:
+                    setattr(edge, axis, hit)
+                    break
 
 
 def _detector_boxes(path, w, h):
@@ -153,11 +200,21 @@ def build(path, roi=None):
             )
         )
     objects = join_intersections(objects, image.shape)
+    if strips.boundary_mask is not None:
+        _trim_photo_edge_leaders(objects, strips.boundary_mask | strips.blue, w_wall)
     if strips.ink is not None:
         # On coloured plans, raw ink also includes dimension leaders and
         # furniture. It cannot justify extending a structural wall.
         extension_ink = (mask > 0) if (strips.red.any() or strips.blue.any()) else strips.ink | (mask > 0)
-        extend_dangling(objects, extension_ink & env_mask)
+        material_ink = None
+        if strips.boundary_mask is not None and strips.structural_colour is not None:
+            # Only a band of original material can recover an extension
+            # lost to a broken outline; neutral ink and thin strokes cannot.
+            solid = cv2.morphologyEx(
+                strips.structural_colour.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)
+            ) > 0
+            material_ink = (extension_ink | solid) & env_mask
+        extend_dangling(objects, extension_ink & env_mask, material_ink=material_ink)
     boxes, detector_ok = _detector_boxes(path, w, h)
     if not detector_ok:
         notes.append(
@@ -167,6 +224,10 @@ def build(path, roi=None):
         image, [o for o in objects if o.kind == "wall"], strips, boxes, exterior_zone
     )
     objects.extend(found.objects)
+    if strips.boundary_mask is not None:
+        # A glazed facade may have no surviving raw horizontal run at its
+        # corner. Its verified opening host can now identify the junction.
+        _trim_photo_edge_leaders(objects, strips.boundary_mask | strips.blue, w_wall)
     return Document(
         width=w,
         height=h,
