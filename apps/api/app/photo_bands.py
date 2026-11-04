@@ -218,3 +218,53 @@ def bounded_red_bands(gray, paper, red, delta, wall_width):
                     cv2.fillConvexPoly(result, np.rint(points).astype(np.int32), 1)
                     widths.append(width)
     return result > 0, widths, (annotations > 0) & (result == 0)
+
+
+def detached_annotation_runs(red, structural, seeds):
+    """Find dashed red dimension leaders outside the supported wall extent.
+
+    Require three distinct, slender strokes on one line beyond the wall
+    bounds. An isolated stroke or a break inside the plan is not sufficient.
+    """
+    h, w = red.shape
+    annotations = np.zeros_like(red)
+    x = np.flatnonzero(structural.any(axis=0))
+    y = np.flatnonzero(structural.any(axis=1))
+    if not x.size or np.ptp(x) < 0.25 * w or np.ptp(y) < 0.25 * h:
+        return annotations
+    _, labels, stats, _ = cv2.connectedComponentsWithStats(red.astype(np.uint8), connectivity=8)
+    limits = ((x.min(), x.max()), (y.min(), y.max()))
+    groups = {}
+    for i, (x0, y0, bw, bh, area) in enumerate(stats[1:], 1):
+        vertical = bh >= bw
+        cross, along = (x0, y0) if vertical else (y0, x0)
+        thick, length = (bw, bh) if vertical else (bh, bw)
+        if length < max(18, 4 * thick) or area < 0.65 * bw * bh:
+            continue
+        lo, hi = limits[0 if vertical else 1]
+        clearance = max(3, 0.25 * thick)
+        side = -1 if cross + thick <= lo - clearance else 1 if cross >= hi + clearance else 0
+        if not side:
+            continue
+        local = labels[y0:y0 + bh, x0:x0 + bw] == i
+        if float(seeds[y0:y0 + bh, x0:x0 + bw][local].mean()) < 0.75:
+            continue
+        groups.setdefault((vertical, side), []).append((along, along + length, cross + thick / 2, thick, i))
+    reject = set()
+    for rows in groups.values():
+        rows.sort()
+        for j, (lo, hi, cross, t, i) in enumerate(rows):
+            hits = [i]
+            last = hi
+            for start, stop, centre, width, label in rows[j + 1:]:
+                if start - last < max(2, 0.4 * t) or not 0.5 * t <= width <= 2 * t:
+                    continue
+                if abs(centre - cross) > max(3, 0.4 * t) + 0.05 * (start - lo):
+                    continue
+                hits.append(label)
+                last = stop
+            if len(hits) >= 3:
+                reject.update(hits)
+    if reject:
+        annotations = np.isin(labels, sorted(reject))
+    return annotations

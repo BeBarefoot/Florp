@@ -256,3 +256,28 @@ def test_photo_rails_reject_repeated_shelf_crossbars():
     assert _rails(ink, gap, reject_rungs=True)[0] == 2
     ink[17:24, 10:105:8] = True
     assert _rails(ink, gap, reject_rungs=True)[0] < 2
+
+
+def test_photo_swing_can_use_leaf_missing_from_wall_filtered_ink():
+    from app.openings import _photo_door
+
+    arc = np.zeros((140, 140), dtype=np.uint8)
+    cv2.ellipse(arc, (60, 50), (36, 45), 0, 0, 90, 1, 3)
+    unmasked = arc.copy()
+    cv2.line(unmasked, (60, 51), (60, 94), 1, 3)
+    gap = Gap(True, 50, 60, 96, 8)
+    assert _photo_door(arc > 0, gap) is None
+    swing = _photo_door(arc > 0, gap, unmasked > 0)
+    assert swing is not None and swing[3:] == (True, 1)
+
+
+def test_photo_window_rejects_masonry_core_offset_from_centreline():
+    from app.openings import _photo_window_clear
+
+    material = np.zeros((80, 100), dtype=bool)
+    gap = Gap(False, 30, 15, 65, 12)
+    material[15:66, 25:27] = True
+    assert not _photo_window_clear(material, gap)
+    material[15:66, 25:27] = False
+    material[15:20, 25:27] = True
+    assert _photo_window_clear(material, gap)

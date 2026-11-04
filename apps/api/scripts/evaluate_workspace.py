@@ -135,7 +135,9 @@ def debug_overlays(source, document, out: Path):
             thickness_px=wall.thickness_px, height_m=opening.height_m,
             sill_m=opening.sill_m,
         ))
-    reconstructed = Document(width=document.width, height=document.height, objects=objects)
+    # Diagnostic render only: PlanModel can contain sub-2px wall fragments
+    # after splitting at junctions. These are not raw worker objects.
+    reconstructed = Document.model_construct(width=document.width, height=document.height, objects=objects)
     clean, overlay, svg = render(reconstructed, source)
     cv2.imwrite(str(out / "model-clean.png"), clean)
     cv2.imwrite(str(out / "model-overlay.png"), overlay)

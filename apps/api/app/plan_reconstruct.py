@@ -603,7 +603,7 @@ def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = Non
     )
 
 
-def extend_dangling(objects, ink, factor: float = 4.0, cover: float = 0.8):
+def extend_dangling(objects, ink, factor: float = 4.0, cover: float = 0.8, material_ink=None):
     """Extend dangling axis-aligned wall ends along drawn evidence.
 
     An end that touches no other wall is extended along its axis, at most
@@ -639,6 +639,9 @@ def extend_dangling(objects, ink, factor: float = 4.0, cover: float = 0.8):
         axis = horizontal[o.id]
         if axis is None:
             continue
+        support = ink
+        if material_ink is not None and o.boundary_supported:
+            support = material_ink  # source tint can outlast the fitted outline
         for end in ("start", "end"):
             p, other = getattr(o, end), getattr(o, "end" if end == "start" else "start")
             if body_distance(p.x, p.y, o.id) <= o.thickness_px / 2 + 3:
@@ -683,7 +686,7 @@ def extend_dangling(objects, ink, factor: float = 4.0, cover: float = 0.8):
             reach_px = max(1, int(o.thickness_px / 2))
             near = np.zeros(n, bool)
             for dx in range(-reach_px, reach_px + 1):
-                near |= ink[
+                near |= support[
                     (ys + (dx if axis else 0)).clip(0, h - 1),
                     (xs + (0 if axis else dx)).clip(0, w - 1),
                 ]

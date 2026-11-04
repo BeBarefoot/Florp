@@ -263,7 +263,7 @@ def _door(line_dil, gap: Gap, continuous=False):
     return best
 
 
-def _photo_door(line_dil, gap):
+def _photo_door(line_dil, gap, faint_ink=None):
     # The drawn hinge is on a wall face, not necessarily its centreline.
     # Adjust the evidence probe only; the opening stays on its physical host.
     best = None
@@ -272,23 +272,30 @@ def _photo_door(line_dil, gap):
         candidate = _door(line_dil, probe, continuous=True)
         if candidate is not None and (best is None or candidate[0] > best[0]):
             best = candidate
-    return best if best is not None else _offset_photo_swing(line_dil, gap)
+    if best is not None:
+        return best
+    return _offset_photo_swing(faint_ink if faint_ink is not None else line_dil, gap, line_dil)
 
 
-def _offset_photo_swing(ink, gap):
+def _offset_photo_swing(ink, gap, arc_prior):
     """Fit a right-angle swing around either jamb, keeping the jamb span fixed."""
     width = gap.hi - gap.lo
+    cross_size = ink.shape[0 if gap.horizontal else 1]
+    if width < 16 or min(gap.cross, cross_size - 1 - gap.cross) < 0.75 * width:
+        # Leave near-edge or low-resolution symbols to the stricter fit:
+        # the faint mask is especially prone to framing and dimension marks.
+        return None
     # A jamb face and the printed hinge can be displaced independently,
     # especially at a thick return. First shortlist positions with a leaf.
     reach = int(min(8, max(3, 0.18 * width)))
     across = int(min(7, max(2, gap.t / 2 + 1)))
 
-    def sample(along, cross):
+    def sample(along, cross, raster=ink):
         x, y = (along, cross) if gap.horizontal else (cross, along)
         x, y = np.broadcast_arrays(np.rint(x).astype(int), np.rint(y).astype(int))
         h, w = ink.shape
         valid = (x >= 0) & (x < w) & (y >= 0) & (y < h)
-        return valid & ink[y.clip(0, h - 1), x.clip(0, w - 1)]
+        return valid & raster[y.clip(0, h - 1), x.clip(0, w - 1)]
 
     probes = []
     for at_lo in (True, False):
@@ -298,15 +305,23 @@ def _offset_photo_swing(ink, gap):
             for shift in range(-reach, reach + 1):
                 hinge = near + shift
                 for offset in range(-across, across + 1):
-                    for radius_shift in (-2, 0, 2):
+                    for radius_shift in (-3, 0, 3):
                         r = toward * (far - hinge) + radius_shift
                         if 0.72 * width <= r <= 1.18 * width:
                             probes.append((hinge, gap.cross + offset, r, toward, side, abs(shift) + abs(offset)))
     if not probes:
         return None
     along, cross, radius, toward, side, displacement = np.asarray(probes).T
+    # Photographed symbols and printed plan marks are not always circular.
+    # Preserve the radius to the opposite jamb, allowing a modest stretch
+    # only in the open-leaf direction.
+    probes_idx = np.repeat(np.arange(len(radius)), 5)
+    along, cross, radius, toward, side, displacement = (
+        v[probes_idx] for v in (along, cross, radius, toward, side, displacement)
+    )
+    swing_radius = radius * np.tile([0.8, 0.9, 1.0, 1.12, 1.25], len(probes))
     steps = np.linspace(0.2, 0.9, 18)
-    leaf = sample(along[:, None], cross[:, None] + (side * radius)[:, None] * steps).mean(axis=1)
+    leaf = sample(along[:, None], cross[:, None] + (side * swing_radius)[:, None] * steps).mean(axis=1)
     eligible = np.flatnonzero(leaf >= 0.78)
     if not eligible.size:
         return None
@@ -314,12 +329,24 @@ def _offset_photo_swing(ink, gap):
     # leaf hits first, breaking ties in favour of the printed jamb.
     order = np.lexsort((displacement[eligible], -leaf[eligible]))
     best = None
-    for i in eligible[order[:64]]:
+    for i in eligible[order[:96]]:
         angles = np.linspace(0.10, 0.88, min(160, max(32, math.ceil(radius[i] * math.pi / 2)))) * math.pi / 2
-        evidence = sample(along[i] + toward[i] * radius[i] * np.cos(angles),
-                          cross[i] + side[i] * radius[i] * np.sin(angles))
+        ax, ay = toward[i] * np.cos(angles), side[i] * np.sin(angles)
+        evidence = sample(along[i] + radius[i] * ax, cross[i] + swing_radius[i] * ay)
         arc = float(evidence.mean())
-        if arc < 0.8 or any(part.mean() < 0.7 for part in np.array_split(evidence, 4)):
+        # The fallback admits faint source marks. Demand a well localized,
+        # nearly complete curve so a dense stair/wardrobe pattern or the
+        # straight edges of a dimension box cannot supply the evidence.
+        if arc < 0.92 or any(part.mean() < 0.78 for part in np.array_split(evidence, 4)):
+            continue
+        # The relaxed mask can reveal a missing leaf or bridge faint arc
+        # sections, but the curve must also have support in the main ink.
+        if sample(along[i] + radius[i] * ax, cross[i] + swing_radius[i] * ay, arc_prior).mean() < 0.40:
+            continue
+        neighbor = max(float(sample(along[i] + (radius[i] + d) * ax,
+                                    cross[i] + (swing_radius[i] + d) * ay).mean())
+                       for d in (-4, 4))
+        if arc - neighbor < 0.18:
             continue
         breaks = np.diff(np.r_[False, ~evidence, False].astype(np.int8))
         lengths = np.flatnonzero(breaks == -1) - np.flatnonzero(breaks == 1)
@@ -482,7 +509,40 @@ def _material_jambs(colour, gap):
     return True
 
 
-def _photo_windows(edges, colour, gap):
+def _photo_window_anchor(gap, pieces):
+    """Glass rails need a continuation along their axis, not two crosswalls."""
+    for horizontal, cross, intervals in pieces:
+        if horizontal != gap.horizontal or abs(cross - gap.cross) > max(2, gap.t / 2):
+            continue
+        for lo, hi, t in intervals:
+            # Measure from the jamb outward. A perpendicular intersection
+            # or a short spike in the strip mask isn't a longitudinal pier.
+            depth = max(5, 0.7 * min(t, gap.t))
+            reach = max(depth + 3, 2 * gap.t)
+            left = min(hi, gap.lo) - max(lo, gap.lo - reach)
+            right = min(hi, gap.hi + reach) - max(lo, gap.hi)
+            if max(left, right) >= depth:
+                return True
+    return False
+
+
+def _photo_window_clear(colour, gap):
+    """A long thin masonry core alongside apparent rails is still a wall."""
+    if colour is None:
+        return True
+    width = gap.hi - gap.lo
+    h, w = colour.shape
+    along = np.linspace(gap.lo + 0.1 * width, gap.hi - 0.1 * width, max(10, round(width)))
+    extent = min(6, gap.t / 2)
+    across = gap.cross + np.arange(-math.floor(extent), math.floor(extent) + 1)[:, None]
+    x, y = (along, across) if gap.horizontal else (across, along)
+    x, y = np.broadcast_arrays(np.rint(x).astype(int), np.rint(y).astype(int))
+    valid = (x >= 0) & (x < w) & (y >= 0) & (y < h)
+    lanes = (valid & colour[y.clip(0, h - 1), x.clip(0, w - 1)]).mean(axis=1) >= 0.72
+    return not np.any(lanes[1:] & lanes[:-1])
+
+
+def _photo_windows(edges, colour, gap, pieces):
     """Find supported window spans within an incompletely recovered wall gap.
 
     Do not stretch a window to the entire distance between surviving walls.
@@ -521,7 +581,8 @@ def _photo_windows(edges, colour, gap):
             if b - a < max(12, 2.2 * gap.t):
                 continue
             sub = Gap(gap.horizontal, gap.cross, float(along[a]), float(along[b - 1]), gap.t)
-            if not _material_jambs(colour, sub):
+            if (not _material_jambs(colour, sub) or not _photo_window_anchor(sub, pieces)
+                    or not _photo_window_clear(colour, sub)):
                 continue
             count, confidence = _rails(edges, sub, min_separation=max(3, 0.35 * gap.t), reject_rungs=True)
             if count >= 2:
@@ -650,7 +711,8 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
         # Classify the locally bounded span before a broader incomplete gap.
         gaps.sort(key=lambda gap: (gap.door_only, gap.hi - gap.lo, gap.horizontal, gap.cross, gap.lo))
     accepted = []
-    frame_edges = None
+    frame_edges = faint_door_ink = None
+    photo_pieces = _pieces(walls) if photographic else []
     if photographic:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         relative = gray.astype(np.float32) / np.maximum(_local_paper(gray), 1)
@@ -675,6 +737,13 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
         line = neutral
         door_ink = (neutral | (gray < 0.8 * paper)) & ~annotation & ~grown
         line_dil = cv2.dilate(door_ink.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+        # A lightly printed leaf can disappear from the main ink mask, and
+        # a coloured stamp can cross the arc. This lower contrast mask is
+        # only used for the bounded fit with both jambs, leaf and arc.
+        faint_stroke = (gray < 0.98 * paper) & (gray < local - 0.008 * paper)
+        faint_door_ink = cv2.dilate(
+            (door_ink | faint_stroke).astype(np.uint8), np.ones((3, 3), np.uint8)
+        ) > 0
     index = 0
     for gap in gaps:
         if photographic and _overlaps_opening(gap, accepted):
@@ -697,54 +766,38 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
             if np.mean(evidence.mean(axis=0) >= 0.4) > 0.5:
                 continue
         kind, conf, door = None, 0.0, None
-        rails, rail_min = _rails(line, gap, reject_rungs=photographic)
-        jambs = not photographic or _material_jambs(colour, gap)
-        if gap.door_only:
-            # A fallback must not turn an observed window into a door.
-            if not jambs or rails >= 2:
+        if not photographic:
+            rails, rail_min = _rails(line, gap)
+        else:
+            # A shelf or dimension stroke can end at two crosswalls and
+            # look like glazing. Require a wall continuing along the gap.
+            window_ok = (_material_jambs(colour, gap) and _photo_window_anchor(gap, photo_pieces)
+                         and _photo_window_clear(colour, gap))
+            rails, rail_min = (0, 0.0)
+            if window_ok:
+                rails, rail_min = _rails(line, gap, reject_rungs=True)
+                if rails < 2:
+                    rails, rail_min = _rails(
+                        frame_edges, gap, min_separation=max(3, 0.35 * gap.t), reject_rungs=True
+                    )
+            if rails < 2 and 10 <= width <= 20 * gap.t and _material_jambs(colour, gap):
+                door = _photo_door(line_dil, gap, faint_door_ink)
+            if gap.door_only and (door is None or rails >= 2):
                 continue
-            edge_rails, _ = _rails(frame_edges, gap, min_separation=max(3, 0.35 * gap.t), reject_rungs=True)
-            if edge_rails >= 2:
-                continue
-            door = _photo_door(line_dil, gap)
-            if door is None:
-                continue
-        if not jambs:
-            # A partial window inside a broad missing-wall interval can still
-            # have its own two jambs. Check those locally before abandoning
-            # the broad proposal; never turn the whole interval into a door.
-            windows = _photo_windows(frame_edges, colour, gap)
-            for sub, support in windows:
-                if _overlaps_opening(sub, accepted):
+            if rails < 2 and door is None:
+                windows = _photo_windows(frame_edges, colour, gap, photo_pieces)
+                if windows:
+                    for sub, support in windows:
+                        if _overlaps_opening(sub, accepted):
+                            continue
+                        conf = min(0.86, 0.62 + 0.12 * support)
+                        result.gaps.append((sub, "window", conf))
+                        result.objects.extend(_segment(sub, "window", conf, index, source_supported=True))
+                        accepted.append(sub)
+                        index += 1
                     continue
-                conf = min(0.86, 0.62 + 0.12 * support)
-                result.gaps.append((sub, "window", conf))
-                result.objects.extend(_segment(sub, "window", conf, index, source_supported=True))
-                accepted.append(sub)
-                index += 1
-            continue
-        if photographic and rails < 2 and not gap.door_only:
-            # Blurred glazing can have one dark band but two full-length
-            # edges. Keep full rails ahead of swing evidence (some windows
-            # have a swing symbol too). Only partial rails yield to a door.
-            edge_rails, edge_min = _rails(frame_edges, gap, min_separation=max(3, 0.35 * gap.t), reject_rungs=True)
-            if edge_rails >= 2:
-                rails, rail_min = edge_rails, edge_min
-            else:
-                if width <= 20 * gap.t:
-                    door = _photo_door(line_dil, gap)
-                if door is None:
-                    windows = _photo_windows(frame_edges, colour, gap)
-                    if windows:
-                        for sub, support in windows:
-                            if _overlaps_opening(sub, accepted):
-                                continue
-                            conf = min(0.86, 0.62 + 0.12 * support)
-                            result.gaps.append((sub, "window", conf))
-                            result.objects.extend(_segment(sub, "window", conf, index, source_supported=True))
-                            accepted.append(sub)
-                            index += 1
-                        continue
+                if not _material_jambs(colour, gap):
+                    continue
         if rails >= 2:
             kind = "window"
             conf = 0.62 + (0.12 if rails >= 3 else 0) + (0.12 if rail_min >= 0.9 else 0)

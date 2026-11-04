@@ -443,7 +443,7 @@ def wall_strips(image: np.ndarray) -> Strips:
         # Use independent local boundary evidence for coloured plans. Neither
         # an entire connected hatch component nor a red dimension stroke is
         # a wall by itself. Keep the dark-wall branch above exactly as before.
-        from .photo_bands import bounded_red_bands
+        from .photo_bands import bounded_red_bands, detached_annotation_runs
 
         bounded, widths, annotation_bars = bounded_red_bands(gray, paper, pale_colour, da, w_wall)
         # Opening classification must see the same pale masonry evidence as
@@ -473,6 +473,31 @@ def wall_strips(image: np.ndarray) -> Strips:
             glyphs = _glyph_components(red)
             rejected["colour_digits"] = glyphs
             red &= ~glyphs
+        # A broken annotation line can survive the local face test at a few
+        # pixels. Filter only repeated detached runs outside supported walls.
+        # Never use that extent to crop the whole photo.
+        detached = detached_annotation_runs(red, bounded | blue, red_cand)
+        rejected["detached_annotations"] = detached
+        red &= ~detached
+        opening_material &= ~detached
+        # A faded seam within one blue concrete band can split it into
+        # parallel rails. Fill only short breaks with blue source tint.
+        blue_u8 = blue.astype(np.uint8)
+        closed = (
+            cv2.morphologyEx(blue_u8, cv2.MORPH_CLOSE, np.ones((1, 5), np.uint8))
+            | cv2.morphologyEx(blue_u8, cv2.MORPH_CLOSE, np.ones((5, 1), np.uint8))
+        )
+        blue_seams = (closed > 0) & (hsv[:, :, 0] > 90) & (hsv[:, :, 0] < 145) & (lab[:, :, 2] <= 129)
+        # Ignore tiny bridges near a corner: they change topology without
+        # evidence of a faded seam running along the concrete.
+        _, ids, boxes, _ = cv2.connectedComponentsWithStats((blue_seams & ~blue).astype(np.uint8), connectivity=8)
+        long = np.maximum(boxes[:, 2], boxes[:, 3])
+        short = np.minimum(boxes[:, 2], boxes[:, 3])
+        keep = (long >= 12) & (long >= 3 * short)
+        keep[0] = False
+        blue_seams = keep[ids]
+        blue |= blue_seams
+        opening_material |= blue_seams
         # In colour-dominated drawings, neutral ink describes outlines and
         # symbols, not an independent structural layer. Only retain the dark
         # edge of a coloured wall. A thickness filter alone kept black window

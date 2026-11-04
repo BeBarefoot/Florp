@@ -119,3 +119,17 @@ def test_thin_partition_survives_beside_thick_walls():
     s = wall_strips(img)
     assert covered(s.mask, 301, 110, 304, 310) > 0.8
     assert covered(s.mask, 160, 217, 250, 224) < 0.1
+
+
+def test_detached_repeated_dimension_strokes_are_not_wall_strips():
+    from app.photo_bands import detached_annotation_runs
+
+    supported = np.zeros((240, 300), dtype=bool)
+    supported[30:200, 50:230] = True
+    red = np.zeros_like(supported)
+    for start in (22, 88, 154):
+        red[start:start + 45, 260:266] = True
+    red[80:125, 20:26] = True  # isolated run: insufficient annotation evidence
+    removed = detached_annotation_runs(red, supported, red)
+    assert removed[:, 260:266].sum() == 3 * 45 * 6
+    assert not removed[:, 20:26].any()
