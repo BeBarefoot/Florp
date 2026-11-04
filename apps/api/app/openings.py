@@ -36,6 +36,7 @@ class Gap:
     lo: float  # along-axis interval (px)
     hi: float
     t: float  # wall thickness
+    door_only: bool = False  # mixed-return geometry needs swing evidence
 
 
 @dataclass
@@ -156,7 +157,7 @@ def _line_ink(image, strips):
     return line & ~grown
 
 
-def _rails(line, gap: Gap, min_separation=2):
+def _rails(line, gap: Gap, min_separation=2, reject_rungs=False):
     """Full-length parallel lines inside the gap band (window glass)."""
     half = int(math.ceil(gap.t / 2 + 1.5))
     lo, hi = int(gap.lo) + 1, int(gap.hi) - 1
@@ -190,6 +191,15 @@ def _rails(line, gap: Gap, min_separation=2):
         for x in centres[1:]:
             if x - distinct[-1] >= min_separation:
                 distinct.append(x)
+        if reject_rungs and len(distinct) >= 2:
+            # Wardrobe/shelving symbols can have long rails with repeated
+            # crossbars. Window rails may have mullions, but not dense rungs.
+            inner = samples[math.floor(distinct[0]) + 1:math.ceil(distinct[-1])]
+            if inner.shape[0] >= 3:
+                rung = inner.mean(axis=0) >= 0.7
+                starts = np.count_nonzero(np.diff(np.r_[False, rung].astype(np.int8)) == 1)
+                if starts >= max(5, math.ceil(along.size / 16)):
+                    continue
         candidate = (len(distinct), float(min(prof[rails])))
         if candidate > best:
             best = candidate
@@ -262,20 +272,62 @@ def _photo_door(line_dil, gap):
         candidate = _door(line_dil, probe, continuous=True)
         if candidate is not None and (best is None or candidate[0] > best[0]):
             best = candidate
-    if best is not None:
-        return best
+    return best if best is not None else _offset_photo_swing(line_dil, gap)
 
-    # At a recessed return, the fitted wall face and the printed jamb can be
-    # a couple of pixels apart along the gap as well. Retry within that
-    # tolerance, still requiring the continuous arc and a straight leaf.
-    # Keep the observed gap fixed; these shifts only sample evidence.
-    delta = min(2.0, 0.35 * gap.t)
-    for sign in (-1, 1):
-        shift = sign * delta
-        probe = Gap(gap.horizontal, gap.cross, gap.lo + shift, gap.hi + shift, gap.t)
-        candidate = _door(line_dil, probe, continuous=True)
-        if candidate is not None and (best is None or candidate[0] > best[0]):
-            best = candidate
+
+def _offset_photo_swing(ink, gap):
+    """Fit a right-angle swing around either jamb, keeping the jamb span fixed."""
+    width = gap.hi - gap.lo
+    # A jamb face and the printed hinge can be displaced independently,
+    # especially at a thick return. First shortlist positions with a leaf.
+    reach = int(min(8, max(3, 0.18 * width)))
+    across = int(min(7, max(2, gap.t / 2 + 1)))
+
+    def sample(along, cross):
+        x, y = (along, cross) if gap.horizontal else (cross, along)
+        x, y = np.broadcast_arrays(np.rint(x).astype(int), np.rint(y).astype(int))
+        h, w = ink.shape
+        valid = (x >= 0) & (x < w) & (y >= 0) & (y < h)
+        return valid & ink[y.clip(0, h - 1), x.clip(0, w - 1)]
+
+    probes = []
+    for at_lo in (True, False):
+        near, far = (gap.lo, gap.hi) if at_lo else (gap.hi, gap.lo)
+        toward = 1 if at_lo else -1
+        for side in (-1, 1):
+            for shift in range(-reach, reach + 1):
+                hinge = near + shift
+                for offset in range(-across, across + 1):
+                    for radius_shift in (-2, 0, 2):
+                        r = toward * (far - hinge) + radius_shift
+                        if 0.72 * width <= r <= 1.18 * width:
+                            probes.append((hinge, gap.cross + offset, r, toward, side, abs(shift) + abs(offset)))
+    if not probes:
+        return None
+    along, cross, radius, toward, side, displacement = np.asarray(probes).T
+    steps = np.linspace(0.2, 0.9, 18)
+    leaf = sample(along[:, None], cross[:, None] + (side * radius)[:, None] * steps).mean(axis=1)
+    eligible = np.flatnonzero(leaf >= 0.78)
+    if not eligible.size:
+        return None
+    # Vectorized and bounded even on large photographs. Keep the stronger
+    # leaf hits first, breaking ties in favour of the printed jamb.
+    order = np.lexsort((displacement[eligible], -leaf[eligible]))
+    best = None
+    for i in eligible[order[:64]]:
+        angles = np.linspace(0.10, 0.88, min(160, max(32, math.ceil(radius[i] * math.pi / 2)))) * math.pi / 2
+        evidence = sample(along[i] + toward[i] * radius[i] * np.cos(angles),
+                          cross[i] + side[i] * radius[i] * np.sin(angles))
+        arc = float(evidence.mean())
+        if arc < 0.8 or any(part.mean() < 0.7 for part in np.array_split(evidence, 4)):
+            continue
+        breaks = np.diff(np.r_[False, ~evidence, False].astype(np.int8))
+        lengths = np.flatnonzero(breaks == -1) - np.flatnonzero(breaks == 1)
+        if lengths.size and lengths.max() > max(2, 0.12 * len(evidence)):
+            continue
+        score = arc + 0.25 * leaf[i] - 0.003 * displacement[i]
+        if best is None or score > best[0]:
+            best = (score, arc, float(leaf[i]), bool(toward[i] > 0), int(side[i]))
     return best
 
 
@@ -369,6 +421,32 @@ def _photo_end_gaps(walls, size):
     return out
 
 
+def _photo_mixed_returns(walls, size):
+    """Pair a short collinear return tip with an opposing perpendicular face."""
+    pieces = _pieces(walls)
+    reach = 0.18 * max(size)
+    for horizontal, cross, intervals in pieces:
+        for lo, hi, t in intervals:
+            for tip, sign in ((lo, -1), (hi, 1)):
+                # A longer collinear run already supplies an ordinary jamb
+                # candidate; this path also works when no such run survives.
+                candidates = []
+                for orient, pc, spans in pieces:
+                    if orient == horizontal or not 0 < sign * (pc - tip) <= reach:
+                        continue
+                    for p, q, pt in spans:
+                        if min(abs(p - cross), abs(q - cross)) > max(t, pt) / 2 + 2:
+                            continue
+                        face = pc - sign * pt / 2
+                        width = sign * (face - tip)
+                        if max(8, 2.2 * t) <= width <= min(reach, 20 * t):
+                            candidates.append((width, face))
+                # Only the closest physical faces are useful; more distant
+                # matches can span several rooms.
+                for _, face in sorted(set(candidates))[:2]:
+                    yield Gap(horizontal, cross, min(tip, face), max(tip, face), t, door_only=True)
+
+
 def _overlaps_opening(gap, accepted):
     for other in accepted:
         if gap.horizontal != other.horizontal or abs(gap.cross - other.cross) > max(2, 0.5 * max(gap.t, other.t)):
@@ -445,7 +523,7 @@ def _photo_windows(edges, colour, gap):
             sub = Gap(gap.horizontal, gap.cross, float(along[a]), float(along[b - 1]), gap.t)
             if not _material_jambs(colour, sub):
                 continue
-            count, confidence = _rails(edges, sub, min_separation=max(3, 0.35 * gap.t))
+            count, confidence = _rails(edges, sub, min_separation=max(3, 0.35 * gap.t), reject_rungs=True)
             if count >= 2:
                 spans.append((sub, confidence))
         if sum(g.hi - g.lo for g, _ in spans) > sum(g.hi - g.lo for g, _ in best):
@@ -568,8 +646,9 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
     if photographic:
         gaps.extend(_photo_voids(walls, strips.structural_colour))
         gaps.extend(_photo_end_gaps(walls, (h, w)))
+        gaps.extend(_photo_mixed_returns(walls, (h, w)))
         # Classify the locally bounded span before a broader incomplete gap.
-        gaps.sort(key=lambda gap: (gap.hi - gap.lo, gap.horizontal, gap.cross, gap.lo))
+        gaps.sort(key=lambda gap: (gap.door_only, gap.hi - gap.lo, gap.horizontal, gap.cross, gap.lo))
     accepted = []
     frame_edges = None
     if photographic:
@@ -594,7 +673,8 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
         grown = cv2.dilate(material.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
         neutral = (line | faint) & ~annotation & ~grown
         line = neutral
-        line_dil = cv2.dilate(neutral.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+        door_ink = (neutral | (gray < 0.8 * paper)) & ~annotation & ~grown
+        line_dil = cv2.dilate(door_ink.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
     index = 0
     for gap in gaps:
         if photographic and _overlaps_opening(gap, accepted):
@@ -617,8 +697,18 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
             if np.mean(evidence.mean(axis=0) >= 0.4) > 0.5:
                 continue
         kind, conf, door = None, 0.0, None
-        rails, rail_min = _rails(line, gap)
+        rails, rail_min = _rails(line, gap, reject_rungs=photographic)
         jambs = not photographic or _material_jambs(colour, gap)
+        if gap.door_only:
+            # A fallback must not turn an observed window into a door.
+            if not jambs or rails >= 2:
+                continue
+            edge_rails, _ = _rails(frame_edges, gap, min_separation=max(3, 0.35 * gap.t), reject_rungs=True)
+            if edge_rails >= 2:
+                continue
+            door = _photo_door(line_dil, gap)
+            if door is None:
+                continue
         if not jambs:
             # A partial window inside a broad missing-wall interval can still
             # have its own two jambs. Check those locally before abandoning
@@ -633,11 +723,11 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
                 accepted.append(sub)
                 index += 1
             continue
-        if photographic and rails < 2:
+        if photographic and rails < 2 and not gap.door_only:
             # Blurred glazing can have one dark band but two full-length
             # edges. Keep full rails ahead of swing evidence (some windows
             # have a swing symbol too). Only partial rails yield to a door.
-            edge_rails, edge_min = _rails(frame_edges, gap, min_separation=max(3, 0.35 * gap.t))
+            edge_rails, edge_min = _rails(frame_edges, gap, min_separation=max(3, 0.35 * gap.t), reject_rungs=True)
             if edge_rails >= 2:
                 rails, rail_min = edge_rails, edge_min
             else:

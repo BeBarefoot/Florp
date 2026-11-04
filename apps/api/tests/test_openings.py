@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from app.ink_layers import wall_strips
-from app.openings import Box, Gap, _photo_end_gaps, detect, enumerate_gaps
+from app.openings import Box, Gap, _photo_end_gaps, _photo_mixed_returns, _rails, detect, enumerate_gaps
 from app.plan_reconstruct import reconstruct
 from app.plan_workspace import Document, Point, Segment
 
@@ -241,3 +241,18 @@ def test_photo_opening_between_parallel_jamb_ends():
     # Transpose the plan to exercise the horizontal doorway as well.
     jambs = [wall(0, (100, 120), (100, 200), 6), wall(1, (150, 120), (150, 200), 10)]
     assert Gap(True, 200, 103, 145, 10) in _photo_end_gaps(jambs, (H, W))
+
+
+
+def test_mixed_return_door_spans_tip_to_opposing_face():
+    walls = [wall(0, (200, 90), (200, 113), 6), wall(1, (120, 160), (200, 160), 10)]
+    assert Gap(False, 200, 113, 155, 6, door_only=True) in _photo_mixed_returns(walls, (H, W))
+
+
+def test_photo_rails_reject_repeated_shelf_crossbars():
+    gap = Gap(True, 20, 5, 105, 10)
+    ink = np.zeros((40, 120), dtype=bool)
+    ink[16, 5:106] = ink[24, 5:106] = True
+    assert _rails(ink, gap, reject_rungs=True)[0] == 2
+    ink[17:24, 10:105:8] = True
+    assert _rails(ink, gap, reject_rungs=True)[0] < 2
