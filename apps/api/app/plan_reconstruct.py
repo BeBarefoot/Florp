@@ -154,7 +154,9 @@ def _merge_collinear(runs, openings, t_med, cfg, counters, gaps):
                     intervals = []
                     if gap > 0:
                         for o, oc in zip(openings, spans):
-                            if abs(oc - c["cross"]) > t + 2:
+                            dx = abs(o.end.x - o.start.x)
+                            dy = abs(o.end.y - o.start.y)
+                            if (dx >= dy) != (orient == "h") or abs(oc - c["cross"]) > t + 2:
                                 continue
                             lo = min(
                                 getattr(o.start, "xy"[axis]), getattr(o.end, "xy"[axis])
@@ -268,7 +270,9 @@ class _Nodes:
 
 
 def _build_graph(runs):
-    nodes = _Nodes(2.0)
+    # A nearby off-axis vertex cannot split a straight run. Small seams
+    # are resolved later by moving the whole axis, with opening constraints.
+    nodes = _Nodes(1e-5)
     edges = []
     for r in runs:
         edges.append([nodes.get(r.a), nodes.get(r.b), r])
@@ -301,7 +305,7 @@ def _build_graph(runs):
             if not 0 < t < 1:
                 continue
             dist = math.hypot(p[0] + t * d[0] - n[0], p[1] + t * d[1] - n[1])
-            if dist <= max(2.0, r.t / 2 + 1):
+            if dist <= 1e-5:
                 cuts.append((t, k))
         chain = [u] + [k for _, k in sorted(cuts)] + [v]
         for a, b in zip(chain, chain[1:]):
@@ -587,9 +591,10 @@ def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = Non
         envelope=[Pt(x=p.x, y=p.y) for p in doc.envelope] if doc.envelope else None,
     )
     from .plan_derive import derive
+    from .wall_alignment import align_walls
 
     return derive(
-        model,
+        align_walls(model),
         counters={
             "merged_duplicates": counters.merged_duplicates,
             "pruned_fragments": counters.pruned_fragments,

@@ -84,13 +84,16 @@ function capReach(p: Vec, direction: Vec, normal: Vec, halfWidth: number, voids:
 }
 
 /** Match the editor's square line caps on solid end slabs, never on opening cuts. */
-function closeWallEnds(pieces: WallPiece[], voids: OpeningVoid[]): WallPiece[] {
+function closeWallEnds(pieces: WallPiece[], voids: OpeningVoid[], straightSeams: Map<string, Set<boolean>>): WallPiece[] {
   return pieces.map((piece) => {
     const along: Vec = [Math.cos(piece.angle), -Math.sin(piece.angle)];
     const normal: Vec = [-along[1], along[0]];
     const caps: Chunk[] = [];
     for (const chunk of piece.chunks) {
       for (const start of [true, false]) {
+        // These runs already meet on one face. Overlapping caps here put
+        // coplanar faces into the viewer and GLB along every jamb seam.
+        if (straightSeams.get(piece.id)?.has(start)) continue;
         if (start ? Math.abs(chunk.start) > 1e-8 : Math.abs(chunk.end - piece.lengthM) > 1e-8) continue;
         const sign = start ? -1 : 1;
         const direction: Vec = [sign * along[0], sign * along[1]];
@@ -151,7 +154,29 @@ export function wallPieces(m: PlanModel): WallPiece[] {
       chunks: chunks.filter((c) => c.end - c.start > 0.001 && c.high - c.low > 0.001),
     };
   });
-  return closeWallEnds(pieces, openingVoids(m, s));
+  const incident = new Map<string, { id: string; start: boolean; direction: Vec }[]>();
+  for (const w of m.walls) {
+    const [a, b] = wallEnds(m, w, nodes);
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    if (length < 1e-8) continue;
+    for (const start of [true, false]) {
+      const sign = start ? 1 : -1;
+      const id = start ? w.a : w.b;
+      const list = incident.get(id) ?? [];
+      list.push({ id: w.id, start, direction: [sign * (b.x - a.x) / length, sign * (b.y - a.y) / length] });
+      incident.set(id, list);
+    }
+  }
+  const straightSeams = new Map<string, Set<boolean>>();
+  for (const edges of incident.values()) {
+    if (edges.length !== 2 || dot(edges[0].direction, edges[1].direction) > -1 + 1e-10) continue;
+    for (const edge of edges) {
+      const ends = straightSeams.get(edge.id) ?? new Set<boolean>();
+      ends.add(edge.start);
+      straightSeams.set(edge.id, ends);
+    }
+  }
+  return closeWallEnds(pieces, openingVoids(m, s), straightSeams);
 }
 
 export function floorOutlines(m: PlanModel): { id: string; label: string | null; points: Pt[] }[] {

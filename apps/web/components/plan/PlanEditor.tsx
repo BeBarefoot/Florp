@@ -120,6 +120,30 @@ export default function PlanEditor({ id }: { id: string }) {
       saveDone.current = null;
     }
   }
+  async function alignWalls() {
+    setBusy(true);
+    setError("");
+    try {
+      if (saveDone.current) await saveDone.current;
+      const current = live.current;
+      if (!current) return;
+      const next = await request<PlanModel>(`/blueprints/${id}/plan/align-walls`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedRevision: revision.current, model: current }),
+      });
+      if (live.current !== current) {
+        setError("The plan changed during alignment. Try Align walls again.");
+        return;
+      }
+      edit(next);
+      setActiveFinding(null);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
   async function commitOutline(envelope: Pt[]) {
     setBusy(true);
     // A corrected outline triggers extraction. Preserve pending manual edits
@@ -386,6 +410,7 @@ export default function PlanEditor({ id }: { id: string }) {
           setView("original");
           setDisplay("2d");
         }}
+        onAlignWalls={() => void alignWalls()}
         onReextract={() => void extract(revision.current, true)}
       />
       <main className="fe-stage">

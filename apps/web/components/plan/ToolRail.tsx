@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { AppWindow, BrickWall, Crop, DoorOpen, FolderOpen, MousePointer2, RefreshCw, Ruler } from "lucide-react";
+import { AppWindow, BrickWall, Crop, DoorOpen, FolderOpen, MousePointer2, RefreshCw, Ruler, ScanLine } from "lucide-react";
 import type { Tool, ViewMode } from "./types";
 
 const TOOLS: { id: Tool; label: string; key: string; icon: React.ReactNode }[] = [
@@ -19,6 +19,7 @@ export default function ToolRail(p: {
   setView: (v: ViewMode) => void;
   onStraighten: () => void;
   onReextract: () => void;
+  onAlignWalls: () => void;
   busy: boolean;
 }) {
   return (
@@ -49,6 +50,9 @@ export default function ToolRail(p: {
       </div>
       <button className="fe-tool" title="Straighten photographed sheet" aria-label="Straighten photographed sheet" disabled={p.busy} onClick={p.onStraighten}>
         <Crop size={18} />
+      </button>
+      <button className="fe-tool" title="Align walls and close small joints" aria-label="Align walls" disabled={p.busy} onClick={p.onAlignWalls}>
+        <ScanLine size={18} />
       </button>
       <button className="fe-tool" title="Re-extract from drawing" aria-label="Re-extract from drawing" disabled={p.busy} onClick={p.onReextract}>
         <RefreshCw size={18} />
