@@ -603,13 +603,17 @@ def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = Non
     )
 
 
-def extend_dangling(objects, ink, factor: float = 4.0, cover: float = 0.8, material_ink=None):
+def extend_dangling(
+    objects, ink, factor: float = 4.0, cover: float = 0.8, material_ink=None,
+    reach_by_wall: dict[str, float] | None = None,
+):
     """Extend dangling axis-aligned wall ends along drawn evidence.
 
     An end that touches no other wall is extended along its axis, at most
     ``factor * thickness``, to the nearest perpendicular wall - but only when at
-    least ``cover`` of the extension path lies on ink (strip or outline). Returns
-    the number of ends extended. ``objects`` are mutated in place.
+    least ``cover`` of the extension path lies on ink (strip or outline).
+    A reach map limits the pass to its specified walls and search distances.
+    Returns the number of ends extended. ``objects`` are mutated in place.
     """
     import numpy as np
 
@@ -637,7 +641,7 @@ def extend_dangling(objects, ink, factor: float = 4.0, cover: float = 0.8, mater
     count = 0
     for o in walls:
         axis = horizontal[o.id]
-        if axis is None:
+        if axis is None or (reach_by_wall is not None and o.id not in reach_by_wall):
             continue
         support = ink
         if material_ink is not None and o.boundary_supported:
@@ -648,7 +652,7 @@ def extend_dangling(objects, ink, factor: float = 4.0, cover: float = 0.8, mater
                 continue
             direction = np.array([p.x - other.x, p.y - other.y], float)
             direction /= np.linalg.norm(direction) or 1
-            reach = factor * o.thickness_px
+            reach = factor * o.thickness_px if reach_by_wall is None else reach_by_wall[o.id]
             target = None
             for q in walls:
                 if q.id == o.id or horizontal[q.id] is None or horizontal[q.id] == axis:

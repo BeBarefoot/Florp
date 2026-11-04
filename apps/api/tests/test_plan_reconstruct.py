@@ -280,3 +280,20 @@ def test_vertical_extension_uses_cross_wall_ink_support():
     walls = [seg(1, (100, 50), (100, 180)), seg(2, (40, 220), (240, 220))]
     assert extend_dangling(walls, ink) == 1
     assert walls[0].end.y == 215
+
+
+def test_door_flank_extension_preserves_the_opening_span():
+    import numpy as np
+    from app.plan_reconstruct import extend_dangling
+
+    host = seg(1, (70, 100), (110, 100))
+    jamb_wall = seg(2, (160, 70), (160, 200))
+    door = host.model_copy(deep=True, update={"id": "opening", "kind": "door", "host_id": host.id})
+    objects = [host, jamb_wall, door]
+    ink = np.zeros((250, 400), bool)
+    ink[98:103, 110:160] = True
+    limits = {host.id: 50}
+    assert extend_dangling(objects, np.zeros_like(ink), cover=0.9, reach_by_wall=limits) == 0
+    assert extend_dangling(objects, ink, cover=0.9, reach_by_wall=limits) == 1
+    assert host.end.x == 155
+    assert (door.start.x, door.end.x) == (70, 110)
