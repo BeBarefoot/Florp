@@ -88,3 +88,9 @@
 .fe-history summary{cursor:pointer;font-size:12px;color:var(--muted)}.fe-history{display:grid;gap:4px}.fe-history button{margin-top:4px;width:100%}
 .fe-loading{height:100dvh;display:grid;place-content:center;gap:10px;text-align:center;color:#4c626b;font-family:Inter,system-ui,sans-serif}
 @media(max-width:900px){.fe{grid-template:"top" 52px "stage" minmax(0,1fr) "inspector" minmax(160px,38dvh) "rail" 56px/100%}.fe-rail{flex-direction:row;justify-content:center;border-right:0;border-top:1px solid var(--line);padding:0 8px;overflow-x:auto}.fe-rail hr{display:none}.fe-views{display:flex}.fe-inspector{border-left:0;border-top:1px solid var(--line)}.fe-title{max-width:30vw}.fe-status{display:none}}
+
+.plan3d-camera{position:absolute;top:10px;left:10px;max-width:calc(100% - 20px);padding:8px 10px;background:#fff;border:1px solid #d7e1e5;border-radius:8px;color:#203940}
+.plan3d-camera-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.plan3d-camera label,.plan3d-camera p{font-size:12px}
+.plan3d-camera input{width:58px}
+.plan3d-camera p{margin:6px 0 0}

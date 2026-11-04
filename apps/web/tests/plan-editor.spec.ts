@@ -3,6 +3,7 @@ import type { PlanModel } from "../lib/plan/model";
 import { rooms, withDerived, metersPerPixel } from "../lib/plan/derive";
 import { addWall, moveNode, setReference, decideOpening } from "../lib/plan/ops";
 import { wallPieces } from "../lib/plan/mesh";
+import { eyeLevelPose } from "../lib/plan/camera";
 
 function fixture(extra: Partial<PlanModel> = {}): PlanModel {
   const pts = [
@@ -245,4 +246,44 @@ test("outline re-extraction saves pending approval edits first", async ({ page }
   await expect.poll(() => extractions.length).toBe(1);
   expect(puts.length).toBeGreaterThan(0);
   expect(puts[0].openings.find((o) => o.id === "maybe")!.status).toBe("confirmed");
+});
+
+test("interior camera previews a measured room without editing the plan", async ({ page }) => {
+  const scaled = setReference(fixture(), { x: 100, y: 100 }, { x: 500, y: 100 }, 4);
+  const { puts } = await setup(page, { model: scaled });
+  await page.locator(".fe-segment button").nth(2).click();
+  const canvas = page.getByTestId("plan-3d").locator("canvas");
+  await expect(canvas).toBeVisible();
+  await page.getByRole("button", { name: "Place camera" }).click();
+  const box = (await canvas.boundingBox())!;
+  const { PerspectiveCamera, Vector3 } = await import("three");
+  const orbit = new PerspectiveCamera(55, box.width / box.height, 0.1, 1000);
+  orbit.position.set(11, 7, 11.5);
+  orbit.lookAt(5, 0, 3.5);
+  orbit.updateMatrixWorld();
+
+  async function clickFloor(x: number, z: number) {
+    const p = new Vector3(x, 0.015, z).project(orbit);
+    await page.mouse.click(box.x + (1 + p.x) * box.width / 2, box.y + (1 - p.y) * box.height / 2);
+  }
+
+  await clickFloor(3, 3.5);
+  await expect(page.getByText("Click a second point on a room floor to aim.")).toBeVisible();
+  await clickFloor(3, 2.2);
+  await page.getByRole("button", { name: "Preview view" }).click();
+  await expect(page.getByText("Eye-level view of the measured model.")).toBeVisible();
+  await page.getByRole("button", { name: "Back to orbit" }).click();
+  await expect(page.getByText("Camera ready to preview.")).toBeVisible();
+  expect(puts).toHaveLength(0);
+});
+
+
+test("eye-level camera keeps metric position and a normalized level direction", () => {
+  expect(eyeLevelPose([2, 3], [5, 7], 1.65)).toEqual({
+    position: [2, 1.65, 3],
+    direction: [0.6, 0, 0.8],
+    verticalFovDeg: 55,
+  });
+  expect(eyeLevelPose([2, 3], [2, 3], 1.65)).toBeNull();
+  expect(eyeLevelPose([2, 3], [5, 7], 4)).toBeNull();
 });
