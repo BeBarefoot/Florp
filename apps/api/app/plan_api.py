@@ -144,7 +144,7 @@ def save(bid: str, body: Save):
 
 
 @router.post("/blueprints/{bid}/plan/align-walls")
-def align_plan_walls(bid: str, body: Save):
+def align_plan_walls(bid: str, body: Save, recover_missing: bool = False):
     """Return an aligned draft. The editor applies it as one undoable edit."""
     from .source_joints import close_source_joints
     from .deterministic_blueprint.preprocess import decode
@@ -158,7 +158,7 @@ def align_plan_walls(bid: str, body: Save):
         if (row.revision if row else 0) != body.expected_revision:
             raise HTTPException(409, "A newer revision exists. Reload before aligning walls.")
         path = bp.preview_path
-    repaired = close_source_joints(body.model, decode(Path(path).read_bytes()))
+    repaired = close_source_joints(body.model, decode(Path(path).read_bytes()), recover_missing=recover_missing)
     return derive(repaired).dump()
 
 
@@ -228,9 +228,39 @@ def info(bid: str):
 
 def wall_footprints(model: PlanModel):
     nodes = {n.id: n for n in model.nodes}
+    incident = {}
+    units = {}
     for w in model.walls:
         a, b = nodes[w.a], nodes[w.b]
-        yield w, LineString([(a.x, a.y), (b.x, b.y)]).buffer(
+        length = math.hypot(b.x - a.x, b.y - a.y)
+        if length < 1e-8:
+            continue
+        ux, uy = units[w.id] = ((b.x - a.x) / length, (b.y - a.y) / length)
+        incident.setdefault(w.a, []).append((w.id, ux, uy, w.thickness_px / 2))
+        incident.setdefault(w.b, []).append((w.id, -ux, -uy, w.thickness_px / 2))
+
+    # Match wallEndReaches in the editor; the export subtracts openings
+    # from these joined footprints after building the wall layers.
+    def reach(wall, node, ux, uy):
+        across = []
+        for wid, vx, vy, half in incident[node]:
+            if wid == wall.id:
+                continue
+            dot = ux * vx + uy * vy
+            if dot < -1 + 1e-10:
+                return 0
+            if abs(dot) < 1e-6:
+                across.append(half)
+        return max(across, default=wall.thickness_px / 2)
+
+    for w in model.walls:
+        if w.id not in units:
+            continue
+        a, b = nodes[w.a], nodes[w.b]
+        ux, uy = units[w.id]
+        start, end = reach(w, w.a, ux, uy), reach(w, w.b, -ux, -uy)
+        yield w, LineString([(a.x - ux * start, a.y - uy * start),
+                             (b.x + ux * end, b.y + uy * end)]).buffer(
             w.thickness_px / 2, cap_style=2, join_style=2
         )
 

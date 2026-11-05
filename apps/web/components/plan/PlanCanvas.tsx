@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Finding, Opening, PlanModel, Pt } from "../../lib/plan/model";
-import { metersPerPixel, nodeMap, openingEnds, wallEnds } from "../../lib/plan/derive";
+import { metersPerPixel, nodeMap, openingEnds, wallEndReaches, wallEnds } from "../../lib/plan/derive";
 import { addOpening, addWall, attachOpening, moveNode, patchOpening, wallPlacement } from "../../lib/plan/ops";
 import type { Focus, Selection, Tool, ViewMode } from "./types";
 
@@ -50,6 +50,7 @@ export default function PlanCanvas(props: {
   const [hover, setHover] = useState<Selection>(null);
   const drag = useRef<Drag>(null);
   const nodes = useMemo(() => nodeMap(m), [m]);
+  const reaches = useMemo(() => wallEndReaches(m, nodes), [m, nodes]);
   const mpp = metersPerPixel(m);
   const fit = () => {
     const pad = Math.max(W, H) * 0.04;
@@ -247,20 +248,22 @@ export default function PlanCanvas(props: {
             ))}
             {m.walls.map((w) => {
               const [a, b] = wallEnds(m, w, nodes);
+              const [start, end] = reaches.get(w.id)!;
+              const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+              const dx = (b.x - a.x) / length, dy = (b.y - a.y) / length;
               const active = selection?.id === w.id || hover?.id === w.id;
               return (
                 <g key={w.id}>
                   <line
                     data-kind="wall"
                     data-id={w.id}
-                    x1={a.x}
-                    y1={a.y}
-                    x2={b.x}
-                    y2={b.y}
+                    x1={a.x - dx * start}
+                    y1={a.y - dy * start}
+                    x2={b.x + dx * end}
+                    y2={b.y + dy * end}
                     stroke={selection?.id === w.id ? COLORS.selected : COLORS.wall}
                     strokeOpacity={w.confidence < 0.6 && !active ? 0.7 : 1}
                     strokeWidth={w.thicknessPx}
-                    strokeLinecap="square"
                   />
                   <line
                     x1={a.x}
