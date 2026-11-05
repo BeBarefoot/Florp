@@ -146,7 +146,8 @@ def save(bid: str, body: Save):
 @router.post("/blueprints/{bid}/plan/align-walls")
 def align_plan_walls(bid: str, body: Save):
     """Return an aligned draft. The editor applies it as one undoable edit."""
-    from .wall_alignment import align_walls
+    from .source_joints import close_source_joints
+    from .deterministic_blueprint.preprocess import decode
 
     with Session(get_engine()) as s:
         bp = blueprint(s, bid)
@@ -156,7 +157,9 @@ def align_plan_walls(bid: str, body: Save):
         row = latest(s, bid)
         if (row.revision if row else 0) != body.expected_revision:
             raise HTTPException(409, "A newer revision exists. Reload before aligning walls.")
-    return derive(align_walls(body.model)).dump()
+        path = bp.preview_path
+    repaired = close_source_joints(body.model, decode(Path(path).read_bytes()))
+    return derive(repaired).dump()
 
 
 class Extract(BaseModel):
