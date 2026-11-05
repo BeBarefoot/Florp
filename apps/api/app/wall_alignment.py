@@ -130,7 +130,7 @@ def align_walls(model: PlanModel) -> PlanModel:
                 if w.id == v.id:
                     continue
                 axis, other = axes[w.id], axes[v.id]
-                limit = min(9.0, 1 + 0.55 * max(w.thickness_px, v.thickness_px))
+                limit = min(9.0, 1 + 0.65 * max(w.thickness_px, v.thickness_px))
                 if max(abs(p[i] - q[i]) for i in range(2)) > limit:
                     continue
                 da = p[axis] - point(far_a)[axis]
@@ -227,7 +227,7 @@ def _join_tees(model):
         if len(ids) != 1:
             continue
         w = walls[ids[0]]
-        if k not in (w.a, w.b) or hosted[w.id]:
+        if k not in (w.a, w.b):
             continue
         p, q = nodes[k], nodes[w.b if k == w.a else w.a]
         along = axis(p, q)
@@ -242,6 +242,10 @@ def _join_tees(model):
                 continue
             target = getattr(a, along)
             delta = target - pa
+            # A source-backed repair may already put an opening host exactly
+            # on a T junction. Sharing that node does not move its aperture.
+            if hosted[w.id] and abs(delta) > 1e-8:
+                continue
             if delta * (pa - qa) < -1e-8 or abs(delta) > min(6, (w.thickness_px + host.thickness_px) / 2):
                 continue
             ac, bc = getattr(a, cross), getattr(b, cross)

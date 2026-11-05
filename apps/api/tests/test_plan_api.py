@@ -86,6 +86,31 @@ def test_save_revisions_conflicts_and_validation(client):
     assert len(c.get(path + "/history").json()) == 1
 
 
+def test_saved_draft_joint_repair_is_revision_guarded_and_not_persisted(client, monkeypatch):
+    import numpy as np
+    from app.ink_layers import Strips
+
+    c, bid = client
+    model = plan()
+    model["nodes"] += [{"id": "p", "x": 400, "y": 130}, {"id": "q", "x": 400, "y": 470}]
+    model["walls"].append({"id": "partition", "a": "p", "b": "q", "thicknessPx": 12})
+    path = f"/blueprints/{bid}/plan"
+    saved = c.put(path, json={"expectedRevision": 0, "model": model}).json()["model"]
+    empty = np.zeros((600, 800), bool)
+    source = empty.copy()
+    source[100:501, 396:405] = True
+    strips = Strips(empty, empty, empty, empty, {}, structural_colour=source, boundary_mask=empty)
+    monkeypatch.setattr("app.ink_layers.wall_strips", lambda _: strips)
+    assert c.post(path + "/align-walls", json={"expectedRevision": 0, "model": saved}).status_code == 409
+    response = c.post(path + "/align-walls", json={"expectedRevision": 1, "model": saved})
+    assert response.status_code == 200, response.text
+    repaired = response.json()
+    nodes = {n["id"]: n for n in repaired["nodes"]}
+    assert (nodes["p"]["y"], nodes["q"]["y"]) == (100, 500)
+    assert len(repaired["rooms"]) == 2
+    assert c.get(path).json()["model"] == saved
+
+
 def test_measurement_only_changes_scale(client):
     c, bid = client
     path = f"/blueprints/{bid}/plan"

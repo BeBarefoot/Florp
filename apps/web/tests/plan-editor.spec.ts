@@ -77,6 +77,7 @@ async function setup(page: Page, opts: { empty?: boolean; model?: PlanModel } = 
       revision++;
       return r.fulfill({ json: { revision, model: current } });
     }
+    if (url.includes("/align-walls")) return r.fulfill({ json: req.postDataJSON().model });
     if (url.includes("/history")) return r.fulfill({ json: [] });
     if (req.method() === "PUT") {
       const body = req.postDataJSON();

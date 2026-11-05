@@ -120,9 +120,11 @@ export default function PlanEditor({ id }: { id: string }) {
       saveDone.current = null;
     }
   }
-  async function alignWalls() {
+  async function alignWalls(nextDisplay?: Display) {
+    if (busy) return;
     setBusy(true);
     setError("");
+    setStatus("Checking wall connections…");
     try {
       if (saveDone.current) await saveDone.current;
       const current = live.current;
@@ -136,10 +138,14 @@ export default function PlanEditor({ id }: { id: string }) {
         setError("The plan changed during alignment. Try Align walls again.");
         return;
       }
-      edit(next);
+      if (JSON.stringify(next) !== JSON.stringify(current)) edit(next);
+      else setStatus(JSON.stringify(current) === saved.current ? "Saved" : "Unsaved changes");
       setActiveFinding(null);
+      if (nextDisplay) setDisplay(nextDisplay);
+      return next;
     } catch (e) {
       setError(String(e));
+      setStatus("Wall connection check failed");
     } finally {
       setBusy(false);
     }
@@ -392,11 +398,19 @@ export default function PlanEditor({ id }: { id: string }) {
         undo={undo}
         redo={redo}
         display={display}
-        setDisplay={setDisplay}
+        setDisplay={(next) => {
+          if (next === "2d") setDisplay(next);
+          else void alignWalls(next);
+        }}
         scaled={!!mpp}
         exportBlocker={exportBlocker}
         exportPlanHref={`${API}/blueprints/${id}/plan/export`}
-        export3D={() => void import("../../lib/exportPlan3D").then((x) => x.exportPlan3D(m)).catch((e) => setError(String(e)))}
+        export3D={() => void alignWalls().then(async (repaired) => {
+          if (repaired) {
+            const { exportPlan3D } = await import("../../lib/exportPlan3D");
+            await exportPlan3D(repaired);
+          }
+        }).catch((e) => setError(String(e)))}
       />
       <ToolRail
         projectHref={info ? "/project/" + info.project_id : "/"}
