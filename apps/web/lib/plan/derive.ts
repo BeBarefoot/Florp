@@ -9,6 +9,39 @@ export function nodeMap(m: PlanModel): Map<string, Node> {
 export function wallEnds(m: PlanModel, w: Wall, nodes = nodeMap(m)): [Pt, Pt] {
   return [nodes.get(w.a)!, nodes.get(w.b)!];
 }
+
+/** Length outside each centreline endpoint, measured in source pixels.
+ * At a right-angle corner, the adjoining wall sets the outer face.
+ * A straight run already meets its neighbour, including at a T junction.
+ */
+export function wallEndReaches(m: PlanModel, nodes = nodeMap(m)): Map<string, [number, number]> {
+  type Edge = { id: string; end: 0 | 1; x: number; y: number; half: number };
+  const incident = new Map<string, Edge[]>();
+  const reaches = new Map<string, [number, number]>();
+  for (const w of m.walls) {
+    const [a, b] = wallEnds(m, w, nodes);
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    const half = w.thicknessPx / 2;
+    reaches.set(w.id, [half, half]);
+    if (length < 1e-8) continue;
+    for (const end of [0, 1] as const) {
+      const key = end ? w.b : w.a;
+      const sign = end ? -1 : 1;
+      const edges = incident.get(key) ?? [];
+      edges.push({ id: w.id, end, x: sign * (b.x - a.x) / length, y: sign * (b.y - a.y) / length, half });
+      incident.set(key, edges);
+    }
+  }
+  for (const edges of incident.values()) {
+    for (const e of edges) {
+      const directions = edges.filter((n) => n !== e).map((n) => ({ dot: e.x * n.x + e.y * n.y, half: n.half }));
+      const across = directions.filter((n) => Math.abs(n.dot) < 1e-6);
+      if (directions.some((n) => n.dot < -1 + 1e-10)) reaches.get(e.id)![e.end] = 0;
+      else if (across.length) reaches.get(e.id)![e.end] = Math.max(...across.map((n) => n.half));
+    }
+  }
+  return reaches;
+}
 export function wallLength(m: PlanModel, w: Wall, nodes = nodeMap(m)): number {
   const [a, b] = wallEnds(m, w, nodes);
   return Math.hypot(b.x - a.x, b.y - a.y);

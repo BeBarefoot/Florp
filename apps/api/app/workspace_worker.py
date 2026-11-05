@@ -241,12 +241,15 @@ def build(path, roi=None):
         # A glazed facade may have no surviving raw horizontal run at its
         # corner. Its verified opening host can now identify the junction.
         _trim_photo_edge_leaders(objects, strips.boundary_mask | strips.blue, w_wall)
+    from .capped_returns import detect_returns
+
     return Document(
         width=w,
         height=h,
         objects=objects,
         envelope=[Point(x=x, y=y) for x, y in polygon] if polygon else None,
         passages=[Point(x=x, y=y) for x, y in found.passages[:500]],
+        wall_returns=detect_returns(image, strips),
         warnings=notes
         + ["Flat, uniformly scaled source assumed. Heights use editable defaults."],
     )

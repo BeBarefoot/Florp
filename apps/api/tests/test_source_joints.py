@@ -89,8 +89,8 @@ def test_source_backed_collinear_seam_is_welded(monkeypatch):
     data = model.dump()
     data["walls"] = [{"id": "a", "a": "0", "b": "4", "thicknessPx": 8},
                      {"id": "b", "a": "5", "b": "1", "thicknessPx": 8}]
-    data["nodes"] = [{"id": i, "x": x, "y": 50}
-                     for i, x in [("0", 10), ("4", 40), ("5", 60), ("1", 90)]]
+    data["nodes"] = [{"id": i, "x": x, "y": y}
+                     for i, x, y in [("0", 10, 50), ("4", 40, 50), ("5", 60, 52), ("1", 90, 52)]]
     model = PlanModel.model_validate(data)
     empty = np.zeros(image.shape[:2], bool)
     material = empty.copy()
@@ -99,6 +99,7 @@ def test_source_backed_collinear_seam_is_welded(monkeypatch):
     monkeypatch.setattr("app.ink_layers.wall_strips", lambda _: strips)
     fixed = close_source_joints(model, image)
     assert fixed.walls[0].b == fixed.walls[1].a
+    assert len({n.y for n in fixed.nodes}) == 1
     assert close_source_joints(fixed, image).dump() == fixed.dump()
 
 
@@ -120,3 +121,32 @@ def test_small_jamb_seam_aligns_without_changing_opening_width():
     assert fixed.openings[0].span[0].x == 49
     assert fixed.openings[0].span[1].x == 90
     assert len({n.y for n in fixed.nodes}) == 1
+
+
+def test_capped_return_recovers_an_omitted_wall_but_respects_a_window(monkeypatch):
+    from app.capped_returns import detect_returns, restore_returns
+
+    model, image = scene(monkeypatch)
+    data = model.dump()
+    data["walls"].pop()
+    model = PlanModel.model_validate(data)
+    image[:] = 220
+    image[42:90, 47:53] = 180
+    image[38:90, [46, 53]] = 60
+    material = np.zeros(image.shape[:2], bool)
+    material[42:90, 47:53] = True
+    empty = np.zeros_like(material)
+    strips = Strips(empty, empty, empty, empty, {}, structural_colour=material, boundary_mask=empty)
+    assert not detect_returns(image, strips)
+    image[38, 46:54] = 60  # actual wall cap rather than two uncapped strokes
+    candidates = detect_returns(image, strips)
+    fixed = PlanModel.model_validate(restore_returns(model, candidates).dump())
+    added = next(w for w in fixed.walls if w.id.startswith("source-"))
+    nodes = {n.id: n for n in fixed.nodes}
+    assert (nodes[added.a].y, nodes[added.b].y) == (38, 90)
+    assert sum(added.b in (w.a, w.b) for w in fixed.walls) == 3
+    assert restore_returns(fixed, candidates).dump() == fixed.dump()
+    data["openings"] = [{"id": "window", "kind": "window", "hostWallId": "2",
+                         "offsetPx": 30, "widthPx": 20, "status": "confirmed"}]
+    with_window = PlanModel.model_validate(data)
+    assert restore_returns(with_window, candidates) == with_window

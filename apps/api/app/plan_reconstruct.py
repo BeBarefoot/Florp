@@ -592,9 +592,10 @@ def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = Non
     )
     from .plan_derive import derive
     from .wall_alignment import align_walls
+    from .capped_returns import restore_returns
 
     return derive(
-        align_walls(model),
+        restore_returns(align_walls(model), doc.wall_returns),
         counters={
             "merged_duplicates": counters.merged_duplicates,
             "pruned_fragments": counters.pruned_fragments,

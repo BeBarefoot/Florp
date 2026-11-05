@@ -7,7 +7,7 @@ from .plan_model import PlanModel
 from .wall_alignment import align_walls
 
 
-def close_source_joints(model: PlanModel, image) -> PlanModel:
+def close_source_joints(model: PlanModel, image, *, recover_missing=False) -> PlanModel:
     from .ink_layers import wall_strips
 
     if image.shape[:2] != (model.image_transform.height, model.image_transform.width):
@@ -79,8 +79,8 @@ def close_source_joints(model: PlanModel, image) -> PlanModel:
                 if not low - other.thickness_px / 2 <= lane <= high + other.thickness_px / 2:
                     continue
                 destination = getattr(a, along)
-            elif (abs(getattr(a, cross) - lane) < 1e-5
-                  and abs(getattr(b, cross) - lane) < 1e-5):
+            elif (abs(getattr(a, cross) - getattr(b, cross)) < 1e-5
+                  and abs(getattr(a, cross) - lane) <= min(4.5, 0.5 * max(wall.thickness_px, other.thickness_px))):
                 # Facing collinear fragments of the same run. Never bridge
                 # overlapping parallel walls or jump across a nearer one.
                 distances = [(getattr(n, along) - getattr(p, along)) * sign for n in (a, b)]
@@ -133,4 +133,9 @@ def close_source_joints(model: PlanModel, image) -> PlanModel:
     # Move only free ends. Normal alignment then creates shared corner/T nodes,
     # keeping the repair in the same graph used by all exports.
     repaired = model.model_copy(update={"nodes": list(nodes.values())})
-    return align_walls(repaired)
+    repaired = align_walls(repaired)
+    if recover_missing:
+        from .capped_returns import detect_returns, restore_returns
+
+        repaired = restore_returns(repaired, detect_returns(image, strips))
+    return repaired

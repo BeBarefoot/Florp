@@ -120,7 +120,7 @@ export default function PlanEditor({ id }: { id: string }) {
       saveDone.current = null;
     }
   }
-  async function alignWalls(nextDisplay?: Display) {
+  async function alignWalls(nextDisplay?: Display, recoverMissing = false) {
     if (busy) return;
     setBusy(true);
     setError("");
@@ -129,7 +129,7 @@ export default function PlanEditor({ id }: { id: string }) {
       if (saveDone.current) await saveDone.current;
       const current = live.current;
       if (!current) return;
-      const next = await request<PlanModel>(`/blueprints/${id}/plan/align-walls`, {
+      const next = await request<PlanModel>(`/blueprints/${id}/plan/align-walls?recover_missing=${recoverMissing}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ expectedRevision: revision.current, model: current }),
@@ -424,7 +424,7 @@ export default function PlanEditor({ id }: { id: string }) {
           setView("original");
           setDisplay("2d");
         }}
-        onAlignWalls={() => void alignWalls()}
+        onAlignWalls={() => void alignWalls(undefined, true)}
         onReextract={() => void extract(revision.current, true)}
       />
       <main className="fe-stage">

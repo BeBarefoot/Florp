@@ -246,7 +246,12 @@ def _join_tees(model):
             # on a T junction. Sharing that node does not move its aperture.
             if hosted[w.id] and abs(delta) > 1e-8:
                 continue
-            if delta * (pa - qa) < -1e-8 or abs(delta) > min(6, (w.thickness_px + host.thickness_px) / 2):
+            if abs(delta) > min(6, (w.thickness_px + host.thickness_px) / 2):
+                continue
+            # An end already inside the adjoining wall still needs a shared
+            # node. Trim only within the host's solid half-width, and never
+            # collapse a short return or change an opening host's length.
+            if delta * (pa - qa) < -1e-8 and abs(delta) >= min(host.thickness_px / 2, abs(pa - qa)):
                 continue
             ac, bc = getattr(a, cross), getattr(b, cross)
             if not min(ac, bc) + 1 < pc < max(ac, bc) - 1:

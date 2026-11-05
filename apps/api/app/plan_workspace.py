@@ -42,6 +42,7 @@ class Document(BaseModel):
     reference: CalibrationReference | None = None
     envelope: list[Point] | None = None
     passages: list[Point] = Field(default_factory=list, max_length=500)
+    wall_returns: list[Segment] = Field(default_factory=list, max_length=100)
     warnings: list[str] = Field(default_factory=list, max_length=100)
 
     @model_validator(mode="after")

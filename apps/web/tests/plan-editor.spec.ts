@@ -1,6 +1,6 @@
 import { test, expect, Page } from "@playwright/test";
 import type { PlanModel } from "../lib/plan/model";
-import { rooms, withDerived, metersPerPixel } from "../lib/plan/derive";
+import { rooms, withDerived, metersPerPixel, wallEndReaches } from "../lib/plan/derive";
 import { addWall, moveNode, setReference, decideOpening } from "../lib/plan/ops";
 import { wallPieces } from "../lib/plan/mesh";
 import { eyeLevelPose } from "../lib/plan/camera";
@@ -194,6 +194,22 @@ test("pure ops: corner move keeps hosted openings, T-split, metric mesh", async 
   const pieces = wallPieces(decideOpening(m, "maybe", "confirm")!);
   expect(pieces.find((p) => p.id === "w0")!.lengthM).toBeCloseTo(4, 6);
   expect(pieces.find((p) => p.id === "w3")!.chunks.length).toBe(3);
+});
+
+test("unequal wall corners share outer faces and the T run stays flush", () => {
+  const m = setReference(fixture(), { x: 100, y: 100 }, { x: 500, y: 100 }, 4);
+  m.walls.find((w) => w.id === "w0")!.thicknessPx = 24;
+  m.walls.find((w) => w.id === "w5")!.thicknessPx = 8;
+  const reaches = wallEndReaches(m);
+  expect(reaches.get("w0")).toEqual([4, 0]);
+  expect(reaches.get("w5")![1]).toBe(12);
+  expect(reaches.get("w6")![0]).toBe(12);
+  const pieces = wallPieces(m);
+  const horizontal = pieces.find((w) => w.id === "w0")!;
+  const vertical = pieces.find((w) => w.id === "w5")!;
+  expect(Math.min(...horizontal.chunks.map((c) => c.start))).toBeCloseTo(-0.04);
+  expect(Math.max(...vertical.chunks.map((c) => c.end))).toBeCloseTo(vertical.lengthM + 0.12);
+  expect(horizontal.chunks.some((c) => c.start < 1.6 && c.end > 1.6 && c.low < 1.5 && c.high > 1.5)).toBe(false);
 });
 
 test("building outline toggles cleanly and re-extracts only after corner release", async ({ page }) => {
