@@ -139,5 +139,19 @@ def close_source_joints(model: PlanModel, image, *, recover_missing=False) -> Pl
 
         from .photo_door_repairs import repair_photo_doors
 
-        repaired = repair_photo_doors(restore_returns(repaired, detect_returns(image, strips)), strips)
+        from .missing_photo_door import recover_missing_photo_doors
+        from .plan_reconstruct import configured_config
+
+        try:
+            cfg = configured_config()
+            confirm_at = cfg.auto_confirm_by_kind.get("door", cfg.auto_confirm)
+        except (OSError, ValueError):
+            # Alignment remains available if the optional profile is broken.
+            # New doors in that case need explicit review.
+            confirm_at = 1.0
+        repaired = recover_missing_photo_doors(
+            restore_returns(repaired, detect_returns(image, strips)), strips.source_tint, image,
+            confirm_at=confirm_at,
+        )
+        repaired = repair_photo_doors(repaired, strips)
     return repaired

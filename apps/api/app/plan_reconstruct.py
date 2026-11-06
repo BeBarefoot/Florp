@@ -527,7 +527,7 @@ def _host_openings(model_nodes, walls, raw, gaps, cfg):
     return out
 
 
-def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = None, *, strips=None):
+def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = None, *, strips=None, image=None):
     if cfg is None:
         cfg = configured_config()
     counters = Counters()
@@ -605,6 +605,13 @@ def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = Non
     if strips is not None:
         from .photo_door_repairs import repair_photo_doors
 
+        if image is not None and strips.boundary_mask is not None:
+            from .missing_photo_door import recover_missing_photo_doors
+
+            model = recover_missing_photo_doors(
+                model, strips.source_tint, image,
+                confirm_at=cfg.auto_confirm_by_kind.get("door", cfg.auto_confirm),
+            )
         model = repair_photo_doors(model, strips)
     return derive(
         model,
