@@ -250,7 +250,7 @@ def build(path, roi=None):
         envelope=[Point(x=x, y=y) for x, y in polygon] if polygon else None,
         passages=[Point(x=x, y=y) for x, y in found.passages[:500]],
         wall_returns=detect_returns(image, strips),
-        photo_wall_evidence=bool(stats.get("coloured_walls")),
+        photo_wall_evidence=strips.boundary_mask is not None,
         warnings=notes
         + ["Flat, uniformly scaled source assumed. Heights use editable defaults."],
     )
