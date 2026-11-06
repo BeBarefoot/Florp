@@ -527,7 +527,7 @@ def _host_openings(model_nodes, walls, raw, gaps, cfg):
     return out
 
 
-def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = None):
+def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = None, *, strips=None):
     if cfg is None:
         cfg = configured_config()
     counters = Counters()
@@ -601,8 +601,13 @@ def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = Non
 
         model, removed = prune_detached_photo_walls(model, doc.objects)
         counters.pruned_fragments += removed
+    model = restore_returns(model, doc.wall_returns)
+    if strips is not None:
+        from .photo_door_repairs import repair_photo_doors
+
+        model = repair_photo_doors(model, strips)
     return derive(
-        restore_returns(model, doc.wall_returns),
+        model,
         counters={
             "merged_duplicates": counters.merged_duplicates,
             "pruned_fragments": counters.pruned_fragments,

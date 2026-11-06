@@ -23,6 +23,7 @@ class Strips:
     ink: np.ndarray | None = None
     structural_colour: np.ndarray | None = None
     boundary_mask: np.ndarray | None = None
+    source_tint: np.ndarray | None = None
 
     @property
     def mask(self):
@@ -431,6 +432,7 @@ def wall_strips(image: np.ndarray) -> Strips:
     red = strips_from(red_cand, True) | recovered
     blue = strips_from(blue_cand, False)
     opening_material = red_cand | blue_cand
+    source_tint = None
     # Coloured fills (window glass, door leaves, rugs) inside a plan whose walls are drawn dark
     # are decoration, not walls. Hatched-wall drawings have almost no dark band at all.
     if dark.sum() > 3 * (red.sum() + blue.sum()):
@@ -480,6 +482,7 @@ def wall_strips(image: np.ndarray) -> Strips:
         rejected["detached_annotations"] = detached
         red &= ~detached
         opening_material &= ~detached
+        source_tint = (pale_colour | blue_cand) & ~raw_digits & ~annotation_bars & ~detached
         # A faded seam within one blue concrete band can split it into
         # parallel rails. Fill only short breaks with blue source tint.
         blue_u8 = blue.astype(np.uint8)
@@ -522,4 +525,5 @@ def wall_strips(image: np.ndarray) -> Strips:
         ink=ink,
         structural_colour=None if stats.get("dark_walls") else opening_material,
         boundary_mask=boundary_mask,
+        source_tint=source_tint,
     )

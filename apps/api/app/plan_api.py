@@ -14,8 +14,7 @@ from sqlmodel import Session, select
 from .models import Blueprint, PlanRevision
 from .plan_model import PlanModel, ImageTransform, Reference, Pt, wall_length
 from .plan_derive import derive
-from .plan_reconstruct import reconstruct, configured_config
-from .plan_workspace import Document
+from .plan_reconstruct import configured_config
 
 router = APIRouter()
 WORKER_BUDGET_S = 20
@@ -59,7 +58,7 @@ def blueprint(s, bid) -> Blueprint:
     return bp
 
 
-async def run_worker(path: str, roi=None) -> Document:
+async def run_worker(path: str, roi=None, *, plan_id: str) -> PlanModel:
     """Run extraction in an isolated, time-boxed subprocess (optional building outline ``roi``)."""
     with tempfile.TemporaryDirectory() as tmp:
         output = Path(tmp) / "result.json"
@@ -81,6 +80,8 @@ async def run_worker(path: str, roi=None) -> Document:
             path,
             str(output),
             *extra,
+            "--plan-id",
+            plan_id,
             env=env,
             start_new_session=True,
             stderr=asyncio.subprocess.PIPE,
@@ -112,7 +113,7 @@ async def run_worker(path: str, roi=None) -> Document:
                 500,
                 "The extraction worker failed. Saved geometry is unchanged. The API log contains the failure details.",
             )
-        return Document.model_validate_json(output.read_bytes())
+        return PlanModel.model_validate_json(output.read_bytes())
 
 
 @router.get("/blueprints/{bid}/plan")
@@ -209,11 +210,10 @@ async def extract(bid: str, expected_revision: int = 0, body: Extract | None = N
             except ValueError as exc:
                 raise HTTPException(422,str(exc)) from exc
     try:
-        config=configured_config()
+        configured_config()
     except (OSError,ValueError) as exc:
         raise HTTPException(503,'Opening approval profile is unavailable or invalid; saved geometry is unchanged') from exc
-    doc = await run_worker(path, body.envelope if body else None)
-    model = reconstruct(doc, bid, config)
+    model = await run_worker(path, body.envelope if body else None, plan_id=bid)
     if previous and previous.scale.reference:
         model.scale = previous.scale.model_copy(deep=True)
         model = PlanModel.model_validate(model.dump())

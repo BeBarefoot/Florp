@@ -5,9 +5,9 @@ structural runs on the clipped strips -> ink-supported extension -> gap-first
 openings (detector boxes only adjust confidence).
 """
 
+import argparse
 import json
 import math
-import sys
 from pathlib import Path
 import cv2, numpy as np
 from .plan_workspace import Document, Segment, Point
@@ -90,19 +90,20 @@ def _detector_boxes(path, w, h):
         return [], False
 
 
-def build(path, roi=None):
+def build(path, roi=None, *, plan_id=None):
     image = decode(Path(path).read_bytes())
     h, w = image.shape[:2]
     from .config import settings
+    from .plan_reconstruct import extend_dangling, reconstruct
 
     if settings.workspace_semantic_source or settings.workspace_semantic_weights:
         from .semantic_workspace import build as semantic_build
 
-        return semantic_build(image)
+        doc = semantic_build(image)
+        return reconstruct(doc, plan_id) if plan_id is not None else doc
     from .ink_layers import wall_strips
     from .envelope import building_envelope, mask_from_polygon
     from .structural_runs import structural_runs, join_intersections
-    from .plan_reconstruct import extend_dangling
     from . import openings as gap_openings
 
     notes = []
@@ -246,7 +247,7 @@ def build(path, roi=None):
 
     stairs = detect_stairs(image, np.asarray(polygon, dtype=np.float32) if roi else None)
 
-    return Document(
+    doc = Document(
         width=w,
         height=h,
         objects=objects,
@@ -259,8 +260,16 @@ def build(path, roi=None):
         + ["Flat, uniformly scaled source assumed. Heights use editable defaults."],
     )
 
+    return reconstruct(doc, plan_id, strips=strips) if plan_id is not None else doc
+
 
 if __name__ == "__main__":
     cv2.setNumThreads(8)
-    roi = json.loads(Path(sys.argv[3]).read_text()) if len(sys.argv) > 3 else None
-    Path(sys.argv[2]).write_text(build(sys.argv[1], roi).model_dump_json())
+    parser = argparse.ArgumentParser()
+    parser.add_argument("path", type=Path)
+    parser.add_argument("output", type=Path)
+    parser.add_argument("roi", type=Path, nargs="?")
+    parser.add_argument("--plan-id")
+    args = parser.parse_args()
+    roi = json.loads(args.roi.read_text()) if args.roi else None
+    args.output.write_text(build(args.path, roi, plan_id=args.plan_id).model_dump_json())
