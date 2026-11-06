@@ -6,6 +6,7 @@ import * as THREE from "three";
 import type { PlanModel } from "../../lib/plan/model";
 import { metersPerPixel } from "../../lib/plan/derive";
 import { floorOutlines, meshSignature, wallPieces } from "../../lib/plan/mesh";
+import { stairPieces } from "../../lib/plan/stairs";
 import { DEFAULT_EYE_HEIGHT_M, eyeLevelPose, type FloorPoint } from "../../lib/plan/camera";
 
 type Pose = NonNullable<ReturnType<typeof eyeLevelPose>>;
@@ -50,6 +51,7 @@ export default function Plan3D({ model }: { model: PlanModel }) {
   }
 
   const pieces = useMemo(() => wallPieces(model), [model]);
+  const stairs = useMemo(() => stairPieces(model), [model]);
   const floors = useMemo(
     () =>
       floorOutlines(model).map((r) => {
@@ -68,7 +70,7 @@ export default function Plan3D({ model }: { model: PlanModel }) {
   const target: [number, number, number] = [w / 2, 0, h / 2];
   const ghosts = model.openings.filter((o) => o.status === "proposed").length;
   return (
-    <div className="plan3d" data-testid="plan-3d" data-wall-lengths={meshSignature(pieces)}>
+    <div className="plan3d" data-testid="plan-3d" data-wall-lengths={meshSignature(pieces)} data-stair-count={stairs.length}>
       <Canvas camera={{ position: [w / 2 + Math.max(6, w * 0.6), Math.max(7, h * 0.9), h / 2 + Math.max(8, h)], fov: 55 }}>
         <ambientLight intensity={1.7} />
         <directionalLight position={[5, 10, 3]} intensity={2} />
@@ -84,6 +86,16 @@ export default function Plan3D({ model }: { model: PlanModel }) {
               <mesh key={i} position={[(c.start + c.end - p.lengthM) / 2, (c.low + c.high) / 2, 0]}>
                 <boxGeometry args={[c.end - c.start, c.high - c.low, p.thicknessM]} />
                 <meshStandardMaterial color={p.material === "concrete" ? "#7d93a8" : "#c9d6db"} />
+              </mesh>
+            ))}
+          </group>
+        ))}
+        {stairs.map((stair) => (
+          <group key={stair.id}>
+            {stair.steps.map((step, i) => (
+              <mesh key={i} rotation={[-Math.PI / 2, 0, 0]}>
+                <extrudeGeometry args={[step.shape, { depth: step.height, bevelEnabled: false }]} />
+                <meshStandardMaterial color="#a9b9b2" />
               </mesh>
             ))}
           </group>

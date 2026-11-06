@@ -86,6 +86,33 @@ def test_save_revisions_conflicts_and_validation(client):
     assert len(c.get(path + "/history").json()) == 1
 
 
+def test_stair_detection_preserves_draft_and_exports_treads(client, monkeypatch):
+    from app.plan_model import Stair
+
+    c, bid = client
+    path = f"/blueprints/{bid}/plan"
+    stair = Stair.model_validate({
+        "id": "stair-0", "layout": "l",
+        "treads": [[{"x": a, "y": b}, {"x": a + 15, "y": b},
+                    {"x": a + 15, "y": b + 60}, {"x": a, "y": b + 60}]
+                   for a, b in [(250, 250), (265, 250), (280, 250)]],
+    })
+    monkeypatch.setattr("app.stair_detection.detect_stairs", lambda *_: [stair])
+    saved = c.put(path, json={"expectedRevision": 0, "model": plan(scale=reference())}).json()["model"]
+    r = c.post(path + "/detect-stairs", json={"expectedRevision": 1, "model": saved})
+    assert r.status_code == 200, r.text
+    draft = r.json()
+    assert draft["stairs"][0]["id"] == stair.id
+    assert {**draft, "stairs": []} == saved
+    assert c.get(path).json()["model"] == saved
+    assert c.put(path, json={"expectedRevision": 1, "model": draft}).status_code == 200
+    result = c.get(path + "/export")
+    assert result.status_code == 200, result.text
+    with zipfile.ZipFile(io.BytesIO(result.content)) as bundle:
+        assert b'LAYER_STAIRS' in bundle.read("walls.svg")
+        assert b'LAYER_STAIRS' in bundle.read("walls.dxf")
+
+
 def test_saved_draft_joint_repair_is_revision_guarded_and_not_persisted(client, monkeypatch):
     import numpy as np
     from app.ink_layers import Strips

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, ConfigDict, model_validator
 import math
 from shapely.geometry import LineString
 from .deterministic_blueprint.schema import CalibrationReference
+from .plan_model import Stair
 
 
 
@@ -43,6 +44,7 @@ class Document(BaseModel):
     envelope: list[Point] | None = None
     passages: list[Point] = Field(default_factory=list, max_length=500)
     wall_returns: list[Segment] = Field(default_factory=list, max_length=100)
+    stairs: list[Stair] = Field(default_factory=list, max_length=32)
     photo_wall_evidence: bool = False
     warnings: list[str] = Field(default_factory=list, max_length=100)
 

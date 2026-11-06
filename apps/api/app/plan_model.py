@@ -93,6 +93,14 @@ class Room(Base):
     label: str | None = Field(default=None, max_length=80)
 
 
+class Stair(Base):
+    """Tread polygons in ascending order; rise is an editable estimate."""
+    id: str = Field(max_length=120)
+    layout: Literal["l", "u"]
+    treads: list[list[Pt]] = Field(min_length=3, max_length=80)
+    rise_m: float = Field(default=0.17, ge=0.08, le=0.3)
+
+
 class Finding(Base):
     id: str
     category: FindingCategory
@@ -112,6 +120,7 @@ class PlanModel(Base):
     nodes: list[Node] = Field(default_factory=list, max_length=20000)
     walls: list[Wall] = Field(default_factory=list, max_length=10000)
     openings: list[Opening] = Field(default_factory=list, max_length=5000)
+    stairs: list[Stair] = Field(default_factory=list, max_length=32)
     rooms: list[Room] = Field(default_factory=list)
     findings: list[Finding] = Field(default_factory=list)
     envelope: list[Pt] | None = None
@@ -158,6 +167,20 @@ class PlanModel(Base):
                 raise ValueError("Opening is too narrow")
             if o.sill_m + o.height_m > host.height_m + 1e-6:
                 raise ValueError("Opening exceeds host wall height")
+        for stair in self.stairs:
+            if stair.id in ids or stair.id in walls:
+                raise ValueError("Duplicate stair ID")
+            ids.add(stair.id)
+            for tread in stair.treads:
+                if not 3 <= len(tread) <= 4 or any(not (0 <= p.x <= w and 0 <= p.y <= h) for p in tread):
+                    raise ValueError("Invalid stair tread footprint")
+                area = sum(a.x * b.y - b.x * a.y for a, b in zip(tread, tread[1:] + tread[:1]))
+                if abs(area) < 2:
+                    raise ValueError("Stair tread is too small")
+                turns = [(b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x)
+                         for a, b, c in zip(tread, tread[1:] + tread[:1], tread[2:] + tread[:2])]
+                if not (min(turns) > 0 or max(turns) < 0):
+                    raise ValueError("Stair treads must be convex")
         ref = self.scale.reference
         if ref:
             for p in (ref.p1, ref.p2):

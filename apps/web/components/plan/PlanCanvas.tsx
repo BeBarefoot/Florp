@@ -279,6 +279,35 @@ export default function PlanCanvas(props: {
                 </g>
               );
             })}
+            {(m.stairs ?? []).map((stair) => {
+              const active = selection?.id === stair.id;
+              const centres = stair.treads.map((tread) => ({
+                x: tread.reduce((sum, p) => sum + p.x, 0) / tread.length,
+                y: tread.reduce((sum, p) => sum + p.y, 0) / tread.length,
+              }));
+              const start = centres[centres.length - 2], end = centres[centres.length - 1];
+              const angle = Math.atan2(end.y - start.y, end.x - start.x) * 180 / Math.PI;
+              return (
+                <g key={stair.id} data-kind="stair" data-id={stair.id}
+                  onPointerDown={(e) => {
+                    if (tool !== "select" || e.button !== 0) return;
+                    e.stopPropagation();
+                    props.select({ type: "stair", id: stair.id });
+                  }}>
+                  <title>{stair.layout.toUpperCase()}-shaped stair</title>
+                  {stair.treads.map((tread, i) => (
+                    <polygon key={i} points={tread.map(({ x, y }) => `${x},${y}`).join(" ")}
+                      fill={active ? "#d3e8e6" : "#eef6f5"} fillOpacity={0.85}
+                      stroke={active ? "#16786e" : "#467472"} strokeWidth={1.2 * px} />
+                  ))}
+                  <polyline points={centres.map(({ x, y }) => `${x},${y}`).join(" ")} fill="none"
+                    stroke="#16786e" strokeWidth={1.4 * px} strokeDasharray={`${4 * px} ${3 * px}`} pointerEvents="none" />
+                  <path d={`M ${-6 * px},${-3 * px} L 0,0 L ${-6 * px},${3 * px}`} fill="none"
+                    transform={`translate(${end.x},${end.y}) rotate(${angle})`}
+                    stroke="#16786e" strokeWidth={1.5 * px} pointerEvents="none" />
+                </g>
+              );
+            })}
             {m.openings.map((o) => (
               <OpeningSymbol
                 key={o.id}

@@ -242,6 +242,9 @@ def build(path, roi=None):
         # corner. Its verified opening host can now identify the junction.
         _trim_photo_edge_leaders(objects, strips.boundary_mask | strips.blue, w_wall)
     from .capped_returns import detect_returns
+    from .stair_detection import detect_stairs
+
+    stairs = detect_stairs(image, np.asarray(polygon, dtype=np.float32) if roi else None)
 
     return Document(
         width=w,
@@ -250,6 +253,7 @@ def build(path, roi=None):
         envelope=[Point(x=x, y=y) for x, y in polygon] if polygon else None,
         passages=[Point(x=x, y=y) for x, y in found.passages[:500]],
         wall_returns=detect_returns(image, strips),
+        stairs=stairs,
         photo_wall_evidence=strips.boundary_mask is not None,
         warnings=notes
         + ["Flat, uniformly scaled source assumed. Heights use editable defaults."],

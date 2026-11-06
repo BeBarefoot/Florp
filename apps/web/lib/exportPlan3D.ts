@@ -3,6 +3,7 @@ import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import type { PlanModel } from "./plan/model";
 import { metersPerPixel } from "./plan/derive";
 import { floorOutlines, wallPieces } from "./plan/mesh";
+import { stairPieces } from "./plan/stairs";
 
 /** Metric glTF (meters) with stable wall/room/opening IDs in node extras. */
 export async function exportPlan3D(m: PlanModel) {
@@ -45,6 +46,18 @@ export async function exportPlan3D(m: PlanModel) {
     mesh.userData = { kind: "room", id: r.id, label: r.label };
     mesh.rotation.x = -Math.PI / 2;
     scene.add(mesh);
+  }
+  for (const stair of stairPieces(m)) {
+    const group = new THREE.Group();
+    group.name = stair.id;
+    group.userData = { kind: "stair", id: stair.id };
+    const material = new THREE.MeshStandardMaterial({ color: "#a9b9b2" });
+    for (const step of stair.steps) {
+      const mesh = new THREE.Mesh(new THREE.ExtrudeGeometry(step.shape, { depth: step.height, bevelEnabled: false }), material);
+      mesh.rotation.x = -Math.PI / 2;
+      group.add(mesh);
+    }
+    scene.add(group);
   }
   const data = await new GLTFExporter().parseAsync(scene, { binary: true });
   const url = URL.createObjectURL(new Blob([data as ArrayBuffer], { type: "model/gltf-binary" }));

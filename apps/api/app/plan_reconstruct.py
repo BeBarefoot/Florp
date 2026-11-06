@@ -587,6 +587,7 @@ def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = Non
         nodes=nodes,
         walls=walls,
         openings=openings,
+        stairs=doc.stairs,
         notes=list(doc.warnings),
         envelope=[Pt(x=p.x, y=p.y) for p in doc.envelope] if doc.envelope else None,
     )
