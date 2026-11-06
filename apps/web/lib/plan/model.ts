@@ -34,6 +34,7 @@ export type Room = {
   areaPx2: number;
   label: string | null;
 };
+export type Stair = { id: string; layout: "l" | "u"; treads: Pt[][]; riseM: number };
 export type FindingCategory =
   | "opening_needs_approval"
   | "open_wall_end"
@@ -61,6 +62,7 @@ export type PlanModel = {
   nodes: Node[];
   walls: Wall[];
   openings: Opening[];
+  stairs?: Stair[];
   rooms: Room[];
   findings: Finding[];
   envelope?: Pt[] | null;

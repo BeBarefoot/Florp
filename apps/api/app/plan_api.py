@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
-from shapely.geometry import LineString
+from shapely.geometry import GeometryCollection, LineString, Polygon
 from shapely.ops import unary_union
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
@@ -162,6 +162,30 @@ def align_plan_walls(bid: str, body: Save, recover_missing: bool = False):
     return derive(repaired).dump()
 
 
+@router.post("/blueprints/{bid}/plan/detect-stairs")
+def detect_plan_stairs(bid: str, body: Save):
+    """Detect stairs on the existing sheet without re-extracting or saving walls."""
+    import numpy as np
+    from .deterministic_blueprint.preprocess import decode
+    from .stair_detection import detect_stairs
+
+    with Session(get_engine()) as s:
+        bp = blueprint(s, bid)
+        t = body.model.image_transform
+        if (t.width, t.height) != (bp.width, bp.height):
+            raise HTTPException(422, "Source dimensions changed")
+        row = latest(s, bid)
+        if (row.revision if row else 0) != body.expected_revision:
+            raise HTTPException(409, "A newer revision exists. Reload before detecting stairs.")
+        path = bp.preview_path
+    if body.model.stairs:
+        return body.model.dump()
+    outline = body.model.envelope
+    contour = np.asarray([(p.x, p.y) for p in outline], dtype=np.float32) if outline else None
+    stairs = detect_stairs(decode(Path(path).read_bytes()), contour)
+    return PlanModel.model_validate(body.model.model_copy(update={"stairs": stairs}).dump()).dump()
+
+
 class Extract(BaseModel):
     """Optional building outline (pixel polygon) that replaces the detected envelope."""
 
@@ -309,6 +333,11 @@ def export(bid: str):
         [opening_footprint(model, o) for o in model.openings if o.status == "confirmed"]
     )
     layers = {k: g.difference(cuts) for k, g in layers.items()}
+    if model.stairs:
+        # Keep adjacent treads separate so CAD and SVG retain the step lines.
+        layers["LAYER_STAIRS"] = GeometryCollection([
+            Polygon([(p.x, p.y) for p in tread]) for s in model.stairs for tread in s.treads
+        ])
     layers, bounds, report = normalize_metric(layers, 1 / mpp / 100)
     raster, meta = png(layers, bounds, 100)
     report.update({"revision": payload["revision"], "raster": meta, "plan": model.dump()})

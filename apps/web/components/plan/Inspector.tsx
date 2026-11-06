@@ -20,6 +20,8 @@ type Props = {
   straighten: React.ReactNode;
   history: React.ReactNode;
   outlinePanel?: React.ReactNode;
+  onDetectStairs: () => void;
+  busy: boolean;
 };
 
 const fmt = (v: number | null, unit: string, digits = 2) => (v === null ? "—" : v.toFixed(digits) + " " + unit);
@@ -79,6 +81,7 @@ export default function Inspector(p: Props) {
   const selWall = p.selection?.type === "wall" ? m.walls.find((w) => w.id === p.selection!.id) : undefined;
   const selOpening = p.selection?.type === "opening" ? m.openings.find((o) => o.id === p.selection!.id) : undefined;
   const selRoom = p.selection?.type === "room" ? m.rooms.find((r) => r.id === p.selection!.id) : undefined;
+  const selStair = p.selection?.type === "stair" ? m.stairs?.find((s) => s.id === p.selection!.id) : undefined;
 
   if (p.tool === "straighten") return <aside className="fe-inspector">{p.straighten}</aside>;
   return (
@@ -245,6 +248,37 @@ export default function Inspector(p: Props) {
           <p className="fe-muted">Usable floor area, measured to the inner wall faces.</p>
         </section>
       )}
+
+      <section className="fe-card" aria-label="Stairs">
+        <h3>Stairs{m.stairs?.length ? ` (${m.stairs.length})` : ""}</h3>
+        {selStair ? (
+          <>
+            <p>{selStair.layout.toUpperCase()}-shaped stair · {selStair.treads.length} treads</p>
+            <label>
+              Rise per step (m)
+              <input type="number" min="0.08" max="0.3" step="0.005" key={`${selStair.id}:${selStair.riseM}`}
+                defaultValue={selStair.riseM}
+                onBlur={(e) => {
+                  const riseM = Number(e.target.value);
+                  if (riseM >= 0.08 && riseM <= 0.3 && riseM !== selStair.riseM)
+                    p.edit({ ...m, stairs: m.stairs?.map((s) => s.id === selStair.id ? { ...s, riseM } : s) });
+                  else e.target.value = String(selStair.riseM);
+                }} />
+            </label>
+            <p className="fe-muted">The 3D preview estimates the rise and direction. Check them against the plan.</p>
+            <button onClick={() => p.edit({ ...m, stairs: m.stairs?.map((s) =>
+              s.id === selStair.id ? { ...s, treads: [...s.treads].reverse() } : s) })}>Reverse direction</button>
+            <button className="fe-danger" onClick={() => {
+              p.edit({ ...m, stairs: m.stairs?.filter((s) => s.id !== selStair.id) });
+              p.select(null);
+            }}>Delete stair</button>
+          </>
+        ) : m.stairs?.length ? (
+          <p className="fe-muted">Select a stair on the plan to edit its rise or direction.</p>
+        ) : (
+          <button onClick={p.onDetectStairs} disabled={p.busy}>Detect stairs</button>
+        )}
+      </section>
 
       {groups.size > 0 && (
         <section className="fe-card" aria-label="Findings">

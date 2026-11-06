@@ -150,6 +150,35 @@ export default function PlanEditor({ id }: { id: string }) {
       setBusy(false);
     }
   }
+  async function detectStairs() {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    setStatus("Looking for stairs…");
+    try {
+      if (saveDone.current) await saveDone.current;
+      const current = live.current;
+      if (!current) return;
+      const next = await request<PlanModel>(`/blueprints/${id}/plan/detect-stairs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedRevision: revision.current, model: current }),
+      });
+      if (live.current !== current) {
+        setError("The plan changed during stair detection. Try again.");
+        return;
+      }
+      if (next.stairs?.length) {
+        edit(next);
+        select({ type: "stair", id: next.stairs[0].id });
+      } else setStatus("No turning stairs found");
+    } catch (e) {
+      setError(String(e));
+      setStatus("Stair detection failed");
+    } finally {
+      setBusy(false);
+    }
+  }
   async function commitOutline(envelope: Pt[]) {
     setBusy(true);
     // A corrected outline triggers extraction. Preserve pending manual edits
@@ -249,7 +278,8 @@ export default function PlanEditor({ id }: { id: string }) {
       if (k === "f") return setFitNonce((n) => n + 1);
       if (!m || !selection) return;
       if (k === "delete" || k === "backspace") {
-        edit(selection.type === "wall" ? deleteWall(m, selection.id) : selection.type === "opening" ? deleteOpening(m, selection.id) : m);
+        edit(selection.type === "wall" ? deleteWall(m, selection.id) : selection.type === "opening" ? deleteOpening(m, selection.id)
+          : selection.type === "stair" ? { ...m, stairs: m.stairs?.filter((s) => s.id !== selection.id) } : m);
         setSelection(null);
       }
       if (selection.type === "opening" && (k === "a" || k === "r")) {
@@ -451,6 +481,8 @@ export default function PlanEditor({ id }: { id: string }) {
       </main>
       <Inspector
         model={m}
+        onDetectStairs={() => void detectStairs()}
+        busy={busy}
         tool={tool}
         setTool={setTool}
         selection={selection}

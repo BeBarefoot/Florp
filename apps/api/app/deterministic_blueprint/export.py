@@ -19,6 +19,7 @@ COLORS = {
     "LAYER_WALLS_INTERIOR": "#c86464",
     "LAYER_MAMAD_CONCRETE": "#1e4b8c",
     "LAYER_WALLS_UNCLASSIFIED": "#c86464",
+    "LAYER_STAIRS": "#467472",
 }
 MARGIN_CM = 50.0
 
@@ -73,9 +74,8 @@ def svg(layers, bounds, print_scale):
         '<rect width="100%" height="100%" fill="white"/>',
     ]
     for name, g in layers.items():
-        parts.append(
-            f'<g id="{escape(name)}" fill="{COLORS[name]}" fill-rule="evenodd">'
-        )
+        paint = 'fill="none" stroke="#467472" stroke-width="0.7"' if name == "LAYER_STAIRS" else f'fill="{COLORS[name]}"'
+        parts.append(f'<g id="{escape(name)}" {paint} fill-rule="evenodd">')
         for poly in polygons(g):
             paths = []
             for ring in rings(poly):
@@ -130,7 +130,7 @@ def dxf(layers, bounds):
         pair(100, "AcDbLayerTableRecord")
         pair(2, name)
         pair(70, 0)
-        pair(62, [1, 1, 5, 8, 8][i])
+        pair(62, 3 if name == "LAYER_STAIRS" else [1, 1, 5, 8, 8][min(i, 4)])
         pair(6, "CONTINUOUS")
     pair(0, "ENDTAB")
     pair(0, "ENDSEC")
@@ -170,9 +170,12 @@ def png(layers, bounds, print_scale):
         for poly in polygons(g):
             mask = np.zeros_like(full)
             pts = lambda r: np.rint(np.asarray(r.coords) * resolution).astype(np.int32)
-            cv2.fillPoly(mask, [pts(poly.exterior)], 255)
-            for ring in poly.interiors:
-                cv2.fillPoly(mask, [pts(ring)], 0)
+            if name == "LAYER_STAIRS":
+                cv2.polylines(mask, [pts(poly.exterior)], True, 255, 1)
+            else:
+                cv2.fillPoly(mask, [pts(poly.exterior)], 255)
+                for ring in poly.interiors:
+                    cv2.fillPoly(mask, [pts(ring)], 0)
             full |= mask
         rgb = tuple(int(COLORS[name][i : i + 2], 16) for i in (1, 3, 5))
         canvas[full > 0] = rgb
