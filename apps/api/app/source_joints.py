@@ -137,5 +137,7 @@ def close_source_joints(model: PlanModel, image, *, recover_missing=False) -> Pl
     if recover_missing:
         from .capped_returns import detect_returns, restore_returns
 
-        repaired = restore_returns(repaired, detect_returns(image, strips))
+        from .photo_door_repairs import repair_photo_doors
+
+        repaired = repair_photo_doors(restore_returns(repaired, detect_returns(image, strips)), strips)
     return repaired
