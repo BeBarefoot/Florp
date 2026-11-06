@@ -65,7 +65,7 @@ def test_photo_reconstruction_removes_orphans_but_keeps_physical_walls():
         seg(10, (250, 250), (320, 250)),  # detached dimension leader
         seg(11, (360, 220), (380, 220), t=6, boundary_supported=True),  # short glyph
         seg(12, (710, 100), (740, 100), t=6),  # measured continuation across a narrow seam
-        seg(13, (350, 50), (435, 50), t=6, boundary_supported=True),  # real separate wall
+        seg(13, (350, 50), (435, 50), t=6, boundary_supported=True),  # isolated even with paired ink
         seg(14, (320, 520), (380, 520), t=8, boundary_supported=True).model_copy(
             update={"id": "gap-host-orphan"}
         ),
@@ -76,12 +76,39 @@ def test_photo_reconstruction_removes_orphans_but_keeps_physical_walls():
     doc = Document(width=800, height=600, objects=objects)
     original = reconstruct(doc, "plan")
     fixed = reconstruct(doc.model_copy(update={"photo_wall_evidence": True}), "plan")
-    assert len(original.walls) - len(fixed.walls) == 3
-    assert {n.y for n in fixed.nodes}.isdisjoint({220, 250, 520})
+    assert len(original.walls) - len(fixed.walls) == 4
+    assert {n.y for n in fixed.nodes}.isdisjoint({50, 220, 250, 520})
     assert any(n.x == 740 and n.y == 100 for n in fixed.nodes)
-    assert any(n.x == 350 and n.y == 50 for n in fixed.nodes)
+    pier = next(n for n in fixed.nodes if n.x == 740 and n.y == 100)
+    wall = next(w for w in fixed.walls if pier.id in (w.a, w.b))
+    assert max(degree(fixed)[wall.a], degree(fixed)[wall.b]) >= 2
     assert [o.kind for o in fixed.openings] == ["door"]
     assert len(fixed.rooms) == 1
+
+
+def test_photo_clutter_cannot_outvote_the_connected_building():
+    clutter = [
+        seg(i + 10, (140, y), (660, y), t=6, boundary_supported=True)
+        for i, y in enumerate((20, 40, 60, 80, 520, 540, 560, 580))
+    ]
+    doc = Document(width=800, height=600, objects=rectangle(clutter), photo_wall_evidence=True)
+    model = reconstruct(doc, "plan")
+    assert len(model.walls) == 4
+    assert len(model.rooms) == 1
+
+
+def test_photo_broken_traced_corner_is_joined_instead_of_deleted():
+    arms = [
+        seg(10, (221, 230), (500, 230), t=12, boundary_supported=True),
+        seg(11, (201, 237), (201, 400), t=20, boundary_supported=True),
+    ]
+    doc = Document(width=800, height=600, objects=rectangle(arms))
+    original = reconstruct(doc, "plan")
+    assert sum(degree(original)[w.a] == degree(original)[w.b] == 1 for w in original.walls) == 2
+    fixed = reconstruct(doc.model_copy(update={"photo_wall_evidence": True}), "plan")
+    assert len(fixed.walls) == 6
+    corner = next(n for n in fixed.nodes if (n.x, n.y) == (201, 230))
+    assert degree(fixed)[corner.id] == 2
 
 
 def test_l_corners_and_t_junction_share_nodes():
