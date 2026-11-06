@@ -260,7 +260,7 @@ def build(path, roi=None, *, plan_id=None):
         + ["Flat, uniformly scaled source assumed. Heights use editable defaults."],
     )
 
-    return reconstruct(doc, plan_id, strips=strips) if plan_id is not None else doc
+    return reconstruct(doc, plan_id, strips=strips, image=image) if plan_id is not None else doc
 
 
 if __name__ == "__main__":

@@ -82,3 +82,60 @@ def test_photo_repair_does_not_extend_across_a_confirmed_window():
     repaired = repair_photo_doors(model, strips)
     assert repaired.openings == model.openings
     assert not any(w.id.startswith("door-return-") for w in repaired.walls)
+
+
+def missing_return_fixture(*, swing=True):
+    import cv2
+
+    # This is the incomplete result: the stair wall and door have no objects.
+    # The only hint in the vector model is a short stub drawn on the wrong row.
+    xy = [(80, 40), (80, 111), (80, 135), (101, 111), (35, 217), (295, 217)]
+    model = PlanModel(
+        id="plan", image_transform=ImageTransform(width=330, height=235), scale=Scale(),
+        nodes=[Node(id=str(i), x=x, y=y) for i, (x, y) in enumerate(xy)],
+        walls=[Wall(id=id_, a=str(a), b=str(b), thickness_px=7)
+               for id_, a, b in [("left", 0, 1), ("lower-left", 1, 2), ("stub", 1, 3), ("bottom", 4, 5)]],
+    )
+    tint = np.zeros((235, 330), dtype=bool)
+    tint[40:136, 78:83] = True
+    tint[98:103, 80:101] = True
+    tint[98:103, 141:196] = True
+    tint[100:218, 191:196] = True
+    tint[214:220, 35:296] = True
+    image = np.full((235, 330, 3), 222, dtype=np.uint8)
+    image[tint] = (155, 163, 194)
+    if swing:
+        cv2.ellipse(image, (141, 100), (40, 40), 0, 90, 180, (153, 153, 153), 1)
+        cv2.line(image, (141, 100), (141, 140), (153, 153, 153), 1)
+    return model, tint, image
+
+
+def test_recovers_entire_partition_and_a_door_with_both_wall_connections():
+    from app.missing_photo_door import recover_missing_photo_doors
+
+    model, tint, image = missing_return_fixture()
+    result = recover_missing_photo_doors(model, tint, image, confirm_at=0.85)
+    door, = result.openings
+    assert door.kind == "door" and door.status == "confirmed" and door.hinge == "end"
+    assert abs(door.width_px - 41) <= 2
+    assert all(w.id != "stub" for w in result.walls)
+    walls = {w.id: w for w in result.walls}
+    host, return_wall = walls[door.host_wall_id], walls[door.host_wall_id + "-return"]
+    assert host.b == return_wall.a
+    for joint in (host.a, return_wall.b):
+        assert sum(joint in (w.a, w.b) for w in result.walls) == 3
+    assert PlanModel.model_validate(result.dump()) == result
+    assert recover_missing_photo_doors(result, tint, image, confirm_at=0.85) is result
+
+
+def test_missing_door_fallback_needs_swing_and_respects_a_rejected_door():
+    from app.missing_photo_door import recover_missing_photo_doors
+
+    model, tint, image = missing_return_fixture(swing=False)
+    assert recover_missing_photo_doors(model, tint, image, confirm_at=0.85) is model
+
+    model, tint, image = missing_return_fixture()
+    rejected = Opening(id="rejected", kind="door", status="rejected", width_px=41,
+                       span=(Pt(x=100, y=100), Pt(x=141, y=100)))
+    model = model.model_copy(update={"openings": [rejected]})
+    assert recover_missing_photo_doors(model, tint, image, confirm_at=0.85) is model
