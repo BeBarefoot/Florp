@@ -594,8 +594,14 @@ def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = Non
     from .wall_alignment import align_walls
     from .capped_returns import restore_returns
 
+    model = align_walls(model)
+    if doc.photo_wall_evidence:
+        from .detached_walls import prune_detached_photo_walls
+
+        model, removed = prune_detached_photo_walls(model, doc.objects)
+        counters.pruned_fragments += removed
     return derive(
-        restore_returns(align_walls(model), doc.wall_returns),
+        restore_returns(model, doc.wall_returns),
         counters={
             "merged_duplicates": counters.merged_duplicates,
             "pruned_fragments": counters.pruned_fragments,

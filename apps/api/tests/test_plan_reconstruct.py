@@ -60,6 +60,30 @@ def test_near_straight_run_is_straightened():
     assert nodes[w.a].y == nodes[w.b].y
 
 
+def test_photo_reconstruction_removes_orphans_but_keeps_physical_walls():
+    objects = rectangle([
+        seg(10, (250, 250), (320, 250)),  # detached dimension leader
+        seg(11, (360, 220), (380, 220), t=6, boundary_supported=True),  # short glyph
+        seg(12, (710, 100), (740, 100), t=6),  # measured continuation across a narrow seam
+        seg(13, (350, 50), (435, 50), t=6, boundary_supported=True),  # real separate wall
+        seg(14, (320, 520), (380, 520), t=8, boundary_supported=True).model_copy(
+            update={"id": "gap-host-orphan"}
+        ),
+        seg(15, (320, 520), (380, 520), kind="window", host_id="gap-host-orphan",
+            confidence=0.95, boundary_supported=True, height_m=1.2),
+        seg(16, (350, 100), (395, 100), kind="door", confidence=0.95, height_m=2.1),
+    ])
+    doc = Document(width=800, height=600, objects=objects)
+    original = reconstruct(doc, "plan")
+    fixed = reconstruct(doc.model_copy(update={"photo_wall_evidence": True}), "plan")
+    assert len(original.walls) - len(fixed.walls) == 3
+    assert {n.y for n in fixed.nodes}.isdisjoint({220, 250, 520})
+    assert any(n.x == 740 and n.y == 100 for n in fixed.nodes)
+    assert any(n.x == 350 and n.y == 50 for n in fixed.nodes)
+    assert [o.kind for o in fixed.openings] == ["door"]
+    assert len(fixed.rooms) == 1
+
+
 def test_l_corners_and_t_junction_share_nodes():
     # Corners are short of each other (gaps of a few px), plus an interior T stem.
     edges = [
