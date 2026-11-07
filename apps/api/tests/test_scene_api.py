@@ -91,3 +91,32 @@ def test_room_context_survives_reextraction(client, monkeypatch):
     assert model["rooms"][0]["label"] == "Main bedroom"
     assert model["rooms"][0]["ceilingHeightM"] == 2.65
     assert model["roomZones"][0]["roomType"] == "corridor"
+
+
+def test_fixture_review_scan_does_not_edit_scene(client, monkeypatch):
+    import app.fixture_detection as detector
+    from app.fixture_detection import Hit
+
+    c, bid = client
+    path = f"/blueprints/{bid}"
+    scan = path + "/scene/fixture-suggestions"
+    assert c.get(scan, params={"plan_revision": 1}).status_code == 409
+    assert c.put(path + "/plan", json={"expectedRevision": 0, "model": plan(scale=reference())}).status_code == 200
+
+    def fixtures(gray, model):
+        assert gray.shape == (600, 800)
+        assert model.scale.meters_per_pixel == .01
+        return [Hit("bed", .7, 215, 150, 1.62, 2.06, 270)]
+
+    monkeypatch.setattr(detector, "for_plan", fixtures)
+    response = c.get(scan, params={"plan_revision": 1})
+    assert response.status_code == 200, response.text
+    proposal, = response.json()["suggestions"]
+    assert proposal["position"] == {"x": 215, "y": 150}
+    assert proposal["rotation"] == -90
+    assert proposal["mattressDepth"] < proposal["depth"] * .96
+    assert c.get(scan, params={"plan_revision": 1}).json() == response.json()
+    assert c.get(path + "/scene").json()["config"]["objects"] == []
+    config = {"dismissedFixtureIds": [proposal["id"]]}
+    assert c.put(path + "/scene", json={"expectedRevision": 0, "planRevision": 1, "config": config}).status_code == 200
+    assert c.get(path + "/scene").json()["config"]["dismissedFixtureIds"] == [proposal["id"]]

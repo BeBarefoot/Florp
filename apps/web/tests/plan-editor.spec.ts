@@ -353,3 +353,37 @@ test("eye-level camera keeps metric position and a normalized level direction", 
   expect(eyeLevelPose([2, 3], [2, 3], 1.65)).toBeNull();
   expect(eyeLevelPose([2, 3], [5, 7], 4)).toBeNull();
 });
+
+test("fixture scan requires an individual insert or dismiss before saving", async ({ page }) => {
+  const scaled = setReference(fixture(), { x: 100, y: 100 }, { x: 500, y: 100 }, 4);
+  let scene = { revision: 0, planRevision: 1,
+    config: { views: [], objects: [] as { id: string }[], style: "", dismissedFixtureIds: [] as string[] } };
+  await page.route("**/blueprints/p/scene", r => {
+    if (r.request().method() === "PUT") scene = { revision: 1, planRevision: 1, config: r.request().postDataJSON().config };
+    return r.fulfill({ json: scene });
+  });
+  await page.route("**/blueprints/p/scene/renders", r => r.fulfill({ json: [] }));
+  await page.route("**/blueprints/p/scene/render-settings", r => r.fulfill({ json: { width: 1024, height: 768 } }));
+  await page.route("**/blueprints/p/scene/fixture-suggestions?*", r => r.fulfill({ json: { planRevision: 1, suggestions: [
+    { id: "fixture-bed", kind: "bed", position: { x: 280, y: 310 }, rotation: 90, width: 1.62, depth: 2, height: .9 },
+    { id: "fixture-toilet", kind: "toilet", position: { x: 650, y: 310 }, rotation: 180, width: .45, depth: .63, height: .8 },
+  ] } }));
+  await setup(page, { model: scaled });
+  await page.locator(".fe-segment button").nth(2).click();
+  const scan = page.getByRole("button", { name: "Find fixtures on plan" });
+  await scan.click();
+  const outlines = page.getByTestId("fixture-outline");
+  await expect(outlines).toHaveCount(2);
+  expect(scene.config.objects).toHaveLength(0);
+  await page.getByRole("button", { name: "Insert bed" }).click();
+  await expect(outlines).toHaveCount(1);
+  await page.getByRole("button", { name: "Dismiss suggestion" }).click();
+  await expect(outlines).toHaveCount(0);
+  await page.getByRole("button", { name: "Save scene" }).click();
+  await expect(page.getByText("Scene saved.", { exact: true })).toBeVisible();
+  expect(scene.config.objects.map(o => o.id)).toEqual(["fixture-bed"]);
+  expect(scene.config.dismissedFixtureIds).toEqual(["fixture-toilet"]);
+  await scan.click();
+  await expect(page.getByText("Review the outlined suggestions. Nothing has been inserted.")).toBeVisible();
+  await expect(outlines).toHaveCount(0);
+});

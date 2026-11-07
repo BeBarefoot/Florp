@@ -21,7 +21,7 @@ from . import providers
 from .config import settings
 from .models import SceneRevision, SceneRenderJob
 from .plan_api import blueprint, get_engine, latest
-from .plan_model import Pt
+from .plan_model import PlanModel, Pt
 
 router = APIRouter(prefix="/blueprints/{bid}")
 MAX_PNG = 4 * 1024 * 1024
@@ -58,6 +58,7 @@ class Scene(Data):
     objects: list[SceneObject] = Field(default_factory=list, max_length=100)
     style: str = Field(default="", max_length=1200)
     closed_door_ids: list[str] = Field(default_factory=list, max_length=500)
+    dismissed_fixture_ids: list[str] = Field(default_factory=list, max_length=500)
 
 
 class SaveScene(Data):
@@ -107,6 +108,43 @@ def save_scene(bid: str, body: SaveScene):
         except IntegrityError as exc:
             raise HTTPException(409, "The scene has changed. Reload it before saving.") from exc
         return {"revision": rev, "planRevision": body.plan_revision, "config": data}
+
+
+@router.get("/scene/fixture-suggestions")
+def fixture_suggestions(bid: str, plan_revision: int):
+    """Inspect the original local blueprint for reviewable scene objects."""
+    from .fixture_detection import HEIGHT, for_plan
+
+    with Session(get_engine()) as s:
+        bp = blueprint(s, bid)
+        plan = latest(s, bid)
+        if not plan or plan.revision != plan_revision:
+            raise HTTPException(409, "Save or reload the floor plan before scanning.")
+        model = PlanModel.model_validate(plan.model)
+        path = bp.preview_path
+    if not model.scale.meters_per_pixel:
+        raise HTTPException(422, "Calibrate the floor plan before scanning for furniture.")
+    try:
+        with Image.open(path) as image:
+            dims = model.image_transform
+            if image.size != (dims.width, dims.height):
+                raise HTTPException(409, "The saved plan and source image do not match.")
+            gray = np.array(image.convert("L"))
+    except OSError as exc:
+        raise HTTPException(404, "The blueprint image is not available.") from exc
+    proposals = []
+    for h in for_plan(gray, model):
+        # The ID is scoped to the blueprint by the scene record. It stays
+        # stable across identical scans so accepted or dismissed items stay hidden.
+        token = f"{h.kind}:{round(h.x/4)}:{round(h.y/4)}"
+        fixture_id = "fixture-" + hashlib.sha256(token.encode()).hexdigest()[:20]
+        item = SceneObject(id=fixture_id, kind=h.kind, position=Pt(x=h.x, y=h.y),
+                           width=h.width, depth=h.depth, height=HEIGHT[h.kind],
+                           rotation=h.rotation if h.rotation <= 180 else h.rotation-360,
+                           mattress_width=round(h.width*.94, 2) if h.kind == "bed" else None,
+                           mattress_depth=round(h.depth*.93, 2) if h.kind == "bed" else None)
+        proposals.append(item.model_dump(by_alias=True))
+    return {"planRevision": plan_revision, "suggestions": proposals}
 
 
 @router.get("/scene/render-settings")
