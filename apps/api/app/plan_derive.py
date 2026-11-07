@@ -106,9 +106,6 @@ def rooms(model: PlanModel) -> list[Room]:
     pos = {n.id: (n.x, n.y) for n in model.nodes}
     walls = {w.id: w for w in model.walls}
     t_med = median([w.thickness_px for w in model.walls]) if model.walls else 8
-    previous = [
-        (r.label, _centroid([(p.x, p.y) for p in r.polygon])) for r in model.rooms if r.label
-    ]
     result = []
     for cycle in faces(model):
         outline = [pos[n] for n, _ in cycle]
@@ -117,16 +114,27 @@ def rooms(model: PlanModel) -> list[Room]:
         if area < max(MIN_ROOM_PX2, 9 * t_med**2):
             continue
         ids = sorted({w for _, w in cycle})
-        label = next((lab for lab, c in previous if _inside(c, inner)), None)
         result.append(
             Room(
                 id="r-" + hashlib.sha1(".".join(ids).encode()).hexdigest()[:10],
                 wall_ids=ids,
                 polygon=[Pt(x=x, y=y) for x, y in inner],
                 area_px2=area,
-                label=label,
             )
         )
+    def related(old, new):
+        a = [(p.x, p.y) for p in old.polygon]
+        b = [(p.x, p.y) for p in new.polygon]
+        return old.wall_ids == new.wall_ids or _inside(_centroid(a), b) or _inside(_centroid(b), a)
+
+    links = [[old for old in model.rooms if related(old, new)] for new in result]
+    for new, matches in zip(result, links):
+        if len(matches) == 1 and sum(matches[0] in group for group in links) == 1:
+            old = matches[0]
+            new.label, new.room_type, new.ceiling_height_m = old.label, old.room_type, old.ceiling_height_m
+            new.needs_semantic_review = old.needs_semantic_review
+        elif any(r.label or r.room_type or r.ceiling_height_m or r.needs_semantic_review for r in matches):
+            new.needs_semantic_review = True
     result.sort(key=lambda r: (min(p.y for p in r.polygon), min(p.x for p in r.polygon)))
     return result
 

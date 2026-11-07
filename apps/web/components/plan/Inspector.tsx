@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import type { Finding, FindingCategory, PlanModel, Pt } from "../../lib/plan/model";
-import { FINDING_LABELS } from "../../lib/plan/model";
+import { FINDING_LABELS, ROOM_TYPES } from "../../lib/plan/model";
 import { areaM2, metersPerPixel, nodeMap, openingEnds, wallLength } from "../../lib/plan/derive";
 import { decideOpening, deleteOpening, deleteWall, dismissFinding, patchOpening, patchWall, setRoomLabel } from "../../lib/plan/ops";
 import type { Selection, Tool } from "./types";
@@ -245,6 +245,13 @@ export default function Inspector(p: Props) {
             Name
             <input placeholder="e.g. Bedroom" value={selRoom.label || ""} onChange={(e) => p.edit(setRoomLabel(m, selRoom.id, e.target.value))} />
           </label>
+          <label>Room type
+            <select value={selRoom.roomType ?? ""} onChange={e => p.edit({...m, rooms:m.rooms.map(r =>
+              r.id === selRoom.id ? {...r, roomType: ROOM_TYPES.find(t => t === e.target.value) ?? null, needsSemanticReview:false} : r)})}>
+              <option value="">Unspecified</option>{ROOM_TYPES.map(t => <option key={t}>{t}</option>)}
+            </select>
+          </label>
+          {selRoom.needsSemanticReview && <p>Review this room after a split or merge.</p>}
           <p className="fe-muted">Usable floor area, measured to the inner wall faces.</p>
         </section>
       )}

@@ -78,15 +78,76 @@ async def extract_geometry(image_bytes:bytes,mime:str,width:int,height:int)->Geo
             raise
     raise ProviderOutputError('Model could not produce a complete valid geometry object after two attempts.')
 
-async def generate_image(depth_png:bytes,prompt:str)->tuple[str,str]:
-    # Real queue API adapter. The initial implementation submits and returns provider URLs,
-    # and the caller must explicitly poll for completion.
-    if not settings.image_api_key: raise ProviderUnavailable('IMAGE_API_KEY is missing. Add it to apps/api/.env')
+FRAME_WIDTH, FRAME_HEIGHT = 1024, 768
+
+
+def _queue_url(url):
+    from urllib.parse import urlsplit
+    allowed = urlsplit(settings.fal_api_base)
+    target = urlsplit(url)
+    if (target.scheme, target.netloc) != (allowed.scheme, allowed.netloc):
+        raise ProviderOutputError("Unexpected render queue URL")
+    return url
+
+
+def render_error(exc):
+    if isinstance(exc, ProviderUnavailable):
+        return str(exc)
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"Image provider returned HTTP {exc.response.status_code}. Check the API key, quota and model."
+    if isinstance(exc, httpx.TimeoutException):
+        return "Image provider timed out. Check its dashboard before submitting again."
+    return "Could not complete the render. Check the server configuration and provider dashboard."
+
+
+async def generate_image(depth_png: bytes, prompt: str, *, model: str) -> tuple[str, str, str]:
+    if not settings.image_api_key:
+        raise ProviderUnavailable("IMAGE_API_KEY is missing.")
     import base64
-    data_url='data:image/png;base64,'+base64.b64encode(depth_png).decode()
-    endpoint=f"{settings.fal_api_base.rstrip('/')}/{settings.image_model}"
-    async with httpx.AsyncClient(timeout=60) as c:
-        r=await c.post(endpoint,headers={'Authorization':f'Key {settings.image_api_key}','Content-Type':'application/json'},json={'prompt':prompt,'control_image_url':data_url,'image_size':'landscape_4_3'})
-        r.raise_for_status()
-        obj=r.json()
-    return obj.get('request_id',''),obj.get('status_url','')
+    data_url = "data:image/png;base64," + base64.b64encode(depth_png).decode()
+    endpoint = f"{settings.fal_api_base.rstrip('/')}/{model}"
+    async with httpx.AsyncClient(timeout=45) as client:
+        response = await client.post(endpoint, headers={"Authorization": f"Key {settings.image_api_key}"},
+                                     json={"prompt": prompt, "control_lora_image_url": data_url,
+                                           "image_size": {"width": FRAME_WIDTH, "height": FRAME_HEIGHT},
+                                           "num_images": 1})
+        response.raise_for_status()
+        obj = response.json()
+    if not all(isinstance(obj.get(key), str) and obj[key] for key in ("request_id", "status_url", "response_url")):
+        raise ProviderOutputError("The image provider did not return a complete queue receipt.")
+    return obj["request_id"], _queue_url(obj["status_url"]), _queue_url(obj["response_url"])
+
+
+async def poll_image(status_url: str, response_url: str):
+    import io
+    from urllib.parse import urlsplit
+    from PIL import Image
+
+    headers = {"Authorization": f"Key {settings.image_api_key}"}
+    async with httpx.AsyncClient(timeout=12) as client:
+        status = await client.get(_queue_url(status_url), headers=headers)
+        status.raise_for_status()
+        phase = status.json().get("status")
+        if phase in ("IN_QUEUE", "IN_PROGRESS"):
+            return ("queued" if phase == "IN_QUEUE" else "running"), None
+        if phase != "COMPLETED":
+            raise ProviderOutputError("Image provider did not complete the job.")
+        response = await client.get(_queue_url(response_url), headers=headers)
+        response.raise_for_status()
+        url = response.json()["images"][0]["url"]
+        target = urlsplit(url)
+        if target.scheme != "https" or not (target.hostname or "").endswith((".fal.media", ".fal.run")) or target.port not in (None, 443):
+            raise ProviderOutputError("Unexpected image download URL.")
+        data = bytearray()
+        async with client.stream("GET", url) as image:
+            image.raise_for_status()
+            async for chunk in image.aiter_bytes():
+                if len(data) + len(chunk) > 16 * 1024 * 1024:
+                    raise ProviderOutputError("Generated image exceeds the download size limit.")
+                data.extend(chunk)
+        with Image.open(io.BytesIO(data), formats=["PNG", "JPEG", "WEBP"]) as im:
+            if im.width * im.height > 4096 * 4096:
+                raise ProviderOutputError("Generated image exceeds the resolution limit.")
+            out = io.BytesIO()
+            im.convert("RGB").save(out, format="PNG")
+        return "complete", out.getvalue()

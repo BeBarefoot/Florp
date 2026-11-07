@@ -94,3 +94,24 @@
 .plan3d-camera label,.plan3d-camera p{font-size:12px}
 .plan3d-camera input{width:58px}
 .plan3d-camera p{margin:6px 0 0}
+
+.scene-studio{padding:12px;overflow:auto;min-width:0}
+.scene-controls{border:0;padding:0;margin:0;min-width:0}
+.scene-actions,.scene-render{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0}
+.scene-actions label,.scene-render label{display:inline-flex;align-items:center;gap:5px;font-size:13px}
+.scene-actions input[type=number]{width:65px}
+.scene-actions input[type=text],.scene-actions input:not([type]){width:120px}
+.scene-layout{display:grid;grid-template-columns:minmax(0,.75fr) minmax(0,1fr);gap:12px;align-items:start}
+.scene-map,.scene-frame{display:block;width:100%;background:#fff;border-radius:8px;overflow:hidden}
+.scene-map{min-height:100px;max-height:360px;cursor:crosshair;border:1px solid #d7e1e5}
+.scene-frame{min-width:0;background:#e9eff2}
+.scene-controls p{font-size:13px;margin:8px 0}
+.scene-render{border-top:1px solid #d7e1e5;padding-top:8px}
+.scene-render details,.scene-compare{width:100%}
+.scene-render pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
+.scene-compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.scene-compare img{width:100%;display:block;object-fit:contain}
+.scene-compare.overlay{grid-template-columns:minmax(0,1fr)}
+.scene-compare.overlay img{grid-area:1/1}
+.scene-compare.overlay img+img{opacity:.55}
+@media(max-width:950px){.scene-layout{grid-template-columns:minmax(0,1fr)}}

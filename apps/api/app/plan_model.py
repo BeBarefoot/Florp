@@ -91,6 +91,17 @@ class Room(Base):
     polygon: list[Pt]
     area_px2: float = Field(ge=0)
     label: str | None = Field(default=None, max_length=80)
+    room_type: Literal["bedroom", "bathroom", "kitchen", "corridor", "other"] | None = None
+    ceiling_height_m: float | None = Field(default=None, ge=1.8, le=8)
+    needs_semantic_review: bool = False
+
+
+class RoomZone(Base):
+    id: str = Field(min_length=1, max_length=120)
+    polygon: list[Pt] = Field(min_length=3, max_length=32)
+    label: str | None = Field(default=None, max_length=80)
+    room_type: Literal["bedroom", "bathroom", "kitchen", "corridor", "other"] | None = None
+    ceiling_height_m: float | None = Field(default=None, ge=1.8, le=8)
 
 
 class Stair(Base):
@@ -122,6 +133,7 @@ class PlanModel(Base):
     openings: list[Opening] = Field(default_factory=list, max_length=5000)
     stairs: list[Stair] = Field(default_factory=list, max_length=32)
     rooms: list[Room] = Field(default_factory=list)
+    room_zones: list[RoomZone] = Field(default_factory=list, max_length=50)
     findings: list[Finding] = Field(default_factory=list)
     envelope: list[Pt] | None = None
     dismissed_findings: list[str] = Field(default_factory=list, max_length=5000)
@@ -181,6 +193,15 @@ class PlanModel(Base):
                          for a, b, c in zip(tread, tread[1:] + tread[:1], tread[2:] + tread[:2])]
                 if not (min(turns) > 0 or max(turns) < 0):
                     raise ValueError("Stair treads must be convex")
+        from shapely.geometry import Polygon
+        zone_ids = set()
+        for zone in self.room_zones:
+            if zone.id in zone_ids or any(not (0 <= p.x <= w and 0 <= p.y <= h) for p in zone.polygon):
+                raise ValueError("Invalid room zone position or ID")
+            zone_ids.add(zone.id)
+            poly = Polygon([(p.x, p.y) for p in zone.polygon])
+            if not poly.is_valid or poly.area < 4:
+                raise ValueError("Invalid room zone shape")
         ref = self.scale.reference
         if ref:
             for p in (ref.p1, ref.p2):
