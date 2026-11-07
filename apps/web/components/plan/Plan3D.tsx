@@ -331,7 +331,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
       {sight&&<p role="status">{sight}</p>}
       {view&&!validCamera(view.position)&&<p>Camera needs 30 cm of wall clearance and a clear floor position.</p>}
       <div className="scene-actions">
-        <label>Furniture <select value={kind} onChange={e=>setKind(e.target.value as ObjectKind)}>
+        <label>Furniture <select aria-label="Furniture" value={kind} onChange={e=>setKind(e.target.value as ObjectKind)}>
           {Object.keys(catalog).map(k=><option key={k}>{k}</option>)}</select></label>
         <button draggable onDragStart={e=>e.dataTransfer.setData("application/x-florp-furniture",kind)}
           onClick={()=>setMode("object")} title="Drag onto the plan or click to place">Place object</button>
