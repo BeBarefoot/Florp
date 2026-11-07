@@ -20,6 +20,8 @@ const json = (method: string, body: unknown) => ({method,headers:{"Content-Type"
 const wrap = (angle:number) => ((angle+180)%360+360)%360-180;
 const points = (poly:Pt[]) => poly.map(p=>`${p.x},${p.y}`).join(" ");
 const sleepPollMs=3000;
+const fixtureName = (o: Item) => ({bed:"Bed", wardrobe:"Closet", toilet:"Toilet", shower:"Shower",
+  bathtub:"Bathtub", vanity:"Vanity"})[o.kind];
 
 export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
   model:PlanModel;dirty?:boolean;onPlanEdit?:(m:PlanModel)=>void;savePlan?:()=>Promise<PlanModel|null>;
@@ -37,6 +39,9 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
   const [selectedJob,setSelectedJob]=useState(""), [overlay,setOverlay]=useState(false);
   const [undo,setUndo]=useState<Scene[]>([]);
   const [ready,setReady]=useState(false);
+  const [fixtureScan,setFixtureScan]=useState<{planRevision:number;suggestions:Item[]}|null>(null);
+  const [fixtureId,setFixtureId]=useState("");
+  const [showBlueprint,setShowBlueprint]=useState(false);
   const captureFn=useRef<CaptureFn|null>(null);
   const submitRetry=useRef<{key:string; signature:string}|null>(null);
   const bind=useCallback((f:CaptureFn|null)=>{captureFn.current=f;setReady(!!f);},[]);
@@ -50,6 +55,11 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
   const cameraTarget:[number,number,number]=[w/2,0,h/2];
   const fingerprint=JSON.stringify([m,view,scene.objects,scene.closedDoorIds,frame.width,frame.height]);
   const shot=capture?.fingerprint===fingerprint?capture:null;
+  const fixtureSuggestions=fixtureScan?.planRevision===m.revision&&!dirty?
+    fixtureScan.suggestions.filter(o=>!scene.dismissedFixtureIds?.includes(o.id)&&
+      !scene.objects.some(p=>p.id===o.id||(p.kind===o.kind&&contains(o.position,footprint(p,scale))&&
+        contains(p.position,footprint(o,scale))))):[];
+  const fixture=fixtureSuggestions.find(o=>o.id===fixtureId)??fixtureSuggestions[0];
   const edited=!!saved&&(JSON.stringify(scene)!==JSON.stringify(saved.config)||saved.planRevision!==m.revision);
 
   useEffect(()=>{
@@ -82,6 +92,26 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     if(checkpoint)setUndo(all=>[...all.slice(-29),scene]);
     setScene(next);
     setSight("");
+  }
+  async function scanFixtures(){
+    setBusy(true);
+    setMessage("Looking for furniture and bathroom fixtures…");
+    try {
+      const result=await request<{planRevision:number;suggestions:Item[]}>(path+"/scene/fixture-suggestions?plan_revision="+m.revision);
+      setFixtureScan(result);setFixtureId("");setMode(null);setShowBlueprint(true);
+      setMessage(result.suggestions.length?"Review the outlined suggestions. Nothing has been inserted.":
+        "No fixture symbols could be identified reliably. You can still place objects by hand.");
+    }catch(e){setMessage(String(e));}finally{setBusy(false);}
+  }
+  function reviewFixture(o:Item, insert:boolean){
+    if(insert){
+      if(scene.objects.length>=100){setMessage("This scene already contains 100 objects.");return;}
+      change({...scene,objects:[...scene.objects,o]});setItemId(o.id);
+    }else{
+      const dismissed=[...(scene.dismissedFixtureIds??[]),o.id];
+      change({...scene,dismissedFixtureIds:dismissed.slice(-500)});
+    }
+    setMessage(insert?"Fixture inserted. You can adjust it before saving the scene.":"Suggestion dismissed.");
   }
   function updateView(patch:Partial<View>){
     if(view)change({...scene,views:scene.views.map(v=>v.id===view.id?{...v,...patch}:v)},false);
@@ -285,12 +315,22 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
               const p=mapPoint(e.currentTarget,e.clientX,e.clientY);
               if(Object.prototype.hasOwnProperty.call(catalog,k)&&p)placeObject(p,k);
             }}>
-            {rooms.map(r=><polygon key={r.id} points={points(r.polygon)} fill={r.id===roomId?"#b8ded5":"#e2eee7"} stroke="#b1c3bb" strokeWidth="1"/>)}
+            {showBlueprint&&<image href={API+path+"/preview"} width={m.imageTransform.width} height={m.imageTransform.height}/>}
+            {rooms.map(r=><polygon key={r.id} points={points(r.polygon)} fill={r.id===roomId?"#b8ded5":"#e2eee7"} stroke="#b1c3bb" strokeWidth="1" opacity={showBlueprint ? .18 : 1}/>)}
             {m.walls.map(w=>{const a=nodeMap.get(w.a)!,b=nodeMap.get(w.b)!;
               return <line key={w.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#233f4a" strokeWidth={w.thicknessPx}/>;})}
             {m.openings.filter(o=>o.status==="confirmed").map(o=>{
               const ends=openingEnds(m,o,nodeMap);if(!ends)return null;const [a,b]=ends;
               return <line key={o.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={o.kind==="window"?"#81c4d1":"#fff"} strokeWidth={nodeMap.size?m.walls.find(w=>w.id===o.hostWallId)?.thicknessPx??5:5}/>;})}
+            {fixtureSuggestions.map((o,i)=><g key={o.id}>
+              <polygon data-testid="fixture-outline" points={points(footprint(o,scale))}
+                fill={o.id===fixture?.id?"#b777443d":"#fff1"} stroke="#a65020" strokeWidth={o.id===fixture?.id?2.5:1.5}
+                vectorEffect="non-scaling-stroke" strokeDasharray="5 3"
+                onClick={e=>{if(!mode){e.stopPropagation();setFixtureId(o.id);}}}/>
+              <text x={o.position.x} y={o.position.y} pointerEvents="none" textAnchor="middle" fill="#702f13"
+                stroke="white" strokeWidth={m.imageTransform.width/420} paintOrder="stroke"
+                fontSize={Math.max(9,m.imageTransform.width/82)}>{i+1}</text>
+            </g>)}
             {scene.objects.map(o=><g key={o.id}><polygon points={points(footprint(o,scale))} fill={o.id===itemId?"#d3a86b":"#e5d5b9"} stroke="#946e3e"/>
               <text x={o.position.x} y={o.position.y} textAnchor="middle" fontSize={Math.max(7,m.imageTransform.width/92)}>{o.kind}</text></g>)}
             {view&&(()=>{const p=view.position, length=.95/scale;
@@ -338,6 +378,21 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
         <button disabled={(m.roomZones?.length??0)>=50} onClick={()=>{setMode("zone");setZoneStart(null);}}>Mark room zone</button>
         {mode&&<button onClick={()=>{setMode(null);setZoneStart(null);}}>Cancel placement</button>}
       </div>
+      <section className="scene-fixtures" aria-label="Fixture suggestions">
+        <div className="scene-actions">
+          <button disabled={dirty} title={dirty?"Save the plan before scanning.":undefined} onClick={()=>void scanFixtures()}>Find fixtures on plan</button>
+          <label><input type="checkbox" checked={showBlueprint} onChange={e=>setShowBlueprint(e.target.checked)}/> Show original plan</label>
+          {!!scene.dismissedFixtureIds?.length&&<button onClick={()=>change({...scene,dismissedFixtureIds:[]})}>Restore dismissed suggestions</button>}
+        </div>
+        {fixture&&<div className="scene-actions">
+          <label>Suggestion <select aria-label="Fixture suggestion" value={fixture.id} onChange={e=>{setFixtureId(e.target.value);setMode(null);}}>
+            {fixtureSuggestions.map((o,i)=><option key={o.id} value={o.id}>{i+1}. {fixtureName(o)}</option>)}
+          </select></label>
+          <span>{fixture.width.toFixed(2)} × {fixture.depth.toFixed(2)} m estimated footprint</span>
+          <button onClick={()=>reviewFixture(fixture,true)}>Insert {fixtureName(fixture).toLowerCase()}</button>
+          <button onClick={()=>reviewFixture(fixture,false)}>Dismiss suggestion</button>
+        </div>}
+      </section>
       {m.openings.some(o=>o.kind==="door"&&o.status==="confirmed")&&<details>
         <summary>Door positions</summary>
         <div className="scene-actions">{m.openings.filter(o=>o.kind==="door"&&o.status==="confirmed").map((o,i)=><label key={o.id}>

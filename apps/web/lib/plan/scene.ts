@@ -5,7 +5,7 @@ export type View = { id: string; name: string; position: Pt; yaw: number; pitch:
 export type ObjectKind = "bed" | "wardrobe" | "toilet" | "vanity" | "shower" | "bathtub";
 export type Item = { id: string; kind: ObjectKind; position: Pt; rotation: number;
   width: number; depth: number; height: number; mattressWidth?: number | null; mattressDepth?: number | null };
-export type Scene = { views: View[]; objects: Item[]; style: string; closedDoorIds?: string[] };
+export type Scene = { views: View[]; objects: Item[]; style: string; closedDoorIds?: string[]; dismissedFixtureIds?: string[] };
 export type Saved = { revision: number; planRevision: number | null; config: Scene };
 export type Frame = { width: number; height: number; configured: boolean; model: string; provider: string };
 export type Job = { id: string; viewId: string; name: string; prompt: string; model: string;
