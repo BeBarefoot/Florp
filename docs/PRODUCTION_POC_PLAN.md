@@ -233,3 +233,7 @@ model-license/commercial-use constraints. Do not request uploads to perform the 
 phase. Before a paid live generation evaluation, obtain explicit authorization for the
 provider and spending cap; no secret values should be sent in chat. Do not download or
 activate arbitrary checkpoints merely to increase a test count.
+
+Autonomous phase results and remaining empirical limits are recorded in
+[Engine validation](ENGINE_VALIDATION.md). These regressions and fixes do not
+close held-out benchmark, live generation or hosted-readiness gates.

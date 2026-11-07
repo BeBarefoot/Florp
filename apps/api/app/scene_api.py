@@ -135,9 +135,9 @@ def fixture_suggestions(bid: str, plan_revision: int):
         raise HTTPException(404, "The blueprint image is not available.") from exc
     source = "local-symbol-matcher"
     if settings.fixture_yolo_weights:
-        from .fixture_weights import detect
+        from .fixture_weights import detect, contextual_hits
         try:
-            hits = detect(gray, model.scale.meters_per_pixel, settings.fixture_yolo_weights)
+            hits = contextual_hits(detect(gray, model.scale.meters_per_pixel, settings.fixture_yolo_weights), model)
         except (ImportError, ValueError, OSError, RuntimeError) as exc:
             raise HTTPException(503, "Fixture detector unavailable. Install the pretrained-yolo extra and configure trusted local FIXTURE_YOLO_WEIGHTS.") from exc
         source = "local-yolo-weights"

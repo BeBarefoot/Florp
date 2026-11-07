@@ -40,3 +40,31 @@ def detect(gray, mpp, weights):
             # Boxes provide no front/back orientation evidence. Review rotation.
             hits.append(Hit(kind, score, (x1+x2)/2, (y1+y2)/2, width, depth, 0))
     return hits
+
+
+def contextual_hits(hits, model):
+    """Conservatively reject structural/site clutter; retain candidates for review."""
+    from shapely.geometry import Polygon, LineString, box, Point
+    from shapely.ops import unary_union
+    mpp = model.scale.meters_per_pixel
+    if not mpp:
+        return []
+    nodes = {n.id:n for n in model.nodes}
+    walls = [LineString([(nodes[w.a].x,nodes[w.a].y),(nodes[w.b].x,nodes[w.b].y)])
+             .buffer(w.thickness_px/2, cap_style=2) for w in model.walls]
+    stairs = [Polygon([(p.x,p.y) for p in tread]) for stair in model.stairs for tread in stair.treads]
+    obstacles = unary_union([*walls,*stairs])
+    outline = Polygon([(p.x,p.y) for p in model.envelope]) if model.envelope else None
+    kept = []
+    for hit in sorted(hits,key=lambda h:-h.score):
+        if outline is not None and not outline.covers(Point(hit.x,hit.y)):
+            continue
+        bounds = box(hit.x-hit.width/mpp/2,hit.y-hit.depth/mpp/2,
+                     hit.x+hit.width/mpp/2,hit.y+hit.depth/mpp/2)
+        if bounds.area <= 0 or bounds.intersection(obstacles).area > .25*bounds.area:
+            continue
+        if any(hit.kind==other.kind and bounds.intersection(old).area /
+               bounds.union(old).area > .5 for other,old in kept):
+            continue
+        kept.append((hit,bounds))
+    return [hit for hit,_ in kept]

@@ -234,13 +234,15 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     onPlanEdit?.({...m,rooms:m.rooms.map(apply),roomZones:m.roomZones?.map(apply)});
   }
   const overlaps=!!item&&scene.objects.some(o=>o.id!==item.id&&intersects(footprint(item,scale),footprint(o,scale)));
-  const visible=(id:number)=>!!shot&&(shot.coverage[id]||0)>=Math.max(24,frame.width*frame.height*.00015);
-  const facts=[
-    ...rooms.filter((r,i)=>visible(i+2)||(view&&contains(view.position,r.polygon))).flatMap(r=>r.roomType?
+  const visibleIn=(capture:Capture|null,id:number)=>!!capture&&(capture.coverage[id]||0)>=Math.max(24,frame.width*frame.height*.00015);
+  const visible=(id:number)=>visibleIn(shot,id);
+  function factsFor(capture:Capture|null){return [
+    ...rooms.filter((r,i)=>visibleIn(capture,i+2)||(view&&contains(view.position,r.polygon))).flatMap(r=>r.roomType?
       [`Space type: ${r.roomType}.`]:[]),
-    ...scene.objects.flatMap((o,i)=>visible(1000+i)?
+    ...scene.objects.flatMap((o,i)=>visibleIn(capture,1000+i)?
       [`Visible ${o.kind}: ${o.kind==="bed"?(o.mattressWidth??o.width).toFixed(2)+" × "+(o.mattressDepth??o.depth).toFixed(2)+" m mattress":o.width.toFixed(2)+" × "+o.depth.toFixed(2)+" m footprint"}.`]:[]),
-  ];
+  ];}
+  const facts=factsFor(shot);
   const prompt=view?promptFor(view,[...new Set(facts)],scene.style):"";
   useEffect(()=>setAuthorized(false),[fingerprint,prompt]);
   async function persistScene(planRevision:number){
@@ -272,11 +274,12 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     try {
       const currentShot=shot??captureFn.current(view,scale,frame,fingerprint);
       setCapture(currentShot);setPreview(true);
+      const renderPrompt=promptFor(view,[...new Set(factsFor(currentShot))],scene.style);
       const r=await persistScene(m.revision);
-      const signature=JSON.stringify([currentShot.fingerprint,prompt,variant,r.revision]);
+      const signature=JSON.stringify([currentShot.fingerprint,renderPrompt,variant,r.revision]);
       if(submitRetry.current?.signature!==signature)submitRetry.current={signature,key:crypto.randomUUID()};
       const job=await request<Job>(path+"/renders",json("POST",{requestKey:submitRetry.current.key,
-        sceneRevision:r.revision,viewId:view.id,name:variant.trim()||view.name,prompt,confirmed:true,
+        sceneRevision:r.revision,viewId:view.id,name:variant.trim()||view.name,prompt:renderPrompt,confirmed:true,
         depth:currentShot.depth.split(",")[1],mask:currentShot.mask.split(",")[1],preview:currentShot.preview.split(",")[1]}));
       submitRetry.current=null;setAuthorized(false);
       setJobs(all=>[job,...all.filter(j=>j.id!==job.id)]);setSelectedJob(job.id);
