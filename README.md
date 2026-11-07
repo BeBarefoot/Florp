@@ -549,3 +549,9 @@ The remaining reconstruction, photographed-hatch, outline, thin-partition,
 opening-review and automated-test work is documented in
 [the implementation handoff](docs/EXTRACTION_V2_COMPLETION.md), including the
 user app check and optional gold-based approval-threshold procedure.
+
+### Interior scenes and first render
+
+Calibrate the plan, open **3D**, then use the placement map to mark rooms, place measured furniture, and position and aim a camera. **Save scene** keeps views, furniture and style with the plan revision. **Capture view** previews the exact render frame and enables a local export (JSON containing the depth, mask, reference PNG, camera and prompt). Calibration changes preserve pixel anchors and metric furniture dimensions.
+
+For external generation, put `IMAGE_API_KEY` in the API's local `.env` and restart the API. The default fal adapter uses a 1024 × 768 frame. Review the prompt and explicitly select the checkbox before each **Generate preview**. Only the derived depth control image and prompt are sent to fal. The API stores the captures, scene snapshot, job and result under the local project; reopen the 3D view to resume checking pending jobs. Generated imagery is a design preview, and the calibrated model remains the source for measurements.

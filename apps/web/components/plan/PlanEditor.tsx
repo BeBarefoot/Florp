@@ -477,7 +477,8 @@ export default function PlanEditor({ id }: { id: string }) {
         )}
         {busy && <progress className="fe-progress" />}
         {display !== "3d" && canvas}
-        {display !== "2d" && mpp && <Plan3D model={m} />}
+        {display !== "2d" && mpp && <Plan3D key={m.id} model={m} dirty={dirty} onPlanEdit={edit}
+          savePlan={async () => live.current && await persist(live.current) ? live.current : null} />}
       </main>
       <Inspector
         model={m}

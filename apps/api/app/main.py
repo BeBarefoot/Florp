@@ -27,6 +27,8 @@ from .mask_topology import region_wall_lines
 from .wall_run_normalization import consolidate_wall_runs
 from .evidence_fusion import fuse_evidence
 
+from .models import SceneRevision, SceneRenderJob
+
 Path(settings.storage_path).mkdir(parents=True,exist_ok=True)
 if settings.database_url.startswith('sqlite:///'):
     Path(settings.database_url.removeprefix('sqlite:///')).parent.mkdir(parents=True,exist_ok=True)
@@ -82,7 +84,7 @@ def delete_project(pid:str):
         plans=list(s.exec(select(Blueprint).where(Blueprint.project_id==pid)).all())
         ids=[bp.id for bp in plans]
         for bid in ids:
-            for table in (PlanRevision,WorkspaceRevision,Render,ModelWallCorrection,WallAnnotation,FusionCandidateReview,ExtractionEvaluation,PlanGraphRevision,Layout):
+            for table in (SceneRenderJob,SceneRevision,PlanRevision,WorkspaceRevision,Render,ModelWallCorrection,WallAnnotation,FusionCandidateReview,ExtractionEvaluation,PlanGraphRevision,Layout):
                 for row in s.exec(select(table).where(table.blueprint_id==bid)).all():
                     s.delete(row)
         for bp in plans:s.delete(bp)
@@ -1073,15 +1075,6 @@ def save_layout(bid:str,body:SaveLayout):
 @app.get('/blueprints/{bid}/renders',response_model=list[Render])
 def renders(bid:str):
     with Session(engine) as s:return list(s.exec(select(Render).where(Render.blueprint_id==bid).order_by(Render.created_at.desc())).all())
-class RenderRequest(BaseModel):
-    layout_id:str
-    prompt:str
-    camera:dict
-@app.post('/blueprints/{bid}/renders')
-def request_render(bid:str,body:RenderRequest):
-    # Image generation requires a client-produced depth map; the API will not fabricate one.
-    raise HTTPException(501,'Depth capture and render submission are scheduled for the next milestone; no synthetic render is generated.')
-
 class RestoreCanonicalBody(BaseModel):
     target_revision_id: str
 
@@ -1278,3 +1271,6 @@ def resolve_pending_opening(bid:str, revision_id:str, body:ResolvePendingOpening
 
 from .plan_api import router as plan_router
 app.include_router(plan_router)
+
+from .scene_api import router as scene_router
+app.include_router(scene_router)

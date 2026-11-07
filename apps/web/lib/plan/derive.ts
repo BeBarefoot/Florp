@@ -183,7 +183,6 @@ export function rooms(m: PlanModel): Room[] {
   const pos = nodeMap(m);
   const walls = new Map(m.walls.map((w) => [w.id, w]));
   const t = m.walls.length ? median(m.walls.map((w) => w.thicknessPx)) : 8;
-  const labelled = m.rooms.filter((r) => r.label).map((r) => ({ label: r.label, c: centroid(r.polygon) }));
   const result: Room[] = [];
   for (const cycle of faces(m)) {
     const outline = cycle.map((c) => pos.get(c.node)!);
@@ -197,9 +196,20 @@ export function rooms(m: PlanModel): Room[] {
       wallIds: ids,
       polygon: inner,
       areaPx2: area,
-      label: labelled.find((l) => inside(l.c, inner))?.label ?? null,
+      label: null,
     });
   }
+  const matches = result.map((r) => m.rooms.filter((old) =>
+    old.id === r.id || inside(centroid(old.polygon), r.polygon) || inside(centroid(r.polygon), old.polygon)));
+  result.forEach((r, i) => {
+    const old = matches[i][0];
+    if (old && matches[i].length === 1 && matches.filter((group) => group.includes(old)).length === 1) {
+      Object.assign(r, { label: old.label, roomType: old.roomType, ceilingHeightM: old.ceilingHeightM,
+        needsSemanticReview: old.needsSemanticReview });
+    } else if (matches[i].some((o) => o.label || o.roomType || o.ceilingHeightM || o.needsSemanticReview)) {
+      r.needsSemanticReview = true;
+    }
+  });
   return result.sort(
     (a, b) =>
       Math.min(...a.polygon.map((p) => p.y)) - Math.min(...b.polygon.map((p) => p.y)) ||

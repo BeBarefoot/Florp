@@ -3,7 +3,8 @@ import type { PlanModel } from "../lib/plan/model";
 import { rooms, withDerived, metersPerPixel, wallEndReaches } from "../lib/plan/derive";
 import { addWall, moveNode, setReference, decideOpening } from "../lib/plan/ops";
 import { wallPieces } from "../lib/plan/mesh";
-import { eyeLevelPose } from "../lib/plan/camera";
+import { eyeLevelPose, savedPose, verticalFov } from "../lib/plan/camera";
+import { blocks, promptFor } from "../lib/plan/scene";
 
 function fixture(extra: Partial<PlanModel> = {}): PlanModel {
   const pts = [
@@ -265,35 +266,83 @@ test("outline re-extraction saves pending approval edits first", async ({ page }
   expect(puts[0].openings.find((o) => o.id === "maybe")!.status).toBe("confirmed");
 });
 
-test("interior camera previews a measured room without editing the plan", async ({ page }) => {
+test("saved interior framing and depth match after reopening at a different width", async ({ page }) => {
   const scaled = setReference(fixture(), { x: 100, y: 100 }, { x: 500, y: 100 }, 4);
+  let scene = { revision: 0, planRevision: 1, config: { views: [], objects: [], style: "" } };
+  await page.route("**/blueprints/p/scene", r => {
+    if (r.request().method() === "PUT") scene = {revision: 1, planRevision: 1, config: r.request().postDataJSON().config};
+    return r.fulfill({json:scene});
+  });
+  await page.route("**/blueprints/p/scene/renders", r=>r.fulfill({json:[]}));
+  await page.route("**/blueprints/p/scene/render-settings", r=>r.fulfill({json:{width:1024,height:768,configured:false,model:"test",provider:"fal"}}));
   const { puts } = await setup(page, { model: scaled });
-  await page.locator(".fe-segment button").nth(2).click();
-  const canvas = page.getByTestId("plan-3d").locator("canvas");
-  await expect(canvas).toBeVisible();
-  await page.getByRole("button", { name: "Place camera" }).click();
-  const box = (await canvas.boundingBox())!;
-  const { PerspectiveCamera, Vector3 } = await import("three");
-  const orbit = new PerspectiveCamera(55, box.width / box.height, 0.1, 1000);
-  orbit.position.set(11, 7, 11.5);
-  orbit.lookAt(5, 0, 3.5);
-  orbit.updateMatrixWorld();
-
-  async function clickFloor(x: number, z: number) {
-    const p = new Vector3(x, 0.015, z).project(orbit);
-    await page.mouse.click(box.x + (1 + p.x) * box.width / 2, box.y + (1 - p.y) * box.height / 2);
+  const enter = () => page.locator(".fe-segment button").nth(2).click();
+  await enter();
+  const map = page.getByLabel("Camera and furniture placement plan");
+  async function at(x:number,y:number) {
+    await map.scrollIntoViewIfNeeded();
+    const p=await map.evaluate((el,coords)=>{
+      const p=new DOMPoint(...coords).matrixTransform((el as unknown as SVGSVGElement).getScreenCTM()!);
+      return {x:p.x,y:p.y};
+    },[x,y] as [number,number]);
+    await page.mouse.click(p.x,p.y);
   }
-
-  await clickFloor(3, 3.5);
-  await expect(page.getByText("Click a second point on a room floor to aim.")).toBeVisible();
-  await clickFloor(3, 2.2);
-  await page.getByRole("button", { name: "Preview view" }).click();
-  await expect(page.getByText("Eye-level view of the measured model.")).toBeVisible();
-  await page.getByRole("button", { name: "Back to orbit" }).click();
-  await expect(page.getByText("Camera ready to preview.")).toBeVisible();
+  await page.getByRole("button", {name:"Place camera"}).click();
+  await at(400,180);
+  await at(300,470);
+  await expect(page.getByRole("button",{name:"Back to orbit"})).toBeVisible();
+  await page.getByRole("button",{name:"Place object"}).click();
+  await at(300,390);
+  await page.getByLabel("Furniture",{exact:true}).selectOption("toilet");
+  await page.getByRole("button",{name:"Place object"}).click();
+  await at(700,350);
+  await page.getByRole("button",{name:"Save scene"}).click();
+  await expect(page.getByText("Scene saved.",{exact:true})).toBeVisible();
+  async function depth() {
+    await page.getByRole("button",{name:"Capture view"}).click();
+    const download = page.waitForEvent("download");
+    await page.getByRole("button",{name:"Export render inputs"}).click();
+    const file = await (await download).path();
+    const {readFile} = await import("node:fs/promises");
+    return JSON.parse(await readFile(file,"utf8"));
+  }
+  const before=await depth();
+  expect(before.prompt).toContain("Visible bed: 1.80 × 2.00 m mattress");
+  expect(before.prompt).not.toContain("toilet");
+  await page.setViewportSize({width:950,height:850});
+  await page.reload();
+  await enter();
+  await expect(page.getByRole("button",{name:"Back to orbit"})).toBeVisible();
+  const after=await depth();
+  expect(after.view).toEqual(before.view);
+  expect(after.depth).toEqual(before.depth);
+  expect(after.mask).toEqual(before.mask);
   expect(puts).toHaveLength(0);
 });
 
+test("saved camera converts horizontal FOV, pitch and pixel origin",()=>{
+  const pose=savedPose({position:{x:200,y:300},yaw:90,pitch:-10,horizontalFov:90,eyeHeight:1.6},.01,4/3);
+  expect(pose.position).toEqual([2,1.6,3]);
+  expect(pose.direction[1]).toBeCloseTo(-.173648);
+  expect(Math.hypot(...pose.direction)).toBeCloseTo(1);
+  expect(verticalFov(90,4/3)).toBeCloseTo(73.7398);
+});
+
+test("bed mesh keeps the specified mattress and prompt separates style from geometry",()=>{
+  const position={x:200,y:250};
+  const view={id:"v",name:"Bedroom",position,yaw:0,pitch:-10,horizontalFov:90,eyeHeight:1.6};
+  const parts=blocks({id:"b",kind:"bed",position,rotation:0,width:1.9,depth:2.12,height:.9,
+    mattressWidth:1.8,mattressDepth:2});
+  expect(parts[2].size[0]).toBeCloseTo(1.8);
+  expect(parts[2].size[2]).toBeCloseTo(2);
+  expect(promptFor(view,["Space type: bedroom."],"Oak")).toBe([
+    "Scene facts: Photorealistic interior from the supplied depth view.",
+    "Eye height 1.60 m; horizontal field of view 90 degrees.",
+    "Space type: bedroom.",
+    "Preserve the camera, walls, existing openings, visible object positions and proportions. Do not add architectural openings or reveal objects behind walls.",
+    "Style: Oak",
+  ].join("\n"));
+});
 
 test("eye-level camera keeps metric position and a normalized level direction", () => {
   expect(eyeLevelPose([2, 3], [5, 7], 1.65)).toEqual({

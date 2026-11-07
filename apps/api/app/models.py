@@ -112,3 +112,32 @@ class PlanRevision(SQLModel, table=True):
     revision: int
     model: dict = Field(sa_type=JSON)
     created_at: datetime = Field(default_factory=now)
+
+
+class SceneRevision(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint("blueprint_id", "revision"),)
+    id: str = Field(default_factory=uid, primary_key=True)
+    blueprint_id: str = Field(index=True, foreign_key="blueprint.id")
+    revision: int
+    plan_revision: int
+    config: dict = Field(sa_type=JSON)
+
+
+class SceneRenderJob(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint("blueprint_id", "request_key"),)
+    id: str = Field(default_factory=uid, primary_key=True)
+    blueprint_id: str = Field(index=True, foreign_key="blueprint.id")
+    request_key: str
+    input_hash: str
+    scene_revision: int
+    plan_revision: int
+    view_id: str
+    name: str
+    prompt: str
+    provider_model: str
+    status: str = "submitting"
+    provider_job_id: str = ""
+    status_url: str = ""
+    response_url: str = ""
+    error: str | None = None
+    created_at: datetime = Field(default_factory=now)

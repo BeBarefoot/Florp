@@ -27,12 +27,17 @@ export type Opening = {
   confidence: number;
   status: OpeningStatus;
 };
+export type RoomType = "bedroom" | "bathroom" | "kitchen" | "corridor" | "other";
+export const ROOM_TYPES: RoomType[] = ["bedroom", "bathroom", "kitchen", "corridor", "other"];
 export type Room = {
   id: string;
   wallIds: string[];
   polygon: Pt[];
   areaPx2: number;
   label: string | null;
+  roomType?: RoomType | null;
+  ceilingHeightM?: number | null;
+  needsSemanticReview?: boolean;
 };
 export type Stair = { id: string; layout: "l" | "u"; treads: Pt[][]; riseM: number };
 export type FindingCategory =
@@ -64,6 +69,7 @@ export type PlanModel = {
   openings: Opening[];
   stairs?: Stair[];
   rooms: Room[];
+  roomZones?: Omit<Room, "wallIds" | "areaPx2">[];
   findings: Finding[];
   envelope?: Pt[] | null;
   dismissedFindings: string[];
