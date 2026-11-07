@@ -17,8 +17,9 @@ from pydantic.alias_generators import to_camel
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from . import providers
+from . import providers, comfy
 from .config import settings
+from .depth import control_depth
 from .models import SceneRevision, SceneRenderJob
 from .plan_api import blueprint, get_engine, latest
 from .plan_model import PlanModel, Pt
@@ -132,8 +133,18 @@ def fixture_suggestions(bid: str, plan_revision: int):
             gray = np.array(image.convert("L"))
     except OSError as exc:
         raise HTTPException(404, "The blueprint image is not available.") from exc
+    source = "local-symbol-matcher"
+    if settings.fixture_yolo_weights:
+        from .fixture_weights import detect
+        try:
+            hits = detect(gray, model.scale.meters_per_pixel, settings.fixture_yolo_weights)
+        except (ImportError, ValueError, OSError, RuntimeError) as exc:
+            raise HTTPException(503, "Fixture detector unavailable. Install the pretrained-yolo extra and configure trusted local FIXTURE_YOLO_WEIGHTS.") from exc
+        source = "local-yolo-weights"
+    else:
+        hits = for_plan(gray, model)
     proposals = []
-    for h in for_plan(gray, model):
+    for h in hits:
         # The ID is scoped to the blueprint by the scene record. It stays
         # stable across identical scans so accepted or dismissed items stay hidden.
         token = f"{h.kind}:{round(h.x/4)}:{round(h.y/4)}"
@@ -144,14 +155,15 @@ def fixture_suggestions(bid: str, plan_revision: int):
                            mattress_width=round(h.width*.94, 2) if h.kind == "bed" else None,
                            mattress_depth=round(h.depth*.93, 2) if h.kind == "bed" else None)
         proposals.append(item.model_dump(by_alias=True))
-    return {"planRevision": plan_revision, "suggestions": proposals}
+    return {"planRevision": plan_revision, "suggestions": proposals, "source": source,
+            "orientationNeedsReview": bool(settings.fixture_yolo_weights)}
 
 
 @router.get("/scene/render-settings")
 def render_settings(bid: str):
     with Session(get_engine()) as s:
         blueprint(s, bid)
-    return {"configured": bool(settings.image_api_key), "provider": "fal", "model": settings.image_model,
+    return {**comfy.render_config(),
             "width": providers.FRAME_WIDTH, "height": providers.FRAME_HEIGHT}
 
 
@@ -222,29 +234,27 @@ async def submit(bid: str, request: Request):
                        SceneRevision.revision == body.scene_revision)).first()
         if not scene or not any(v["id"] == body.view_id for v in scene.config["views"]):
             raise HTTPException(422, "Save this camera view before rendering")
-        if not settings.image_api_key:
-            raise HTTPException(503, "Set IMAGE_API_KEY in the API environment to enable generation")
+        config = comfy.render_config()
+        if not config['configured']:
+            key = 'COMFY_API_KEY' if config['provider'] == 'comfy' else 'IMAGE_API_KEY'
+            raise HTTPException(503, f"Set {key} in the API environment to enable generation")
         raw_depth, rgb = png(body.depth)
         mask, _ = png(body.mask)
         preview, _ = png(body.preview)
-        mm = rgb.astype(np.uint32) @ np.array([65536, 256, 1], dtype=np.uint32)
-        hit = mm > 0
-        if not hit.any() or mm.max() > 80000:
-            raise HTTPException(422, "No valid scene depth was captured")
-        # Near is bright; far and empty pixels are dark. Keep the metric input too.
-        near, far = int(mm[hit].min()), int(mm[hit].max())
-        normalized = np.zeros(mm.shape, np.uint8)
-        normalized[hit] = np.rint(255 * (far - mm[hit]) / max(1, far - near)).astype(np.uint8)
+        try:
+            normalized, (near, far) = control_depth(rgb)
+        except ValueError as exc:
+            raise HTTPException(422, "No valid scene depth was captured") from exc
         control = io.BytesIO()
         Image.fromarray(normalized).save(control, format="PNG")
         job = SceneRenderJob(blueprint_id=bid, request_key=body.request_key, input_hash=fingerprint,
                              scene_revision=scene.revision, plan_revision=scene.plan_revision,
                              view_id=body.view_id, name=body.name, prompt=body.prompt,
-                             provider_model=settings.image_model)
+                             provider_model=config['model'])
         manifest = {"scene": scene.config, "depthEncoding": "RGB24 view-space millimetres; zero is background",
                     "maskEncoding": "RGB24 IDs; 1 structural details, 2.. room floors, 1000.. scene objects, 2000.. walls",
                     "depthRangeMm": [near, far], "frame": [providers.FRAME_WIDTH, providers.FRAME_HEIGHT],
-                    "provider": "fal", **public(job)}
+                    "provider": config['provider'], **public(job)}
         s.add(job)
         try:
             s.commit()
@@ -263,7 +273,10 @@ async def submit(bid: str, request: Request):
                            ("control.png", control.getvalue())):
             (folder / name).write_bytes(data)
         (folder / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-        result = await providers.generate_image(control.getvalue(), body.prompt, model=manifest["model"])
+        if manifest['provider'] == 'comfy':
+            result = await comfy.generate(control.getvalue(), body.prompt, request_key=job_id)
+        else:
+            result = await providers.generate_image(control.getvalue(), body.prompt, model=manifest["model"])
     except Exception as exc:
         # Submission may have reached the provider even when its response was lost.
         # Never automatically resubmit a potentially billable request.
@@ -304,7 +317,10 @@ async def poll(bid: str, job_id: str):
             j.status, j.error = "failed", "Render timed out. Check your provider dashboard before retrying."
         elif j.status in ("queued", "running"):
             try:
-                status, image = await providers.poll_image(j.status_url, j.response_url)
+                if j.provider_model.startswith('comfy:'):
+                    status, image = await comfy.poll(j.status_url)
+                else:
+                    status, image = await providers.poll_image(j.status_url, j.response_url)
                 if image is not None:
                     # Atomic replacement also handles two browser tabs polling at once.
                     import tempfile

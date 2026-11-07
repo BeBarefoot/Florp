@@ -48,6 +48,7 @@ export function promptFor(view: View, facts: string[], style: string) {
     `Eye height ${view.eyeHeight.toFixed(2)} m; horizontal field of view ${view.horizontalFov} degrees.`,
     ...facts,
     "Preserve the camera, walls, existing openings, visible object positions and proportions. Do not add architectural openings or reveal objects behind walls.",
+    "Apply each requested finish only to the named visible room or object. Do not bring an out-of-view room or fixture into the image to satisfy the design request.",
     `Style: ${style.trim() || "Warm natural finishes, soft daylight, realistic materials."}`,
   ].join("\n");
 }

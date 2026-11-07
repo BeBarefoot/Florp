@@ -20,3 +20,67 @@ GitHub: [BeBarefoot/Florp](https://github.com/BeBarefoot/Florp). Use this reposi
 - The hosted adapter is fal's depth-conditioned FLUX endpoint. If using fal credits, make an API key in the [fal dashboard](https://fal.ai/dashboard/keys) and set `IMAGE_API_KEY` in the backend's local `.env`. Never commit the value. fal's [research grant](https://fal.ai/grants) is an application, not a guaranteed free tier.
 - For zero provider fees, try [ComfyUI Depth ControlNet](https://docs.comfy.org/tutorials/controlnet/depth-controlnet) locally with compatible model weights. Florp's export contains packed RGB24 millimetres, not a model-ready grayscale image; from `apps/api`, run `uv run python scripts/depth_for_comfy.py /path/to/florp-render-inputs.json control.png`. Use `control.png` as the depth input in ComfyUI (skip its depth-estimation step). A local adapter is a follow-up, not a replacement key for fal.
 - Useful next task: “Read AGENTS.md and docs/codex-handoff.md. Add a no-key local depth adapter or local workflow export. Preserve camera geometry and keep the existing hosted path optional. Mock paid calls in tests.”
+
+## Local depth workflow and photo normalization
+
+Export render inputs from the camera view, then from `apps/api` run:
+
+```bash
+uv run python scripts/depth_for_comfy.py /path/to/florp-render-inputs.json /path/to/new-bundle --bundle
+```
+
+The bundle includes grayscale `control.png`, original metric depth, preview,
+object-ID mask, prompt and a manifest preserving camera and plan revision.
+Load control directly into a compatible local ComfyUI Depth ControlNet workflow,
+skipping depth estimation. Keep the captured dimensions and framing. Model
+weights and a ComfyUI installation are separate prerequisites; this export does
+not submit a job or contact a provider. Hosted rendering remains optional.
+
+Fixture matching now normalizes slow paper illumination before stroke extraction.
+Synthetic regression checks cover a shadowed, faint, blurred JPEG symbol and
+blank shaded paper. This is not measured recall on real photographs, nor perspective
+rectification: calibrate the source and review each suggestion individually.
+
+## Generate a design from a camera view
+
+In the 3D image section: place and aim a camera, enter a **Design prompt**, click
+**Capture view**, check the provider consent box, then **Generate preview**.
+The app saves the scene, submits the depth and prompt, polls the job and displays
+the result beside the measured capture. Each variant retains its camera/plan
+revision. Style text can name individual visible rooms and fixtures, for example
+“warm brown bedroom, black bathroom tiles and a gold toilet”. A bathroom behind
+a wall needs its own camera; prompts do not reveal hidden rooms or edit geometry.
+Image models can still deviate from geometry; inspect the overlay.
+
+Set a replacement `COMFY_API_KEY` securely on the API server and restart it.
+`IMAGE_PROVIDER=auto` prefers Comfy Cloud when its key exists; `comfy` or `fal`
+explicitly selects a provider. The optional fal path still uses `IMAGE_API_KEY`.
+Comfy Cloud requires an active subscription and credits. Keys stay on the server.
+No generation is submitted without the existing in-app consent checkbox.
+
+The adapter uses [Comfy API v2](https://docs.comfy.org/api-reference/v2/overview)
+and the core FLUX Depth LoRA graph from
+[Comfy's official template](https://github.com/Comfy-Org/workflow_templates/blob/main/templates/flux_depth_lora_example.json),
+with depth estimation and resizing omitted. The 1024×768 captured metric depth
+is normalized locally and uploaded as an asset. No local GPU, model downloads
+or separate ComfyUI installation is needed for this cloud path. Model filenames
+are configurable via `COMFY_UNET`, `COMFY_DEPTH_LORA`, `COMFY_CLIP`, `COMFY_T5`,
+and `COMFY_VAE`; defaults are in `.env.example` and require matching models on
+Comfy Cloud. Rejected workflows give a configuration error. The integration is
+tested with mocked uploads, jobs, downloads and in-app generation; live account
+model availability and visual quality require a separately authorized live test.
+
+Allow HTTPS to `cloud.comfy.org` and the signed image-storage destination returned
+by its asset-content endpoint. Authentication is sent only to the Cloud API;
+downloads from signed storage do not receive the API key. Submission is not retried
+automatically after an uncertain response: check the Comfy dashboard first.
+
+## Fixture weights and simpler scene editing
+
+See `docs/FIXTURE_WEIGHTS.md` for the optional trusted local YOLO adapter and
+published model/license research. FIXTURE_YOLO_WEIGHTS selects it; the default
+remains local symbol matching. Predictions require individual review and manual
+orientation checks. An object list provides selection/removal even for obscured
+objects, with undo. The design prompt is visible before camera placement;
+Generate preview now captures automatically after provider consent. No live
+billable generation or checkpoint accuracy benchmark was performed for this work.

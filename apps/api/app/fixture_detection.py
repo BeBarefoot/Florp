@@ -20,7 +20,7 @@ SIZES = {
     "bathtub": [(w, d) for w in (.57, .64, .72, .8) for d in (1.45, 1.62, 1.8, 1.9, 1.96, 2.04)],
     "shower": [(w, d) for w in (.78, .9, 1.02, 1.14) for d in (.78, .9, 1.02, 1.14)],
 }
-HEIGHT = {"bed": .9, "wardrobe": 2.2, "toilet": .8, "bathtub": .56, "shower": 2}
+HEIGHT = {"bed": .9, "wardrobe": 2.2, "toilet": .8, "bathtub": .56, "shower": 2, "vanity": .86}
 MIN_SCORE = {"bed": .32, "wardrobe": .34, "toilet": .36, "bathtub": .29, "shower": .47}
 
 
@@ -160,6 +160,11 @@ def detect_fixtures(gray, mpp, obstacle=None, allowed=None):
         return []
     im = cv2.resize(gray, None, fx=step, fy=step, interpolation=cv2.INTER_AREA if step < 1 else cv2.INTER_CUBIC)
     f = im.astype(np.float32)
+    # Normalize slow paper illumination before measuring drafting strokes.
+    # This keeps a shadowed/low-contrast symbol comparable to a clean scan,
+    # without warping the calibrated coordinates or changing geometry.
+    paper = cv2.GaussianBlur(f, (0, 0), max(8, ppm * .25))
+    f = np.clip(f * 220 / np.maximum(paper, 32), 0, 255)
     stroke = np.maximum(cv2.GaussianBlur(f, (0,0), 2.4) - f, 0)
     stroke = cv2.GaussianBlur(np.minimum(stroke, 32), (0,0), .7)
     if stroke.max() < 2:
