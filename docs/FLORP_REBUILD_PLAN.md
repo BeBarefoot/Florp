@@ -1,3 +1,5 @@
+> Historical implementation plan. The current implementation and remaining release gates are in [Architecture](ARCHITECTURE.md) and [Production POC plan](PRODUCTION_POC_PLAN.md), audited 7 November 2026.
+
 # Florp rebuild implementation plan
 
 Baseline: main `34adf6de0a11f8184b94edd85757dfaa24801288` (2026-10-28).
