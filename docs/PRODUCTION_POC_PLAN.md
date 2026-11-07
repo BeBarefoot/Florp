@@ -187,3 +187,49 @@ A–F artifacts and the full user journey are independently reviewed.
 For each gate, retain: owner, commit/model/config, date, dataset split, command/device,
 result artifact, failures, reviewer and decision. Current decision: **not production
 ready**; B–F evidence is incomplete. No delivery date or passed gate is implied by this plan.
+
+## Measurement and decision gaps to close before benchmarking
+
+The targets above are not a complete scoring specification. Before freezing data,
+write down wall matching distance/angle/overlap tolerances, whether scores are
+length-weighted, one-to-one opening matching rules and metric conversions. Report
+unmatched, duplicate and wrong-host detections separately. Room-count agreement
+alone can conceal wrong boundaries: also report matched per-room IoU, false/missing
+faces and junction connectivity. Agree an IoU release threshold with the architectural
+reviewer before evaluating the holdout. Never silently infer metres on uncalibrated plans.
+
+Record both uncorrected results and corrected results; start the correction timer
+at the first visible result and include calibration/review time. Report timeouts
+as failures. Report cohort results, total counts and uncertainty intervals; the
+initial 20 held-out plans are a pilot sample, not proof of broad generalization.
+A second engineer owns reproducibility and a separate reviewer owns ground truth.
+
+No verified field evaluation or user study can be replaced by synthetic fixtures.
+A gate failure must produce a written corrective decision and a fresh, untouched
+holdout before making a new general accuracy claim. Distinguish validation edits
+from changes to the production acceptance contract.
+
+## Autonomous engine improvement phase
+
+No user input is needed for the following bounded work, starting after this plan
+is merged. Keep each behavior change backed by a failing regression and run CI.
+
+1. Floorplan → 3D: add deterministic room/metric parity cases across Python derivation
+   and TypeScript geometry, including unequal walls, T partitions and edits. Compare
+   source polygons/areas and metric dimensions; reject nonfinite or invalid geometry.
+2. Room adjustments: test label/type/ceiling behavior across move, split and merge,
+   ensuring ambiguous inheritance requests review rather than silently reusing semantics.
+3. Item discovery: test optional detector boxes against source bounds, explicit outline,
+   stairs and supported classes; ensure uncertain detections never mutate architecture.
+   Fix demonstrated contextual filtering gaps without claiming improved model recall.
+4. Generation: test that auto-capture includes visibility facts from the actual captured
+   frame, rather than a stale or absent capture; preserve consent and idempotency behavior.
+5. Run focused regressions, full backend/browser suites and CI, document results and merge.
+
+Inputs needed later for real-world model selection: consented representative plans
+covering the intended drafting/photo styles, at least one independently known dimension
+per plan, reviewed wall/opening/room and fixture truth (including absences), and intended
+model-license/commercial-use constraints. Do not request uploads to perform the synthetic
+phase. Before a paid live generation evaluation, obtain explicit authorization for the
+provider and spending cap; no secret values should be sent in chat. Do not download or
+activate arbitrary checkpoints merely to increase a test count.
