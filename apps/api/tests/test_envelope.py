@@ -120,3 +120,14 @@ def test_band_crop_does_not_follow_disconnected_garden_context():
     polygon, region = building_envelope(mask, 10)
     assert polygon and region[300, 256] and region[100, 1045]
     assert not region[25, 50] and not region[200, 1097]
+
+
+def test_automatic_envelope_does_not_cut_off_connected_wall_extension():
+    mask = np.zeros((500, 800), np.uint8)
+    cv2.rectangle(mask, (200, 100), (550, 350), 255, 8)
+    # An attached wall outside the dominant horizontal bands is building evidence.
+    cv2.line(mask, (550, 220), (740, 220), 255, 8)
+    polygon, region = building_envelope(mask, 8)
+    assert region[220, 730]
+    if polygon is None:
+        assert region.all()
