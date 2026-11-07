@@ -253,9 +253,12 @@ def suppress(hits, mpp):
         return (a[2]-a[0])*(a[3]-a[1])
     found = []
     counts = {}
-    priority = {"bed":.14,"wardrobe":.09,"toilet":.01,"bathtub":.01,"shower":0}
-    for h in sorted(hits,key=lambda h: -(h.score+priority[h.kind])):
-        if counts.get(h.kind,0) >= {"bed":5,"wardrobe":6,"toilet":5,"bathtub":3,"shower":4}[h.kind]:
+    priority = {"bed":.14,"wardrobe":.09,"toilet":.14,"bathtub":.01,"shower":0}
+    def rank(h):
+        extent = .12*(h.depth-1.45) if h.kind == "bathtub" else 0
+        return h.score+priority[h.kind]+extent
+    for h in sorted(hits,key=lambda h: -rank(h)):
+        if counts.get(h.kind,0) >= {"bed":6,"wardrobe":6,"toilet":6,"bathtub":5,"shower":4}[h.kind]:
             continue
         b = box(h)
         if any(overlap(b,a) / min(area(a),area(b)) > .34 for _,a in found):
