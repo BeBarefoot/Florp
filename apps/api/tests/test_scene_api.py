@@ -1,18 +1,26 @@
 import base64
 import io
+import pytest
 
 from PIL import Image
 
-from app import providers
+from app import providers, comfy
 from app.config import settings
 from test_plan_api import client, plan, reference  # noqa: F401
 
 
-def test_scene_render_is_revisioned_and_does_not_resubmit(client, monkeypatch, tmp_path):
+@pytest.mark.parametrize('provider', ['fal', 'comfy'])
+def test_scene_render_is_revisioned_and_does_not_resubmit(client, monkeypatch, tmp_path, provider):
     c, bid = client
     path = f"/blueprints/{bid}"
     monkeypatch.setattr(settings, "image_api_key", "mock")
+    monkeypatch.setattr(settings, 'comfy_api_key', 'mock')
+    monkeypatch.setattr(settings, 'image_provider', provider)
     monkeypatch.setattr(settings, "storage_path", str(tmp_path))
+    assert c.get('/health').json()['image_configured'] is True
+    render_settings = c.get(path + '/scene/render-settings').json()
+    assert render_settings['provider'] == provider
+    assert render_settings['configured'] is True
     calls = []
 
     async def generate(depth, prompt, *, model):
@@ -23,6 +31,10 @@ def test_scene_render_is_revisioned_and_does_not_resubmit(client, monkeypatch, t
         return "mock-job", "https://queue.fal.run/status", "https://queue.fal.run/result"
 
     monkeypatch.setattr(providers, "generate_image", generate)
+    async def generate_comfy(depth, prompt, *, request_key):
+        assert request_key
+        return await generate(depth, prompt, model=comfy.MODEL)
+    monkeypatch.setattr(comfy, 'generate', generate_comfy)
     initial = c.put(path + "/plan", json={"expectedRevision": 0, "model": plan(scale=reference())})
     assert initial.status_code == 200, initial.text
     config = {"views": [{"id": "bedroom", "name": "Bedroom", "position": {"x": 160, "y": 200},
@@ -57,10 +69,12 @@ def test_scene_render_is_revisioned_and_does_not_resubmit(client, monkeypatch, t
         return "complete", buf.getvalue()
 
     monkeypatch.setattr(providers, "poll_image", poll)
+    monkeypatch.setattr(comfy, 'poll', poll)
     url = path + "/scene/renders/" + job["id"]
     assert c.get(url).json()["status"] == "complete"
     assert c.get(url + "/result.png").content == buf.getvalue()
     assert c.get(url + "/manifest.json").json()["sceneRevision"] == 1
+    assert c.get(url + '/manifest.json').json()['provider'] == provider
 
 
 def test_room_context_survives_reextraction(client, monkeypatch):
@@ -120,3 +134,23 @@ def test_fixture_review_scan_does_not_edit_scene(client, monkeypatch):
     config = {"dismissedFixtureIds": [proposal["id"]]}
     assert c.put(path + "/scene", json={"expectedRevision": 0, "planRevision": 1, "config": config}).status_code == 200
     assert c.get(path + "/scene").json()["config"]["dismissedFixtureIds"] == [proposal["id"]]
+
+
+def test_optional_fixture_weights_stay_review_only(client, monkeypatch):
+    from app import fixture_weights
+    from app.fixture_detection import Hit
+    c, bid = client
+    path = f"/blueprints/{bid}"
+    assert c.put(path + '/plan', json={'expectedRevision': 0, 'model': plan(scale=reference())}).status_code == 200
+    monkeypatch.setattr(settings, 'fixture_yolo_weights', '/trusted/model.pt')
+    monkeypatch.setattr(fixture_weights, 'detect', lambda gray, mpp, path: [Hit('vanity', .8, 250, 250, .8, .5, 0)])
+    response = c.get(path + '/scene/fixture-suggestions', params={'plan_revision': 1})
+    assert response.status_code == 200
+    assert response.json()['source'] == 'local-yolo-weights'
+    assert response.json()['orientationNeedsReview']
+    assert response.json()['suggestions'][0]['kind'] == 'vanity'
+    assert c.get(path + '/scene').json()['config']['objects'] == []
+    def missing(*args):
+        raise ValueError('missing')
+    monkeypatch.setattr(fixture_weights, 'detect', missing)
+    assert c.get(path + '/scene/fixture-suggestions', params={'plan_revision': 1}).status_code == 503

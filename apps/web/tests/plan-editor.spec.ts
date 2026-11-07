@@ -328,6 +328,30 @@ test("saved interior framing and depth match after reopening at a different widt
   expect(after.depth).toEqual(before.depth);
   expect(after.mask).toEqual(before.mask);
   expect(puts).toHaveLength(0);
+  // Exercise the in-app design flow using mocked Comfy Cloud job responses.
+  await page.route("**/blueprints/p/scene/render-settings", r=>r.fulfill({json:{width:1024,height:768,configured:true,model:"comfy:flux-depth-lora",provider:"comfy"}}));
+  let submitted: Record<string, any> | null = null;
+  const job = {id:"comfy-test",viewId:after.view.id,name:"Warm bedroom",prompt:"",model:"comfy:flux-depth-lora",sceneRevision:1,planRevision:1,status:"queued",error:null};
+  await page.route("**/blueprints/p/renders", r=>{
+    submitted=r.request().postDataJSON();
+    return r.fulfill({json:{...job,prompt:submitted!.prompt}});
+  });
+  await page.route("**/blueprints/p/scene/renders/comfy-test", r=>r.fulfill({json:{...job,status:"complete"}}));
+  await page.route("**/blueprints/p/scene/renders/comfy-test/*.png", r=>r.fulfill({contentType:"image/png",body:Buffer.from(after.preview.split(",")[1],"base64")}));
+  await page.reload();
+  await enter();
+  const design="Create a warm brown bedroom with black bathroom tiles and a gold toilet";
+  await page.getByLabel("Design prompt",{exact:true}).fill(design);
+  // Generation captures automatically; a separate Capture click is unnecessary.
+  const consent=page.getByRole("checkbox",{name:/Comfy Cloud/});
+  await expect(page.getByRole("button",{name:"Generate preview"})).toBeDisabled();
+  await consent.check();
+  await page.getByRole("button",{name:"Generate preview"}).click();
+  await expect(page.getByAltText("Generated design visualisation")).toBeVisible();
+  expect(submitted).toMatchObject({viewId:after.view.id,confirmed:true,depth:after.depth.split(",")[1]});
+  expect(submitted!.prompt).toContain(design);
+  expect(submitted!.prompt).toContain("Do not bring an out-of-view room");
+  expect(puts).toHaveLength(0);
 });
 
 test("saved camera converts horizontal FOV, pitch and pixel origin",()=>{
@@ -350,6 +374,7 @@ test("bed mesh keeps the specified mattress and prompt separates style from geom
     "Eye height 1.60 m; horizontal field of view 90 degrees.",
     "Space type: bedroom.",
     "Preserve the camera, walls, existing openings, visible object positions and proportions. Do not add architectural openings or reveal objects behind walls.",
+    "Apply each requested finish only to the named visible room or object. Do not bring an out-of-view room or fixture into the image to satisfy the design request.",
     "Style: Oak",
   ].join("\n"));
 });
@@ -393,6 +418,12 @@ test("fixture scan requires an individual insert or dismiss before saving", asyn
   await expect(page.getByText("Scene saved.", { exact: true })).toBeVisible();
   expect(scene.config.objects.map(o => o.id)).toEqual(["fixture-bed"]);
   expect(scene.config.dismissedFixtureIds).toEqual(["fixture-toilet"]);
+  const objects=page.getByRole("region",{name:"Objects in this scene"});
+  await expect(objects.getByRole("button",{name:"1. bed"})).toBeVisible();
+  await objects.getByRole("button",{name:"Remove bed 1"}).click();
+  await expect(objects.getByText("No objects yet.",{exact:false})).toBeVisible();
+  await page.getByRole("button",{name:"Undo scene"}).click();
+  await expect(objects.getByRole("button",{name:"1. bed"})).toBeVisible();
   await scan.click();
   await expect(page.getByText("Review the outlined suggestions. Nothing has been inserted.")).toBeVisible();
   await expect(outlines).toHaveCount(0);

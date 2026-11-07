@@ -20,3 +20,19 @@ def test_symbol_scan_recognizes_a_rotated_toilet_and_blocks_stair_region():
     assert not any(h.kind == "toilet" and abs(h.x - 80) < 10 and abs(h.y - 95) < 10
                    for h in detect_fixtures(im, 1 / 64, obstacle=blocked))
     assert not detect_fixtures(np.full_like(im, 220), 1 / 64)
+
+
+def test_shadowed_blurred_photo_preserves_toilet_location_and_rejects_blank_paper():
+    # Synthetic photo: uneven exposure, faint ink, optical blur and JPEG loss.
+    y, x = np.indices((165, 220))
+    paper = (35 + 110 * x / 220 + 8 * np.sin(y / 50)).astype(np.float32)
+    glyph = cv2.rotate(stencil("toilet", 29, 40), cv2.ROTATE_90_CLOCKWISE)
+    photo = paper.copy()
+    photo[80:109, 60:100] *= 1 - glyph.astype(np.float32) / 255 * .15
+    photo = cv2.GaussianBlur(photo, (0, 0), .6).astype(np.uint8)
+    _, encoded = cv2.imencode('.jpg', photo, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    photo = cv2.imdecode(encoded, cv2.IMREAD_GRAYSCALE)
+    hits = detect_fixtures(photo, 1 / 64)
+    assert any(h.kind == 'toilet' and abs(h.x - 80) < 4 and abs(h.y - 95) < 4
+               and h.rotation == 90 for h in hits)
+    assert not detect_fixtures(paper.astype(np.uint8), 1 / 64)

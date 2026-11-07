@@ -66,7 +66,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     let cancelled=false;
     request<Saved>(path+"/scene").then(r=>{if(!cancelled){setSaved(r);setScene(r.config);setViewId(r.config.views[0]?.id??"");setPreview(!!r.config.views.length);}})
       .catch(e=>{if(!cancelled)setMessage(String(e));});
-    request<Frame>(path+"/scene/render-settings").then(r=>{if(!cancelled)setFrame(r);}).catch(()=>{});
+    request<Frame>(path+"/scene/render-settings").then(r=>{if(!cancelled)setFrame(r);}).catch(e=>setMessage(`Image generation settings could not be loaded: ${String(e)}`));
     request<Job[]>(path+"/scene/renders").then(r=>{if(!cancelled)setJobs(r);}).catch(e=>{if(!cancelled)setMessage(String(e));});
     return ()=>{cancelled=true;};
   },[path]);
@@ -97,9 +97,9 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     setBusy(true);
     setMessage("Looking for furniture and bathroom fixtures…");
     try {
-      const result=await request<{planRevision:number;suggestions:Item[]}>(path+"/scene/fixture-suggestions?plan_revision="+m.revision);
+      const result=await request<{planRevision:number;suggestions:Item[];orientationNeedsReview?:boolean}>(path+"/scene/fixture-suggestions?plan_revision="+m.revision);
       setFixtureScan(result);setFixtureId("");setMode(null);setShowBlueprint(true);
-      setMessage(result.suggestions.length?"Review the outlined suggestions. Nothing has been inserted.":
+      setMessage(result.orientationNeedsReview?"Review each detected fixture before inserting. Check its size and front/back rotation.":result.suggestions.length?"Review the outlined suggestions. Nothing has been inserted.":
         "No fixture symbols could be identified reliably. You can still place objects by hand.");
     }catch(e){setMessage(String(e));}finally{setBusy(false);}
   }
@@ -266,15 +266,18 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     catch(e){setMessage(`Capture failed: ${String(e)}`);}
   }
   async function generate(){
-    if(!shot||!view||!authorized||dirty||!frame.configured)return;
+    if(!view||!authorized||dirty||!frame.configured||busy)return;
+    if(!validCamera(view.position)||!captureFn.current){setMessage("Place and aim a camera inside a room before generating.");return;}
     setBusy(true);setMessage("");
     try {
+      const currentShot=shot??captureFn.current(view,scale,frame,fingerprint);
+      setCapture(currentShot);setPreview(true);
       const r=await persistScene(m.revision);
-      const signature=JSON.stringify([shot.fingerprint,prompt,variant,r.revision]);
+      const signature=JSON.stringify([currentShot.fingerprint,prompt,variant,r.revision]);
       if(submitRetry.current?.signature!==signature)submitRetry.current={signature,key:crypto.randomUUID()};
       const job=await request<Job>(path+"/renders",json("POST",{requestKey:submitRetry.current.key,
         sceneRevision:r.revision,viewId:view.id,name:variant.trim()||view.name,prompt,confirmed:true,
-        depth:shot.depth.split(",")[1],mask:shot.mask.split(",")[1],preview:shot.preview.split(",")[1]}));
+        depth:currentShot.depth.split(",")[1],mask:currentShot.mask.split(",")[1],preview:currentShot.preview.split(",")[1]}));
       submitRetry.current=null;setAuthorized(false);
       setJobs(all=>[job,...all.filter(j=>j.id!==job.id)]);setSelectedJob(job.id);
     }catch(e){setMessage(String(e));}
@@ -401,6 +404,16 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
             change({...scene,closedDoorIds:e.target.checked?[...ids,o.id]:ids.filter(id=>id!==o.id)});
           }}/> Door {i+1} closed</label>)}</div>
       </details>}
+      <section aria-label="Objects in this scene" className="scene-object-list">
+        <h3>Objects in this scene ({scene.objects.length})</h3>
+        <p>Choose furniture above, then click the plan to add it. Select any object here to move or resize it. Undo restores a removed object.</p>
+        {!scene.objects.length&&<p>No objects yet. Add furniture or find fixtures on the original plan.</p>}
+        {scene.objects.map((o,i)=><div className="scene-actions" key={o.id}>
+          <button aria-pressed={itemId===o.id} onClick={()=>{setItemId(o.id);setRoomId("");setMode(null);}}>{i+1}. {o.kind}</button>
+          <span>{o.width.toFixed(2)} × {o.depth.toFixed(2)} m</span>
+          <button aria-label={`Remove ${o.kind} ${i+1}`} onClick={()=>{change({...scene,objects:scene.objects.filter(x=>x.id!==o.id)});if(itemId===o.id)setItemId("");}}>Remove</button>
+        </div>)}
+      </section>
       {item&&<div className="scene-actions" aria-label="Selected furniture">
         <strong>{item.kind}</strong>
         {(["width","depth","height",...(item.kind==="bed"?["mattressWidth","mattressDepth"]:[])] as const).map(raw=>{
@@ -424,9 +437,12 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
         {room.needsSemanticReview&&<strong>Review room labels after a split or merge.</strong>}
         {m.roomZones?.some(r=>r.id===room.id)&&<button onClick={()=>onPlanEdit?.({...m,roomZones:m.roomZones?.filter(r=>r.id!==room.id)})}>Remove room zone</button>}
       </div>}
-      {view&&<section className="scene-render">
-        <label>Style <input maxLength={1200} value={scene.style} onChange={e=>change({...scene,style:e.target.value},false)} placeholder="Warm oak, linen and soft daylight"/></label>
-        <button disabled={!ready||!validCamera(view.position)} onClick={takeCapture}>Capture view</button>
+      <section className="scene-render" aria-label="Create a design image">
+        <h3>Create a design image</h3>
+        {!view&&<p>Place a camera on the plan and click where it should look. Then enter your design below.</p>}
+        <label className="scene-design-prompt">Design prompt <textarea rows={4} maxLength={1200} value={scene.style} onChange={e=>change({...scene,style:e.target.value},false)} placeholder="Create a warm brown bedroom, with black bathroom tiles and a gold toilet."/></label>
+        <p>Describe materials, colours and lighting for this camera view. Only spaces and objects visible in the capture can be designed.</p>
+        <button disabled={!view||!ready||!validCamera(view.position)} onClick={takeCapture}>Capture view</button>
         {shot&&<>
           {Object.entries(shot.coverage).some(([id,n])=>Number(id)>=2000&&n>frame.width*frame.height*.65)&&<p>A wall fills most of the frame. Try backing up, turning, or widening the view.</p>}
           <p>{facts.length?facts.join(" "):"No labelled spaces or furniture are visible in this view."}</p>
@@ -434,12 +450,12 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
           <details><summary>Prompt sent to the renderer</summary><pre>{prompt}</pre></details>
           <button onClick={exportInputs}>Export render inputs</button>
           <label>Variant name <input maxLength={80} value={variant} onChange={e=>setVariant(e.target.value)}/></label>
-          {frame.configured?<label><input type="checkbox" checked={authorized} onChange={e=>setAuthorized(e.target.checked)}/>
-            Send this view’s depth image and prompt to fal for a billable render</label>:<p>Set IMAGE_API_KEY on the API server to enable generation. Capture and export work without a key.</p>}
-          {dirty&&<p>Save the floor plan before generating.</p>}
-          <button disabled={!authorized||!frame.configured||dirty} onClick={()=>void generate()}>Generate preview</button>
         </>}
-      </section>}
+          {frame.configured?<label><input type="checkbox" checked={authorized} onChange={e=>setAuthorized(e.target.checked)}/>
+            Send this view’s depth image and prompt to {frame.provider==="comfy"?"Comfy Cloud":"fal"} for a billable render</label>:<p>{frame.provider==="comfy"?"Set COMFY_API_KEY":"Set COMFY_API_KEY for Comfy Cloud, or IMAGE_API_KEY for fal"} on the API server to enable generation. Capture and export work without a key.</p>}
+          {dirty&&<p>Save the floor plan before generating.</p>}
+          <button disabled={busy||!view||!ready||!authorized||!frame.configured||dirty||!validCamera(view.position)} onClick={()=>void generate()}>Generate preview</button>
+      </section>
       {!!viewJobs.length&&<section className="scene-render">
         <label>Render variants <select value={job?.id} onChange={e=>setSelectedJob(e.target.value)}>
           {viewJobs.map(j=><option value={j.id} key={j.id}>{j.name} · {j.status}</option>)}</select></label>

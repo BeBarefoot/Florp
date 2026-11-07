@@ -7,9 +7,18 @@ class Settings(BaseSettings):
     llm_model: str = 'gpt-4.1-mini'
     llm_base_url: str = 'https://api.openai.com/v1'
     image_api_key: str = ''
+    # Auto prefers Comfy Cloud when its key is configured; fal stays optional.
+    image_provider: str = 'auto'
+    comfy_api_key: str = ''
+    comfy_unet: str = 'flux1-dev-fp8.safetensors'
+    comfy_depth_lora: str = 'flux1-depth-dev-lora.safetensors'
+    comfy_clip: str = 'clip_l.safetensors'
+    comfy_t5: str = 't5xxl_fp16.safetensors'
+    comfy_vae: str = 'ae.safetensors'
     image_model: str = 'fal-ai/flux-control-lora-depth'
     fal_api_base: str = 'https://queue.fal.run'
     pretrained_yolo_weights: str = ''
+    fixture_yolo_weights: str = ''
     inference_border_enabled: bool = True
     inference_border_fraction: float = 0.12
     inference_border_min_px: int = 32

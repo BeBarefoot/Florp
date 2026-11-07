@@ -66,7 +66,9 @@ def local_model_status():
     }
 
 @app.get('/health')
-def health():return {'ok':True,'vision_configured':bool(settings.llm_api_key),'image_configured':bool(settings.image_api_key)}
+def health():
+    from .comfy import render_config
+    return {'ok':True,'vision_configured':bool(settings.llm_api_key),'image_configured':render_config()['configured']}
 class CreateProject(BaseModel): title:str
 @app.post('/projects',response_model=Project)
 def create_project(body:CreateProject):
