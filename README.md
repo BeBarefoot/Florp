@@ -2,6 +2,19 @@
 
 **Status:** working local-first **Milestone 1 engineering scaffold**, not a completed photorealistic generation product. No secret tokens are included.
 
+## Current delivery status
+
+The main editor has revisioned shared-node geometry, opening review, calibrated
+3D, saved cameras/objects and in-app Comfy Cloud or fal design generation. Generation
+requires a configured provider account and credits. Optional fixture weights require
+local setup; default fixture matching works without them.
+
+See the audited [architecture](docs/ARCHITECTURE.md) and
+[production POC plan](docs/PRODUCTION_POC_PLAN.md) for the concrete roadmap through
+[issue #1](https://github.com/BeBarefoot/Florp/issues/1). Extraction accuracy and image
+structural consistency still need held-out/live evaluation. The app remains a local
+single-user development system until the hosted security/operations gates pass.
+
 ## Deterministic color-plan service
 
 A separate local CPU service now extracts red block-wall and blue concrete
@@ -43,11 +56,12 @@ above supersedes their old starter-outline and workflow instructions.
 - Verify geometries only when basic checks pass. Preview walls and floors in Three.js.
 - Baseline unit tests for layout validation; no synthetic AI render masquerading as output.
 
-## Not implemented yet
-- Robust line/OCR preprocessing and evidence fusion; PDF page selection; topology reconciliation after room edits.
-- Windows/doors in 3D mesh, true depth capture, image-generation submission/polling and revisable material layers.
-- Multi-user authentication, production job queue, cost tracing, model training/evals and deployment hardening.
-- The image API adapter is an **integration starting point only** and may require endpoint-specific argument and upload changes; it is not wired to the UI.
+## Remaining release work
+
+Held-out extraction/fixture evaluation, revision-bound architecture verification,
+mobile/PWA usability, generated-image drift QA and authenticated durable hosting
+are incomplete. See the production POC plan for measurable gates. Earlier milestone
+sections below are historical and do not override the current architecture audit.
 
 ## Run locally
 Requires Python 3.11+, Node 20+ (or compatible). Start two terminals:

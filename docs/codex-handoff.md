@@ -7,7 +7,14 @@ GitHub: [BeBarefoot/Florp](https://github.com/BeBarefoot/Florp). Use this reposi
 - API: in `apps/api`, run `uv sync`, then `uv run uvicorn app.main:app --reload --port 8000`.
 - Web: in `apps/web`, run `npm ci`, then `npm run dev`.
 - Check: `uv run pytest -q` in `apps/api`; `npm run build` and `npm run test:ui` in `apps/web`. Use `npx playwright install --with-deps chromium` on a compatible Linux test runner. No image key is needed to develop or test fixture review.
-- Baseline at the prior camera/render merge: six Python failures in floor-plan extraction and one Playwright failure in an existing corner-move window-position assertion.
+- PR #51 repaired the prior six extraction failures and stale browser assertions. PR #52 validation: 405 backend passes, 1 skip; 34 browser passes; all three GitHub checks passed. These do not establish held-out accuracy.
+
+## Delivery source of truth
+
+Read [Architecture](ARCHITECTURE.md) and [Production POC plan](PRODUCTION_POC_PLAN.md)
+for the audited implementation and gates through issue #1. Start with input-contract
+work and frozen benchmark preparation. Do not restart graph/camera/render features
+as if absent; verify and harden them. No held-out accuracy or live render QA is claimed.
 
 ## Current work
 

@@ -1,3 +1,5 @@
+> Historical implementation plan. The current implementation and remaining release gates are in [Architecture](ARCHITECTURE.md) and [Production POC plan](PRODUCTION_POC_PLAN.md), audited 7 November 2026.
+
 # Florp: measured interior camera and AI render experiment
 
 The first experiment takes one confirmed, measured room from the existing
