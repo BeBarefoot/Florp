@@ -350,6 +350,7 @@ test("saved interior framing and depth match after reopening at a different widt
   await expect(page.getByAltText("Generated design visualisation")).toBeVisible();
   expect(submitted).toMatchObject({viewId:after.view.id,confirmed:true,depth:after.depth.split(",")[1]});
   expect(submitted!.prompt).toContain(design);
+  expect(submitted!.prompt).toContain("Visible bed:");
   expect(submitted!.prompt).toContain("Do not bring an out-of-view room");
   expect(puts).toHaveLength(0);
 });

@@ -91,3 +91,10 @@ orientation checks. An object list provides selection/removal even for obscured
 objects, with undo. The design prompt is visible before camera placement;
 Generate preview now captures automatically after provider consent. No live
 billable generation or checkpoint accuracy benchmark was performed for this work.
+
+## Autonomous engine regression work
+
+See [Engine validation](ENGINE_VALIDATION.md) for analytical Python/TypeScript room
+and 3D metric fixtures, semantic split/merge coverage, contextual fixture filtering
+and the auto-capture visibility-facts fix. Full backend baseline is now 413 passes,
+1 skip. Real-world recognition accuracy remains unmeasured; follow the POC gates.

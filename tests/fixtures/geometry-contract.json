@@ -1,0 +1,640 @@
+[
+  {
+    "name": "equal-walls",
+    "model": {
+      "schemaVersion": 2,
+      "id": "p",
+      "revision": 0,
+      "imageTransform": {
+        "width": 800,
+        "height": 600,
+        "rotation": 0.0
+      },
+      "scale": {
+        "metersPerPixel": 0.01,
+        "reference": {
+          "p1": {
+            "x": 100.0,
+            "y": 100.0
+          },
+          "p2": {
+            "x": 400.0,
+            "y": 100.0
+          },
+          "lengthMeters": 3.0
+        }
+      },
+      "nodes": [
+        {
+          "id": "n0",
+          "x": 100.0,
+          "y": 100.0
+        },
+        {
+          "id": "n1",
+          "x": 250.0,
+          "y": 100.0
+        },
+        {
+          "id": "n2",
+          "x": 400.0,
+          "y": 100.0
+        },
+        {
+          "id": "n3",
+          "x": 400.0,
+          "y": 300.0
+        },
+        {
+          "id": "n4",
+          "x": 250.0,
+          "y": 300.0
+        },
+        {
+          "id": "n5",
+          "x": 100.0,
+          "y": 300.0
+        }
+      ],
+      "walls": [
+        {
+          "id": "w0",
+          "a": "n0",
+          "b": "n1",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w1",
+          "a": "n1",
+          "b": "n2",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w2",
+          "a": "n2",
+          "b": "n3",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w3",
+          "a": "n3",
+          "b": "n4",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w4",
+          "a": "n4",
+          "b": "n5",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w5",
+          "a": "n5",
+          "b": "n0",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w6",
+          "a": "n1",
+          "b": "n4",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        }
+      ],
+      "openings": [],
+      "stairs": [],
+      "rooms": [],
+      "roomZones": [],
+      "findings": [],
+      "envelope": null,
+      "dismissedFindings": [],
+      "notes": []
+    },
+    "expectedAreasPx2": [
+      26600,
+      26600
+    ],
+    "expectedBoundsPx": [
+      [
+        105,
+        105,
+        245,
+        295
+      ],
+      [
+        255,
+        105,
+        395,
+        295
+      ]
+    ]
+  },
+  {
+    "name": "unequal-walls",
+    "model": {
+      "schemaVersion": 2,
+      "id": "p",
+      "revision": 0,
+      "imageTransform": {
+        "width": 800,
+        "height": 600,
+        "rotation": 0.0
+      },
+      "scale": {
+        "metersPerPixel": 0.01,
+        "reference": {
+          "p1": {
+            "x": 100.0,
+            "y": 100.0
+          },
+          "p2": {
+            "x": 400.0,
+            "y": 100.0
+          },
+          "lengthMeters": 3.0
+        }
+      },
+      "nodes": [
+        {
+          "id": "n0",
+          "x": 100.0,
+          "y": 100.0
+        },
+        {
+          "id": "n1",
+          "x": 250.0,
+          "y": 100.0
+        },
+        {
+          "id": "n2",
+          "x": 400.0,
+          "y": 100.0
+        },
+        {
+          "id": "n3",
+          "x": 400.0,
+          "y": 300.0
+        },
+        {
+          "id": "n4",
+          "x": 250.0,
+          "y": 300.0
+        },
+        {
+          "id": "n5",
+          "x": 100.0,
+          "y": 300.0
+        }
+      ],
+      "walls": [
+        {
+          "id": "w0",
+          "a": "n0",
+          "b": "n1",
+          "thicknessPx": 20.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w1",
+          "a": "n1",
+          "b": "n2",
+          "thicknessPx": 12.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w2",
+          "a": "n2",
+          "b": "n3",
+          "thicknessPx": 16.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w3",
+          "a": "n3",
+          "b": "n4",
+          "thicknessPx": 18.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w4",
+          "a": "n4",
+          "b": "n5",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w5",
+          "a": "n5",
+          "b": "n0",
+          "thicknessPx": 8.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w6",
+          "a": "n1",
+          "b": "n4",
+          "thicknessPx": 14.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        }
+      ],
+      "openings": [],
+      "stairs": [],
+      "rooms": [],
+      "roomZones": [],
+      "findings": [],
+      "envelope": null,
+      "dismissedFindings": [],
+      "notes": []
+    },
+    "expectedAreasPx2": [
+      24975,
+      25715
+    ],
+    "expectedBoundsPx": [
+      [
+        257,
+        106,
+        392,
+        291
+      ],
+      [
+        104,
+        110,
+        243,
+        295
+      ]
+    ]
+  },
+  {
+    "name": "moved-partition",
+    "model": {
+      "schemaVersion": 2,
+      "id": "p",
+      "revision": 0,
+      "imageTransform": {
+        "width": 800,
+        "height": 600,
+        "rotation": 0.0
+      },
+      "scale": {
+        "metersPerPixel": 0.01,
+        "reference": {
+          "p1": {
+            "x": 100.0,
+            "y": 100.0
+          },
+          "p2": {
+            "x": 400.0,
+            "y": 100.0
+          },
+          "lengthMeters": 3.0
+        }
+      },
+      "nodes": [
+        {
+          "id": "n0",
+          "x": 100.0,
+          "y": 100.0
+        },
+        {
+          "id": "n1",
+          "x": 280.0,
+          "y": 100.0
+        },
+        {
+          "id": "n2",
+          "x": 400.0,
+          "y": 100.0
+        },
+        {
+          "id": "n3",
+          "x": 400.0,
+          "y": 300.0
+        },
+        {
+          "id": "n4",
+          "x": 280.0,
+          "y": 300.0
+        },
+        {
+          "id": "n5",
+          "x": 100.0,
+          "y": 300.0
+        }
+      ],
+      "walls": [
+        {
+          "id": "w0",
+          "a": "n0",
+          "b": "n1",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w1",
+          "a": "n1",
+          "b": "n2",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w2",
+          "a": "n2",
+          "b": "n3",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w3",
+          "a": "n3",
+          "b": "n4",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w4",
+          "a": "n4",
+          "b": "n5",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w5",
+          "a": "n5",
+          "b": "n0",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w6",
+          "a": "n1",
+          "b": "n4",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        }
+      ],
+      "openings": [],
+      "stairs": [],
+      "rooms": [],
+      "roomZones": [],
+      "findings": [],
+      "envelope": null,
+      "dismissedFindings": [],
+      "notes": []
+    },
+    "expectedAreasPx2": [
+      32300,
+      20900
+    ],
+    "expectedBoundsPx": [
+      [
+        105,
+        105,
+        275,
+        295
+      ],
+      [
+        285,
+        105,
+        395,
+        295
+      ]
+    ]
+  },
+  {
+    "name": "merged-room",
+    "model": {
+      "schemaVersion": 2,
+      "id": "p",
+      "revision": 0,
+      "imageTransform": {
+        "width": 800,
+        "height": 600,
+        "rotation": 0.0
+      },
+      "scale": {
+        "metersPerPixel": 0.01,
+        "reference": {
+          "p1": {
+            "x": 100.0,
+            "y": 100.0
+          },
+          "p2": {
+            "x": 400.0,
+            "y": 100.0
+          },
+          "lengthMeters": 3.0
+        }
+      },
+      "nodes": [
+        {
+          "id": "n0",
+          "x": 100.0,
+          "y": 100.0
+        },
+        {
+          "id": "n1",
+          "x": 250.0,
+          "y": 100.0
+        },
+        {
+          "id": "n2",
+          "x": 400.0,
+          "y": 100.0
+        },
+        {
+          "id": "n3",
+          "x": 400.0,
+          "y": 300.0
+        },
+        {
+          "id": "n4",
+          "x": 250.0,
+          "y": 300.0
+        },
+        {
+          "id": "n5",
+          "x": 100.0,
+          "y": 300.0
+        }
+      ],
+      "walls": [
+        {
+          "id": "w0",
+          "a": "n0",
+          "b": "n1",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w1",
+          "a": "n1",
+          "b": "n2",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w2",
+          "a": "n2",
+          "b": "n3",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w3",
+          "a": "n3",
+          "b": "n4",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w4",
+          "a": "n4",
+          "b": "n5",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        },
+        {
+          "id": "w5",
+          "a": "n5",
+          "b": "n0",
+          "thicknessPx": 10.0,
+          "heightM": 2.8,
+          "material": "block",
+          "exterior": null,
+          "confidence": 1.0,
+          "source": "extracted"
+        }
+      ],
+      "openings": [],
+      "stairs": [],
+      "rooms": [],
+      "roomZones": [],
+      "findings": [],
+      "envelope": null,
+      "dismissedFindings": [],
+      "notes": []
+    },
+    "expectedAreasPx2": [
+      55100
+    ],
+    "expectedBoundsPx": [
+      [
+        105,
+        105,
+        395,
+        295
+      ]
+    ]
+  }
+]
