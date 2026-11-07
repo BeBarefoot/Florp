@@ -61,3 +61,33 @@ def test_scene_render_is_revisioned_and_does_not_resubmit(client, monkeypatch, t
     assert c.get(url).json()["status"] == "complete"
     assert c.get(url + "/result.png").content == buf.getvalue()
     assert c.get(url + "/manifest.json").json()["sceneRevision"] == 1
+
+
+def test_room_context_survives_reextraction(client, monkeypatch):
+    from app import plan_api
+    from app.plan_model import PlanModel
+
+    c, bid = client
+    path = f"/blueprints/{bid}/plan"
+    original = c.put(path, json={"expectedRevision": 0, "model": plan(scale=reference())}).json()["model"]
+    original["rooms"][0].update({"roomType": "bedroom", "label": "Main bedroom", "ceilingHeightM": 2.65})
+    original["roomZones"] = [{"id": "open-space", "roomType": "corridor",
+                               "polygon": [{"x": 50, "y": 50}, {"x": 90, "y": 50}, {"x": 90, "y": 90}]}]
+    saved = c.put(path, json={"expectedRevision": 1, "model": original})
+    assert saved.status_code == 200
+
+    async def fresh(*args, **kwargs):
+        data = plan()
+        # Simulate regenerated wall IDs with the same room footprint.
+        for wall in data["walls"]:
+            wall["id"] += "-new"
+        return PlanModel.model_validate(data)
+
+    monkeypatch.setattr(plan_api, "run_worker", fresh)
+    response = c.post(path + "/extract?expected_revision=2")
+    assert response.status_code == 200, response.text
+    model = response.json()["model"]
+    assert model["rooms"][0]["roomType"] == "bedroom"
+    assert model["rooms"][0]["label"] == "Main bedroom"
+    assert model["rooms"][0]["ceilingHeightM"] == 2.65
+    assert model["roomZones"][0]["roomType"] == "corridor"

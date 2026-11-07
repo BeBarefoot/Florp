@@ -214,9 +214,11 @@ async def extract(bid: str, expected_revision: int = 0, body: Extract | None = N
     except (OSError,ValueError) as exc:
         raise HTTPException(503,'Opening approval profile is unavailable or invalid; saved geometry is unchanged') from exc
     model = await run_worker(path, body.envelope if body else None, plan_id=bid)
-    if previous and previous.scale.reference:
+    if previous:
         model.scale = previous.scale.model_copy(deep=True)
-        model = PlanModel.model_validate(model.dump())
+        model.rooms = previous.rooms
+        model.room_zones = previous.room_zones
+        model = derive(model)
     with Session(get_engine()) as s:
         row = latest(s, bid)
         if (row.revision if row else 0) != expected_revision:
