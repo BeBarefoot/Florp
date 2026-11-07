@@ -9,3 +9,16 @@ Previously every nonzero worker exit was reported as HTTP 422 with a misleading 
 No tests, builds, extraction runs or browser checks were executed for this correction, at the user's request. CI is skipped for this change. Visual restoration and the reported failing photograph remain for the user's manual evaluation.
 
 Pull main, restart the API and web app, and use **Re-extract from drawing**. Opening an existing saved revision does not recompute extraction. If the worker still fails, its API traceback now identifies the underlying exception.
+
+## CI regression repair
+
+Automatic outlines again use repeated horizontal bands and supported side walls
+when the closed-region method is incomplete or joins site leaders. Every proposed
+crop is rejected if it removes over 5% of a raw wall component that crosses its
+boundary; disconnected site marks no longer disable a valid building outline.
+The same guard applies to coloured plans. Explicit user outlines remain authoritative.
+Solid coloured components enclosing room-sized holes are protected from the
+annotation-bar filter, preserving their closed room topology.
+
+The corner-move browser regression now asserts unchanged image-space window
+position and width, matching the editor's existing projection behavior.

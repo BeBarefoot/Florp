@@ -186,7 +186,10 @@ test("pure ops: corner move keeps hosted openings, T-split, metric mesh", async 
   const win = moved.openings.find((o) => o.id === "win")!;
   expect(win.hostWallId).toBe("w0");
   expect(win.widthPx).toBe(120);
-  expect(win.offsetPx + win.widthPx / 2).toBeCloseTo(((100 + 60) / 400) * 440, 6);
+  // Extending the host keeps the window at its original image position.
+  const original = m.openings.find((o) => o.id === "win")!;
+  expect(60 + win.offsetPx).toBeCloseTo(100 + original.offsetPx, 6);
+  expect(win.span).toEqual([{ x: 200, y: 100 }, { x: 320, y: 100 }]);
   expect(moved.nodes.find((n) => n.id === "n1")).toEqual(m.nodes.find((n) => n.id === "n1"));
   const t = addWall(m, { x: 300, y: 100 }, { x: 300, y: 600 }, 12);
   expect(t.model.walls.length).toBe(m.walls.length + 3);
