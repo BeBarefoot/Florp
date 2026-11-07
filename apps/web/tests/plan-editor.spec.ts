@@ -191,13 +191,20 @@ test("pure ops: corner move keeps hosted openings, T-split, metric mesh", async 
   expect(60 + win.offsetPx).toBeCloseTo(100 + original.offsetPx, 6);
   expect(win.span).toEqual([{ x: 200, y: 100 }, { x: 320, y: 100 }]);
   expect(moved.nodes.find((n) => n.id === "n1")).toEqual(m.nodes.find((n) => n.id === "n1"));
-  const t = addWall(m, { x: 300, y: 100 }, { x: 300, y: 600 }, 12);
+  // Split solid wall spans, clear of the window at x=200–320.
+  const t = addWall(m, { x: 350, y: 100 }, { x: 350, y: 600 }, 12);
   expect(t.model.walls.length).toBe(m.walls.length + 3);
   expect(rooms(t.model).length).toBe(3);
   expect(m.rooms[0].areaPx2).toBeCloseTo((400 - 12) * (500 - 12), 3);
   const pieces = wallPieces(decideOpening(m, "maybe", "confirm")!);
   expect(pieces.find((p) => p.id === "w0")!.lengthM).toBeCloseTo(4, 6);
-  expect(pieces.find((p) => p.id === "w3")!.chunks.length).toBe(3);
+  const doorWall = pieces.find((p) => p.id === "w3")!;
+  // Joint caps are additional slabs outside the host's original length.
+  expect(doorWall.chunks.filter((c) => c.start >= 0 && c.end <= doorWall.lengthM)).toEqual([
+    { start: 0, end: 1.5, low: 0, high: 2.8 },
+    { start: 1.5, end: 2.4, low: 2.1, high: 2.8 },
+    { start: 2.4, end: 4, low: 0, high: 2.8 },
+  ]);
 });
 
 test("unequal wall corners share outer faces and the T run stays flush", () => {
