@@ -115,8 +115,11 @@ regressions and their limits.
 - [Deterministic color-plan service](services/deterministic-blueprint/README.md): separate CPU service.
 - [Historical milestones](HISTORY.md): earlier experiments, not current setup instructions.
 
-A dependency audit identified Next.js/PostCSS advisories; the next hardening step
-updates the framework and verifies the full workflow suite before release.
+The dependency hardening step upgrades Next.js to 15.5.29, pins its PostCSS
+resolution to 8.5.32 and upgrades Pillow to 13.0.0. React 19, Fiber 9 and Drei 10
+keep the 3D renderer compatible with the App Router runtime. Production npm audit and the
+installed base Python environment audit reported zero known vulnerabilities on
+11 November 2026. Audits do not establish complete application security.
 
 Held-out full-plan accuracy, persistent architecture acceptance, real-device usability,
 live image drift/cost, authentication, durable job execution and hosted operations remain

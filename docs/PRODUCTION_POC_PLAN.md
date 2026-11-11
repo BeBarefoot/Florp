@@ -275,3 +275,23 @@ a tested framework dependency update. Then render idempotency/recovery and actio
 provider failures, with mocked
 provider regressions. Preserve explicit consent; never retry a potentially billable
 submission automatically. Hosted worker/authorization and live evidence gates stay open.
+
+### Step 3 — Resolve dependency audit findings
+
+Step 2 merged as [PR #56](https://github.com/BeBarefoot/Florp/pull/56), with all
+three checks green, including 40 browser tests. The audit then found affected
+Next.js, PostCSS and Pillow versions. Upgrade to Next.js 15.5.29 with React/React DOM 19.3.1, Fiber 9.8.2 and Drei 10.7.9
+for App Router compatibility, override PostCSS to patched 8.5.32, and upgrade
+Pillow to 13.0.0. Lockfiles record exact resolutions.
+
+Validation: 420 backend passes / one skip; production build passes; `npm audit
+--omit=dev` and pip-audit of the installed base Python environment report no known
+vulnerabilities on 11 November 2026. Optional research extras are not covered.
+The override is explicit because Next's declared PostCSS dependency remains old.
+Recheck and remove it when the framework resolves a patched version itself.
+The original Fiber 8 renderer failed the 3D browser regressions under the new
+App Router runtime. Upgrade the renderer and React together, including React 19
+types and compatible Lucide icons. Full browser validation and CI are required
+before merging this framework change.
+
+Next: render polling recovery, request identity and provider-account guidance.
