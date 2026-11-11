@@ -115,6 +115,9 @@ regressions and their limits.
 - [Deterministic color-plan service](services/deterministic-blueprint/README.md): separate CPU service.
 - [Historical milestones](HISTORY.md): earlier experiments, not current setup instructions.
 
+A dependency audit identified Next.js/PostCSS advisories; the next hardening step
+updates the framework and verifies the full workflow suite before release.
+
 Held-out full-plan accuracy, persistent architecture acceptance, real-device usability,
 live image drift/cost, authentication, durable job execution and hosted operations remain
 release work. Keep this unauthenticated development server on trusted localhost until

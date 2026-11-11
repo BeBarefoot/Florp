@@ -270,6 +270,8 @@ Local launcher smoke test: API health and web HTTP 200; SIGTERM closes both port
 Locked uv install and shell syntax checks pass. CI validates locked installs and all suites; this does not imply dependencies
 have received a complete security audit or that optional research extras are supported.
 
-Next step: render idempotency/recovery and actionable provider failures, with mocked
+Next step: resolve the npm audit critical Next.js and high PostCSS findings with
+a tested framework dependency update. Then render idempotency/recovery and actionable
+provider failures, with mocked
 provider regressions. Preserve explicit consent; never retry a potentially billable
 submission automatically. Hosted worker/authorization and live evidence gates stay open.
