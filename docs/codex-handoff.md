@@ -4,7 +4,7 @@ GitHub: [BeBarefoot/Florp](https://github.com/BeBarefoot/Florp). Use this reposi
 
 ## Setup
 
-- API: in `apps/api`, run `uv sync`, then `uv run uvicorn app.main:app --reload --port 8000`.
+- API: in `apps/api`, run `uv sync --locked`, then `uv run --locked uvicorn app.main:app --reload --port 8000`.
 - Web: in `apps/web`, run `npm ci`, then `npm run dev`.
 - Check: `uv run pytest -q` in `apps/api`; `npm run build` and `npm run test:ui` in `apps/web`. Use `npx playwright install --with-deps chromium` on a compatible Linux test runner. No image key is needed to develop or test fixture review.
 - PR #51 repaired the prior six extraction failures and stale browser assertions. PR #52 validation: 405 backend passes, 1 skip; 34 browser passes; all three GitHub checks passed. These do not establish held-out accuracy.
@@ -24,7 +24,7 @@ as if absent; verify and harden them. No held-out accuracy or live render QA is 
 
 ## Image rendering research
 
-- The hosted adapter is fal's depth-conditioned FLUX endpoint. If using fal credits, make an API key in the [fal dashboard](https://fal.ai/dashboard/keys) and set `IMAGE_API_KEY` in the backend's local `.env`. Never commit the value. fal's [research grant](https://fal.ai/grants) is an application, not a guaranteed free tier.
+- Hosted adapters are Comfy Cloud v2 and fal's depth-conditioned FLUX endpoint. If using fal credits, make an API key in the [fal dashboard](https://fal.ai/dashboard/keys) and set `IMAGE_API_KEY` in the backend's local `.env`. Never commit the value. fal's [research grant](https://fal.ai/grants) is an application, not a guaranteed free tier.
 - For zero provider fees, try [ComfyUI Depth ControlNet](https://docs.comfy.org/tutorials/controlnet/depth-controlnet) locally with compatible model weights. Florp's export contains packed RGB24 millimetres, not a model-ready grayscale image; from `apps/api`, run `uv run python scripts/depth_for_comfy.py /path/to/florp-render-inputs.json control.png`. Use `control.png` as the depth input in ComfyUI (skip its depth-estimation step). A local adapter is a follow-up, not a replacement key for fal.
 - Useful next task: “Read AGENTS.md and docs/codex-handoff.md. Add a no-key local depth adapter or local workflow export. Preserve camera geometry and keep the existing hosted path optional. Mock paid calls in tests.”
 
