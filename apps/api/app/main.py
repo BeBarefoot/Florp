@@ -33,23 +33,27 @@ Path(settings.storage_path).mkdir(parents=True,exist_ok=True)
 if settings.database_url.startswith('sqlite:///'):
     Path(settings.database_url.removeprefix('sqlite:///')).parent.mkdir(parents=True,exist_ok=True)
 engine=create_engine(settings.database_url,connect_args={'check_same_thread':False} if settings.database_url.startswith('sqlite') else {})
-SQLModel.metadata.create_all(engine)
 from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(application):
-    from .dataset_workspace import recover_restore
-    recover_restore()
     import asyncio
-    from contextlib import suppress
+    from contextlib import suppress, nullcontext
+    from .dataset_workspace import recover_restore
     from .render_worker import run
-    task = asyncio.create_task(run()) if settings.render_poll_worker_enabled else None
-    try:
-        yield
-    finally:
-        if task:
-            task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
+    from .local_lock import workspace_lock
+    database = engine.url.database if engine.url.get_backend_name() == 'sqlite' else None
+    lock = workspace_lock(database) if database and database != ':memory:' else nullcontext()
+    with lock:
+        SQLModel.metadata.create_all(engine)
+        recover_restore()
+        task = asyncio.create_task(run()) if settings.render_poll_worker_enabled else None
+        try:
+            yield
+        finally:
+            if task:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
 app=FastAPI(title='Florp API',version='0.1.0',lifespan=lifespan)
 app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origins.split(','),allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
 

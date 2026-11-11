@@ -11,6 +11,7 @@ accounts and multi-user storage are a later release. The [production plan](docs/
 
 ## Run on your computer
 
+The first local release targets **macOS**; automated CI runs on Linux.
 Use Node.js 22 (`nvm use`) and Python 3.12, with [uv](https://docs.astral.sh/uv/).
 Install the committed dependency versions once, from the repository root:
 
@@ -97,6 +98,32 @@ For local ComfyUI, [export a depth workflow bundle](docs/codex-handoff.md#local-
 This path needs a separate ComfyUI installation and suitable weights; it is not an
 in-app local inference service. Live cloud compatibility and visual quality still need
 an authorized, capped-cost evaluation.
+
+## Back up and restore your local work
+
+Stop Florp with Ctrl+C first. From `apps/api`, create a backup outside the data folder:
+
+```bash
+uv run --locked python -m app.local_backup create ~/Desktop/florp-backup.zip
+```
+
+This copies the SQLite database and storage: projects, plan/scene revisions, original
+plans, previews, captures, generated images and annotation data. A workspace lock
+rejects backups while the API is running. The normal API `.env` and provider keys
+are outside this backup; keep your configuration separately. Archives are limited
+to 10 GiB / 50,000 files and contain your private project data.
+
+Restore into a **new** directory, leaving the current workspace intact:
+
+```bash
+uv run --locked python -m app.local_backup restore ~/Desktop/florp-backup.zip ~/florp-restored
+```
+
+The command verifies checksums and database integrity, rebases file references, and
+prints the `DATABASE_URL` and `STORAGE_PATH` values to put in `apps/api/.env`. Keep
+your provider settings. Restart, open the restored projects and check their scenes
+before choosing whether to remove old data. Existing backups/directories are never
+overwritten. Missing source files fail visibly instead of creating a partial backup.
 
 ## Validate changes
 

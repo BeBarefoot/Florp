@@ -25,7 +25,9 @@ flowchart LR
 
 Next.js 15 / React 19 serves the editor; React Three Fiber 9 / Three.js renders scenes.
 FastAPI validates requests with Pydantic; SQLModel persists SQLite records; files
-live on local disk. This is a local, single-user development architecture. It is
+live on local disk. A POSIX workspace lock allows one API or offline backup operation
+per SQLite database. `app.local_backup` snapshots the full DB/storage and restores
+into a new directory with verified hashes and rebased paths. This is a local, single-user development architecture. It is
 not a deployed multi-tenant service. Never expose its current API publicly as-is.
 
 ## Source of truth and boundaries
