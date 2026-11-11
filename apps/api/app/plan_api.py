@@ -342,7 +342,9 @@ def export(bid: str):
         ])
     layers, bounds, report = normalize_metric(layers, 1 / mpp / 100)
     raster, meta = png(layers, bounds, 100)
-    report.update({"revision": payload["revision"], "raster": meta, "plan": model.dump()})
+    from .plan_review import get_review
+    report.update({"revision": payload["revision"], "raster": meta, "plan": model.dump(),
+                   "architectureReview": get_review(bid, payload['revision'])})
     return Response(
         bundle(layers, bounds, report, raster, svg(layers, bounds, 100), dxf(layers, bounds)),
         media_type="application/zip",

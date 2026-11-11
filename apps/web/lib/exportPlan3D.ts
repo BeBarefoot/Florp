@@ -6,11 +6,12 @@ import { floorOutlines, wallPieces } from "./plan/mesh";
 import { stairPieces } from "./plan/stairs";
 
 /** Metric glTF (meters) with stable wall/room/opening IDs in node extras. */
-export async function exportPlan3D(m: PlanModel) {
+export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draft"}) {
   if (!metersPerPixel(m)) throw Error("Set one measurement first");
   if (m.openings.some((o) => o.status === "proposed"))
     throw Error("Approve or reject every proposed door and window before exporting 3D.");
   const scene = new THREE.Scene();
+  scene.userData = {planRevision:m.revision, architectureReview:review};
   for (const piece of wallPieces(m)) {
     const group = new THREE.Group();
     group.name = piece.id;

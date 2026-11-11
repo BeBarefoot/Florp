@@ -56,17 +56,20 @@ They do not establish accuracy on held-out full plans, physical measurement
 fidelity, image provider account availability or generated-image consistency.
 
 The shared graph, derived rooms, revisions and render pipeline are implemented.
-Do not describe them as absent. Conversely, there is no single persisted,
-server-enforced architecture-verification state that gates every downstream
-operation. Opening approval, scale validation and review findings are pieces
-of that policy; they are not a release certification.
+Do not describe them as absent. `PlanReview` stores append-only user acceptance
+and reopening receipts bound to an immutable revision and model hash. The API
+requires explicit topology/opening/scale checks, confirmed or assumed elevations,
+and no detected blocking structural issues. New revisions start as draft. Plan
+bundles, GLB exports and render manifests carry review metadata; draft previews
+remain possible and are not described as verified. This is user review, not an
+independent accuracy certification or evidence that the source was measured correctly.
 
 ## Required production changes
 
 1. Keep PlanModel v2 as the homeowner authority. Treat other extraction schemas as
    adapters/proposals with explicit coordinate and provenance conversion.
-2. Add revision-specific verification and invalidation after edits; separate
-   architectural acceptance, metric calibration and assumed elevations.
+2. Validate the revision-specific review policy against real plans and independent
+   annotations; user acceptance, metric calibration and elevation assumptions remain distinct.
 3. Persist upload identity/transforms and model/checkpoint/config provenance through
    extraction, correction, evaluation and export. Audit coverage end to end.
 4. Introduce durable extraction/render jobs with bounded concurrency, worker leases,

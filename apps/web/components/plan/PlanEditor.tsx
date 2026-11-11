@@ -7,6 +7,7 @@ import { metersPerPixel, withDerived } from "../../lib/plan/derive";
 import { deleteOpening, deleteWall, decideOpening, setReference } from "../../lib/plan/ops";
 import PlanCanvas from "./PlanCanvas";
 import Inspector from "./Inspector";
+import PlanReview, {type ReviewState} from "./PlanReview";
 import ToolRail from "./ToolRail";
 import TopBar, { type Display } from "./TopBar";
 import MeasurePopover from "./MeasurePopover";
@@ -435,12 +436,14 @@ export default function PlanEditor({ id }: { id: string }) {
         scaled={!!mpp}
         exportBlocker={exportBlocker}
         exportPlanHref={`${API}/blueprints/${id}/plan/export`}
-        export3D={() => void alignWalls().then(async (repaired) => {
-          if (repaired) {
-            const { exportPlan3D } = await import("../../lib/exportPlan3D");
-            await exportPlan3D(repaired);
-          }
-        }).catch((e) => setError(String(e)))}
+        export3D={() => void (async () => {
+          const snapshot = await request<PlanResponse>(`/blueprints/${id}/plan`);
+          if (!snapshot.model || snapshot.revision !== revision.current || dirty)
+            throw Error("Save or reload the current plan before exporting.");
+          const review = await request<ReviewState>(`/blueprints/${id}/plan/review?revision=${snapshot.revision}`);
+          const { exportPlan3D } = await import("../../lib/exportPlan3D");
+          await exportPlan3D(snapshot.model, review);
+        })().catch((e) => setError(String(e)))}
       />
       <ToolRail
         projectHref={info ? "/project/" + info.project_id : "/"}
@@ -481,6 +484,7 @@ export default function PlanEditor({ id }: { id: string }) {
           savePlan={async () => live.current && await persist(live.current) ? live.current : null} />}
       </main>
       <Inspector
+        reviewPanel={<PlanReview id={id} revision={m.revision} dirty={dirty}/> }
         model={m}
         onDetectStairs={() => void detectStairs()}
         busy={busy}

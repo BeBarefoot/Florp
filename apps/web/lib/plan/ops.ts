@@ -322,5 +322,5 @@ export function dismissFinding(m: PlanModel, id: string): PlanModel {
 }
 
 export function setRoomLabel(m: PlanModel, id: string, label: string): PlanModel {
-  return { ...m, rooms: m.rooms.map((r) => (r.id === id ? { ...r, label: label || null } : r)) };
+  return { ...m, rooms: m.rooms.map((r) => (r.id === id ? { ...r, label: label || null, needsSemanticReview: false } : r)) };
 }

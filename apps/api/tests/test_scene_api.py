@@ -81,6 +81,8 @@ def test_scene_render_is_revisioned_and_does_not_resubmit(client, monkeypatch, t
     assert c.get(url + "/manifest.json").json()["sceneRevision"] == 1
     manifest = c.get(url + '/manifest.json').json()
     assert manifest['provider'] == provider
+    assert manifest['architectureReview']['status'] == 'draft'
+    assert manifest['architectureReview']['revision'] == 1
     assert manifest['inputHash'].startswith('v2:')
     import hashlib
     assert manifest['captureHashes']['depth.png'] == hashlib.sha256(buf.getvalue()).hexdigest()

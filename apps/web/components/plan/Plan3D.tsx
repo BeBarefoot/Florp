@@ -286,9 +286,14 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     }catch(e){setMessage(String(e));}
     finally{setBusy(false);}
   }
-  function exportInputs(){
+  async function exportInputs(){
     if(!shot||!view)return;
-    const content={view,planRevision:m.revision,frame:{width:frame.width,height:frame.height},
+    let architectureReview:unknown={status:"draft",revision:m.revision};
+    if(!dirty){
+      try{architectureReview=await request(path+`/plan/review?revision=${m.revision}`);}
+      catch(e){setMessage(`Review status could not be loaded: ${String(e)}`);return;}
+    }
+    const content={architectureReview,view,planRevision:dirty?null:m.revision,planSnapshot:m,frame:{width:frame.width,height:frame.height},
       depthEncoding:"RGB24 view-space millimetres; zero is background",
       maskIds:{1:"Structure",...Object.fromEntries(rooms.map((r,i)=>[i+2,r.roomType??"room"])),
         ...Object.fromEntries(scene.objects.map((o,i)=>[1000+i,o.id])),
@@ -303,6 +308,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
   const asset=(name:string)=>`${API}${path}/scene/renders/${job?.id}/${name}`;
   return <div className="plan3d scene-studio" data-testid="plan-3d" data-wall-lengths={meshSignature(pieces)} data-stair-count={m.stairs?.length??0}>
     <fieldset disabled={busy||!saved} className="scene-controls">
+      {saved&&saved.planRevision!==null&&saved.planRevision!==m.revision&&<p>Saved scene uses plan revision {saved.planRevision}. Review camera and object placement, then save the scene for this plan.</p>}
       <div className="scene-actions">
         <button onClick={()=>{setMode("camera");setPreview(false);}}>Place camera</button>
         <button disabled={!view} onClick={()=>setPreview(!preview)}>{preview?"Back to orbit":"Preview view"}</button>

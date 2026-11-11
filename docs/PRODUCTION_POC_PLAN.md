@@ -110,11 +110,11 @@ recognition gap, suitable licensed data and a separate test set.
 
 Owner role: geometry/API engineer + frontend engineer.
 
-- [ ] Persist acceptance per PlanRevision: topology checked, opening review complete,
+- [x] Persist acceptance per PlanRevision: topology checked, opening review complete,
       scale reference confirmed, elevations confirmed or explicitly assumed.
 - [ ] Enforce the same verification rules in API/export/render paths. Allow draft preview
       with a clear status; do not label calibrated but unreviewed geometry “verified”.
-- [ ] Any structural edit/re-extraction invalidates prior acceptance and flags dependent
+- [x] Any structural edit/re-extraction invalidates current acceptance and flags dependent
       scenes. Never silently substitute the latest plan for a saved render's revision.
 - [ ] Golden parity fixtures cover L/T/unequal joints, stairs, doors, windows, short walls,
       unknown scale, rotated views and export. Check floor/wall/opening dimensions in
@@ -352,3 +352,29 @@ files and refusal to overwrite. Linux tests validate the POSIX implementation; a
 actual macOS install/run/restore check remains release evidence to collect.
 
 Next: revision-bound architecture acceptance and a synthetic local walkthrough.
+
+### Step 6 — Revision-bound architecture review
+
+Step 5 merged as [PR #59](https://github.com/BeBarefoot/Florp/pull/59), all checks
+green. Add append-only PlanReview acceptance/reopening receipts tied to the exact
+saved revision and model hash. API acceptance requires explicit topology, opening
+and known-distance confirmations plus confirmed/assumed elevations. It rejects
+unknown scale, unresolved proposals, missing enclosed rooms, subpixel walls,
+non-noded crossings/overlaps, overlapping confirmed openings, invalid rooms and
+room semantics awaiting review. Open wall ends can be intentional; the user must
+review them explicitly rather than the system assuming they are errors.
+
+The inspector exposes the review checklist. Unsaved edits immediately show draft;
+a newly saved revision has no inherited acceptance. Existing receipts remain
+historical, and reopening appends a withdrawal rather than erasing history.
+Dependent scenes show a stale-plan notice. Export bundles, GLB extras, local render
+inputs and server render manifests carry review metadata. GLB export now uses the
+saved model instead of silently aligning geometry while exporting. Draft export/
+preview remains allowed under existing scale/opening constraints and is labeled
+as draft; this is a user review record, not professional certification.
+
+Validation: 441 backend tests pass / one skip; targeted review and camera browser
+regressions pass. Regression coverage includes API bypass attempts, geometry blockers, revision
+invalidation, reopening history, exact export metadata and explicit UI checks.
+Remaining C evidence: broader cross-language/capture parity and independent real
+plan validation. Next: a reproducible synthetic local walkthrough and release checklist.
