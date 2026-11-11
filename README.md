@@ -63,6 +63,15 @@ mobile/PWA usability, generated-image drift QA and authenticated durable hosting
 are incomplete. See the production POC plan for measurable gates. Earlier milestone
 sections below are historical and do not override the current architecture audit.
 
+## Input reliability
+
+Uploads accept single-frame PNG, JPEG and WebP, or the first page of an unlocked
+PDF. Export another PDF page separately. Decoded inputs are limited to 45 megapixels
+before rasterization/orientation conversion; the default file limit is 20 MB.
+New uploads preserve original and preview SHA-256 hashes, EXIF orientation and PDF
+raster metadata in `source-manifest.json` beside the preview. Rejected uploads leave
+existing blueprints unchanged. Older uploads do not have this manifest.
+
 ## Run locally
 Requires Python 3.11+, Node 20+ (or compatible). Start two terminals:
 
