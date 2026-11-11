@@ -23,7 +23,7 @@ flowchart LR
   G --> R[Design image / compare with capture]
 ```
 
-Next.js 14 / React serves the editor; React Three Fiber / Three.js renders scenes.
+Next.js 15 / React 19 serves the editor; React Three Fiber 9 / Three.js renders scenes.
 FastAPI validates requests with Pydantic; SQLModel persists SQLite records; files
 live on local disk. This is a local, single-user development architecture. It is
 not a deployed multi-tenant service. Never expose its current API publicly as-is.
