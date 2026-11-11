@@ -4,7 +4,8 @@ Florp turns a floor plan into editable 2D geometry, a matching calibrated 3D sce
 and optional AI design images from saved camera views.
 
 **Status:** functional local single-user POC. Not yet ready for a public hosted pilot.
-The [production plan](docs/PRODUCTION_POC_PLAN.md) tracks release gates through
+The immediate release target is a single-user app on your own computer. Hosted
+accounts and multi-user storage are a later release. The [production plan](docs/PRODUCTION_POC_PLAN.md) tracks release gates through
 [issue #1](https://github.com/BeBarefoot/Florp/issues/1); the
 [architecture audit](docs/ARCHITECTURE.md) describes the implementation.
 
@@ -86,7 +87,10 @@ Use the key alone, without a `Bearer ` prefix.
 Comfy Cloud requires account access and sufficient credits. **Out of credits** is
 resolved in the provider account associated with your key; code cannot supply credits.
 After resolving the issue, explicitly generate a new preview. A saved failed job does
-not retry automatically. For an ambiguous timeout, check the provider dashboard before
+not retry automatically. The running API checks saved provider receipts without
+an open browser and resumes polling after restart. Temporary provider outages keep
+receipts pending; a lost submission response is never automatically resubmitted.
+For an ambiguous timeout, check the provider dashboard before
 submitting again. No fallback to a different paid provider occurs automatically.
 
 For local ComfyUI, [export a depth workflow bundle](docs/codex-handoff.md#local-depth-workflow-and-photo-normalization).

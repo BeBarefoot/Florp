@@ -8,7 +8,7 @@ import httpx
 from PIL import Image
 
 from .config import settings
-from .providers import ProviderConfigurationError, ProviderOutputError, ProviderUnavailable
+from .providers import ProviderConfigurationError, ProviderOutputError, ProviderUnavailable, ProviderRetryableError
 
 BASE = 'https://cloud.comfy.org'
 MODEL = 'comfy:flux-depth-lora'
@@ -40,12 +40,16 @@ def headers():
 
 def checked(response):
     # Never echo provider bodies: they may include workflow data or credentials.
-    if response.status_code in (401, 403):
-        raise ProviderUnavailable('Comfy Cloud authentication failed. Check COMFY_API_KEY and account access.')
+    if response.status_code == 401:
+        raise ProviderUnavailable('Comfy Cloud authentication failed. Check COMFY_API_KEY on this API server and restart it after changing the key.')
+    if response.status_code == 403:
+        raise ProviderUnavailable('Comfy Cloud denied account access. Check the API key, account permissions and billing status in your Comfy account.')
     if response.status_code == 402:
-        raise ProviderUnavailable('Comfy Cloud needs an active subscription and sufficient credits.')
+        raise ProviderUnavailable('Comfy Cloud is out of credits or requires an active subscription. Add credits to the account associated with COMFY_API_KEY, then explicitly generate a new preview.')
     if response.status_code == 429:
-        raise ProviderUnavailable('Comfy Cloud is rate limited or its queue is full. Try later.')
+        raise ProviderRetryableError('Comfy Cloud is rate limited or its queue is full. Try later.')
+    if response.status_code >= 500:
+        raise ProviderRetryableError('Comfy Cloud is temporarily unavailable. Try later.')
     if response.status_code in (400, 422):
         raise ProviderConfigurationError('Comfy Cloud rejected the depth workflow. Check model availability and COMFY_* model settings in the server configuration.')
     response.raise_for_status()

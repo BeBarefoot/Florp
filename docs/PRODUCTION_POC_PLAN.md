@@ -6,7 +6,11 @@ Updated 11 November 2026. Canonical execution plan for
 
 ## Deliverable and boundary
 
-Deliver a limited, authenticated, responsive web POC: upload a plan or mobile
+Immediate target confirmed by the user on 11 November 2026: a reliable single-user
+app on their own computer. Hosted authentication and multi-tenant storage (gate F)
+are deferred from this release; keep all servers bound to localhost.
+
+Deliver a responsive local web POC: upload a plan or mobile
 photo → extract editable 2D → review uncertainty and confirm one measurement →
 inspect matching 3D → place/save a camera → enter a design prompt → generate and
 compare an image → revise style without changing the saved architecture/camera.
@@ -17,7 +21,9 @@ selection, native mobile apps, BIM-grade measurements and fully automatic photo
 rectification are subsequent work. Unsupported inputs must fail visibly without
 losing saved edits. A generated image is a visualization, not construction evidence.
 
-“Production POC” means safe limited external pilot with repeatable results,
+For the immediate release, “production POC” means a reliable local workflow with
+repeatable results and recoverable local data. A later hosted pilot requires gate F.
+The broader hosted contract is a safe limited external pilot with repeatable results,
 recoverable data and known limits. It does not mean architectural certification
 or unrestricted public release. Dates depend on measured gates, not estimates.
 
@@ -295,3 +301,31 @@ types and compatible Lucide icons. Full browser validation and CI are required
 before merging this framework change.
 
 Next: render polling recovery, request identity and provider-account guidance.
+
+### Step 4 — Local render recovery and account failures
+
+Step 3 merged as [PR #57](https://github.com/BeBarefoot/Florp/pull/57) after all
+three CI checks passed. Immediate scope is now explicitly local single-user use.
+
+The API lifespan starts a receipt-reconciliation loop: up to 20 saved jobs per
+batch, four concurrent status checks, 45-second per-check budget and five-second
+interval between batches. A cursor prevents permanently queued jobs from starving
+later jobs. Completed jobs leave the scan. Restart with a stored receipt checks
+the provider result before declaring an old job timed out. Unknown submissions
+never retry; the user must reconcile the provider dashboard. This is local receipt
+recovery, not a durable provider-submission queue or multi-worker hosted scheduler.
+
+Transient HTTP 429/5xx and network failures retain pending receipts. Conditional
+DB status updates prevent stale browser/worker responses from downgrading completion.
+New request identities use canonical validated JSON, preserving idempotency across
+key ordering/whitespace. Manifests include input and individual capture hashes.
+Comfy credit, authentication and access failures have separate actionable messages;
+the app links to the account and keeps saved scene inputs available. No paid calls
+were made. Focused backend recovery/provider tests pass, including API lifecycle cleanup.
+Full backend run: 427 pass / one skip before the added lifecycle test; browser
+credit-recovery regression passes. CI runs the complete final suite.
+
+Next local steps: recoverable full-project backups, revision-bound architecture
+acceptance, and a reproducible synthetic end-to-end demo. Held-out plan accuracy
+and live provider QA still need real inputs/authorized credits; they are not
+replaced by these regressions. Hosted login is not a prerequisite for local use.

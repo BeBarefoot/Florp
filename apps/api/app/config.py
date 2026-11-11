@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     image_api_key: str = ''
     # Auto prefers Comfy Cloud when its key is configured; fal stays optional.
     image_provider: str = 'auto'
+    render_poll_worker_enabled: bool = True
     comfy_api_key: str = ''
     comfy_unet: str = 'flux1-dev-fp8.safetensors'
     comfy_depth_lora: str = 'flux1-depth-dev-lora.safetensors'

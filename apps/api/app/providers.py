@@ -3,6 +3,7 @@ import httpx
 from .config import settings
 from .geometry import Geometry
 class ProviderUnavailable(RuntimeError): pass
+class ProviderRetryableError(ProviderUnavailable): pass
 class ProviderAuthenticationError(ProviderUnavailable): pass
 class ProviderConfigurationError(ProviderUnavailable): pass
 class ProviderOutputError(ProviderUnavailable): pass
@@ -95,8 +96,8 @@ def render_error(exc):
         return str(exc)
     if isinstance(exc, httpx.HTTPStatusError):
         return f"Image provider returned HTTP {exc.response.status_code}. Check the API key, quota and model."
-    if isinstance(exc, httpx.TimeoutException):
-        return "Image provider timed out. Check its dashboard before submitting again."
+    if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError)):
+        return "Image provider connection was interrupted. The request may have been accepted; check its dashboard before submitting again."
     return "Could not complete the render. Check the server configuration and provider dashboard."
 
 
