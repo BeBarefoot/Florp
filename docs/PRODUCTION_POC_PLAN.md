@@ -329,3 +329,26 @@ Next local steps: recoverable full-project backups, revision-bound architecture
 acceptance, and a reproducible synthetic end-to-end demo. Held-out plan accuracy
 and live provider QA still need real inputs/authorized credits; they are not
 replaced by these regressions. Hosted login is not a prerequisite for local use.
+
+### Step 5 — Full local workspace recovery (macOS target)
+
+Step 4 merged as [PR #58](https://github.com/BeBarefoot/Florp/pull/58), all checks
+green. User confirmed macOS as the target operating system. Local backups now
+include the complete SQLite database and storage tree, not only training annotations.
+An OS workspace lock shared by API startup and backup prevents concurrent writes.
+The same lock rejects a second API instance using the same database.
+
+Backup uses SQLite's snapshot API, normalizes known stored file references, records
+per-file hashes and publishes a new archive exclusively. Restore checks inventory,
+size/count limits, paths, hashes and DB integrity before creating a new destination;
+references are rebased to its storage tree. Current data and existing archives are
+never overwritten. Provider `.env` configuration outside storage is intentionally
+separate. Limits: file-backed SQLite, macOS/Linux, 10 GiB / 50,000 files; hosted DB
+backup is deferred. Pending annotation-restore journals must be reconciled first.
+
+Validation: 434 backend tests pass / one skip. Automated restore tests cover saved projects, plan/scene revisions, generated assets,
+path rebasing, workspace-lock exclusion, checksum tampering, traversal, missing
+files and refusal to overwrite. Linux tests validate the POSIX implementation; an
+actual macOS install/run/restore check remains release evidence to collect.
+
+Next: revision-bound architecture acceptance and a synthetic local walkthrough.
