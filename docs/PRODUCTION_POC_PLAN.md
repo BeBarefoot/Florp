@@ -257,3 +257,19 @@ passes, before implementation of the next step.
 No hosted-readiness, real-world accuracy or live paid-render gate is closed by
 these changes. Credits/account access and authorized live evaluation remain external
 prerequisites; authentication/storage/worker architecture still requires implementation.
+
+### Step 2 — Reproducible startup and current documentation
+
+Step 1 merged as [PR #55](https://github.com/BeBarefoot/Florp/pull/55), all three
+CI checks green (420 backend passes / one skip; upload browser regression included).
+Step 2 pins CI to Python 3.12, Node 22 and uv 0.13.5, uses `uv sync --locked`
+and `npm ci`, and supplies a localhost-only two-server launcher. README now documents
+the actual supported journey, server configuration, credits and current limits; old
+milestone notes are preserved in HISTORY.md. Existing `.env` values are never replaced.
+Local launcher smoke test: API health and web HTTP 200; SIGTERM closes both ports.
+Locked uv install and shell syntax checks pass. CI validates locked installs and all suites; this does not imply dependencies
+have received a complete security audit or that optional research extras are supported.
+
+Next step: render idempotency/recovery and actionable provider failures, with mocked
+provider regressions. Preserve explicit consent; never retry a potentially billable
+submission automatically. Hosted worker/authorization and live evidence gates stay open.

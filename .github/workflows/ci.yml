@@ -5,27 +5,30 @@ on:
   pull_request:
 jobs:
   backend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.5"
+          python-version: "3.12"
       - name: Test FastAPI and geometry
         working-directory: apps/api
         run: |
-          uv sync
-          uv run python -m compileall -q app scripts tests
-          uv run pytest -q
+          uv sync --locked
+          uv run --locked python -m compileall -q app scripts tests
+          uv run --locked pytest -q
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
       - name: Install dependencies and typecheck
         working-directory: apps/web
         run: |
-          npm install --no-audit --no-fund
+          npm ci --no-audit --no-fund
           npx tsc --noEmit
           npm run build
   browser-workflow:
@@ -34,7 +37,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
       - name: Check review-to-draft browser flows
         working-directory: apps/web
         run: |
