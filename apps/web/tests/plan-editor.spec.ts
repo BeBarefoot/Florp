@@ -71,6 +71,7 @@ async function setup(page: Page, opts: { empty?: boolean; model?: PlanModel } = 
   await page.route("**/blueprints/p/plan**", async (r) => {
     const req = r.request(),
       url = req.url();
+    if (url.includes("/review")) return r.fulfill({json:{revision,status:"draft",blockers:[],elevations:null,reviewedAt:null}});
     if (url.includes("/extract")) {
       const body = req.postData() ? req.postDataJSON() : {};
       extractions.push(body);
@@ -443,4 +444,31 @@ test('failed Comfy render explains credit recovery and preserves the saved camer
   await expect(page.getByLabel('Design prompt')).toHaveValue('Warm oak');
   await expect(page.getByRole('button',{name:'Capture view',exact:true})).toBeEnabled();
   await expect(page.getByRole('button',{name:'Generate preview',exact:true})).toBeDisabled();
+});
+
+test('architecture review requires explicit checks and becomes draft after calibration changes', async ({page}) => {
+  const {puts}=await setup(page,{model:setReference(fixture({openings:[]}),{x:100,y:100},{x:500,y:100},4)});
+  let reviewed=false;
+  await page.route('**/blueprints/p/plan/review*',r=>{
+    const revision=Number(new URL(r.request().url()).searchParams.get('revision')||1);
+    if(r.request().method()==='POST'){
+      expect(r.request().postDataJSON()).toMatchObject({revision:1,topology:true,openings:true,scale:true,elevations:'assumed'});
+      reviewed=true;
+    }
+    return r.fulfill({json:{revision,status:reviewed&&revision===1?'reviewed':'draft',blockers:[],elevations:reviewed?'assumed':null,reviewedAt:null}});
+  });
+  await page.getByText('Architecture review: draft',{exact:true}).click();
+  const record=page.getByRole('button',{name:'Record architecture review'});
+  await expect(record).toBeDisabled();
+  await page.getByLabel('I checked wall connections, room boundaries and intentional open ends.').check();
+  await page.getByLabel('I checked all doors and windows against the source.').check();
+  await page.getByLabel('I confirmed the reference distance against a known measurement.').check();
+  await record.click();
+  await expect(page.getByText('Architecture review: reviewed',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Set measurement'}).click();
+  await clickAt(page,100,100);await clickAt(page,390,100);
+  await page.getByRole('dialog',{name:'Known distance'}).getByLabel('Known distance').fill('2.9');
+  await page.getByRole('button',{name:'Apply',exact:true}).click();
+  await expect.poll(()=>puts.length).toBeGreaterThan(0);
+  await expect(page.getByText('Architecture review: draft',{exact:true})).toBeVisible();
 });

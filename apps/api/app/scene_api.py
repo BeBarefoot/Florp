@@ -21,7 +21,7 @@ from sqlmodel import Session, select
 from . import providers, comfy
 from .config import settings
 from .depth import control_depth
-from .models import SceneRevision, SceneRenderJob
+from .models import SceneRevision, SceneRenderJob, PlanRevision
 from .plan_api import blueprint, get_engine, latest
 from .plan_model import PlanModel, Pt
 
@@ -255,7 +255,10 @@ async def submit(bid: str, request: Request):
                              scene_revision=scene.revision, plan_revision=scene.plan_revision,
                              view_id=body.view_id, name=body.name, prompt=body.prompt,
                              provider_model=config['model'])
-        manifest = {"scene": scene.config, "depthEncoding": "RGB24 view-space millimetres; zero is background",
+        from .plan_review import review_info
+        plan_row = s.exec(select(PlanRevision).where(PlanRevision.blueprint_id == bid,
+                         PlanRevision.revision == scene.plan_revision)).first()
+        manifest = {"architectureReview": review_info(s, plan_row), "planSnapshot": plan_row.model if plan_row else None, "scene": scene.config, "depthEncoding": "RGB24 view-space millimetres; zero is background",
                     "maskEncoding": "RGB24 IDs; 1 structural details, 2.. room floors, 1000.. scene objects, 2000.. walls",
                     "depthRangeMm": [near, far], "frame": [providers.FRAME_WIDTH, providers.FRAME_HEIGHT],
                     "provider": config['provider'], "inputHash": fingerprint,

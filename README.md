@@ -60,6 +60,11 @@ and resolve the error in their terminals. Ports 3000 and 8000 must be available.
 2. Review the extracted walls and door/window proposals against the source. Edit,
    add or remove geometry, and confirm one known distance to calibrate measurements.
    Save the plan. Extraction is a proposal; calibration alone does not verify accuracy.
+   Open **Architecture review** in the inspector, resolve its blockers, check the
+   source/reference, and record your review with confirmed or assumed elevations.
+   Any saved edit starts a new draft revision; **Reopen review** retracts acceptance.
+   Plan bundles, GLB files and render inputs record the relevant review status.
+   Review is your confirmation, not independent architectural certification.
 3. Open 3D, place and aim cameras, and add/edit/remove furniture. The object list
    supports obscured objects and undo. Save the scene to preserve views and objects.
 4. Enter a **Design prompt**, capture the view, and export inputs locally or select
@@ -152,7 +157,7 @@ keep the 3D renderer compatible with the App Router runtime. Production npm audi
 installed base Python environment audit reported zero known vulnerabilities on
 11 November 2026. Audits do not establish complete application security.
 
-Held-out full-plan accuracy, persistent architecture acceptance, real-device usability,
+Held-out full-plan accuracy, independent accuracy evaluation, real-device usability,
 live image drift/cost, authentication, durable job execution and hosted operations remain
 release work. Keep this unauthenticated development server on trusted localhost until
 the hosting gates pass. Default extraction is local; external image generation sends

@@ -141,3 +141,14 @@ class SceneRenderJob(SQLModel, table=True):
     response_url: str = ""
     error: str | None = None
     created_at: datetime = Field(default_factory=now)
+
+
+class PlanReview(SQLModel, table=True):
+    """Append-only local review/reopening receipts for one immutable plan revision."""
+    id: str = Field(default_factory=uid, primary_key=True)
+    blueprint_id: str = Field(index=True, foreign_key='blueprint.id')
+    revision: int = Field(index=True)
+    model_hash: str
+    accepted: bool
+    elevations: str = 'assumed'
+    created_at: datetime = Field(default_factory=now)

@@ -27,7 +27,7 @@ from .mask_topology import region_wall_lines
 from .wall_run_normalization import consolidate_wall_runs
 from .evidence_fusion import fuse_evidence
 
-from .models import SceneRevision, SceneRenderJob
+from .models import SceneRevision, SceneRenderJob, PlanReview
 
 Path(settings.storage_path).mkdir(parents=True,exist_ok=True)
 if settings.database_url.startswith('sqlite:///'):
@@ -100,7 +100,7 @@ def delete_project(pid:str):
         plans=list(s.exec(select(Blueprint).where(Blueprint.project_id==pid)).all())
         ids=[bp.id for bp in plans]
         for bid in ids:
-            for table in (SceneRenderJob,SceneRevision,PlanRevision,WorkspaceRevision,Render,ModelWallCorrection,WallAnnotation,FusionCandidateReview,ExtractionEvaluation,PlanGraphRevision,Layout):
+            for table in (PlanReview,SceneRenderJob,SceneRevision,PlanRevision,WorkspaceRevision,Render,ModelWallCorrection,WallAnnotation,FusionCandidateReview,ExtractionEvaluation,PlanGraphRevision,Layout):
                 for row in s.exec(select(table).where(table.blueprint_id==bid)).all():
                     s.delete(row)
         for bp in plans:s.delete(bp)
@@ -1286,3 +1286,6 @@ app.include_router(plan_router)
 
 from .scene_api import router as scene_router
 app.include_router(scene_router)
+
+from .plan_review import router as review_router
+app.include_router(review_router)

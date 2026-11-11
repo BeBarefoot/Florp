@@ -20,6 +20,7 @@ type Props = {
   straighten: React.ReactNode;
   history: React.ReactNode;
   outlinePanel?: React.ReactNode;
+  reviewPanel?: React.ReactNode;
   onDetectStairs: () => void;
   busy: boolean;
 };
@@ -86,6 +87,7 @@ export default function Inspector(p: Props) {
   if (p.tool === "straighten") return <aside className="fe-inspector">{p.straighten}</aside>;
   return (
     <aside className="fe-inspector" aria-label="Inspector">
+      {p.reviewPanel}
       {p.tool === "measure" && (
         <section className="fe-card fe-accent">
           <h3>Set one measurement</h3>
