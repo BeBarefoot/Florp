@@ -1,6 +1,6 @@
 # Production POC delivery plan
 
-Updated 7 November 2026. Canonical execution plan for
+Updated 11 November 2026. Canonical execution plan for
 [issue #1](https://github.com/BeBarefoot/Florp/issues/1). Read the
 [implementation audit](ARCHITECTURE.md) for what exists today.
 
@@ -237,3 +237,23 @@ activate arbitrary checkpoints merely to increase a test count.
 Autonomous phase results and remaining empirical limits are recorded in
 [Engine validation](ENGINE_VALIDATION.md). These regressions and fixes do not
 close held-out benchmark, live generation or hosted-readiness gates.
+
+## Production hardening execution log
+
+Each step includes its README/plan update and is merged only after required CI
+passes, before implementation of the next step.
+
+1. Input reliability: pre-decode 45 MP bounds, explicit PNG/JPEG/WebP allowlist,
+   first-page-only PDF validation, EXIF normalization and source/preview hashes
+   with transformation metadata. Validation: 420 backend passes / one skip; TypeScript check passes. Seven
+   focused regressions cover
+   allocation guards and rejected uploads preserving existing blueprints.
+   This completes the bounded upload portion of A; round-trip transform scoring,
+   synthetic demo tooling and reproducible runtime work remain open. Historical
+   uploads retain their existing files and have no backfilled provenance.
+2. Next: make installation/CI reproducible and reconcile README with the current
+   user journey, then harden generation recovery and review remaining gate work.
+
+No hosted-readiness, real-world accuracy or live paid-render gate is closed by
+these changes. Credits/account access and authorized live evaluation remain external
+prerequisites; authentication/storage/worker architecture still requires implementation.

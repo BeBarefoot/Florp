@@ -8,7 +8,6 @@ export default function ProjectPage() {
   const [plans, setPlans] = useState<Blueprint[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [page, setPage] = useState(1);
   const file = useRef<HTMLInputElement>(null);
   useEffect(() => {
     request<Blueprint[]>(`/projects/${id}/blueprints`)
@@ -24,10 +23,13 @@ export default function ProjectPage() {
       const data = new FormData();
       data.append("file", f);
       const r = await fetch(
-        `${API}/projects/${id}/blueprints?page_index=${page - 1}`,
+        `${API}/projects/${id}/blueprints`,
         { method: "POST", body: data },
       );
-      if (!r.ok) throw Error(await r.text());
+      if (!r.ok) {
+        const problem = await r.json().catch(() => null);
+        throw Error(problem?.detail || "Upload failed. Please try again.");
+      }
       const bp = await r.json();
       setPlans([bp, ...plans]);
       if (file.current) file.current.value = "";
@@ -69,30 +71,21 @@ export default function ProjectPage() {
           <h2>Upload blueprint</h2>
           <p>Drop a plan here or choose a file.</p>
           <input
+            aria-label="Floor plan file"
             ref={file}
             type="file"
             accept="application/pdf,image/png,image/jpeg,image/webp"
           />
-          <label>
-            PDF page{" "}
-            <input
-              aria-label="PDF page"
-              type="number"
-              min="1"
-              value={page}
-              onChange={(e) => setPage(Math.max(1, Number(e.target.value)))}
-            />
-          </label>
           <div>
             <button disabled={busy} onClick={upload}>
               {busy ? "Uploading…" : "Upload plan"}
             </button>
           </div>
           <small className="muted">
-            Choose the page for multi-page PDFs. Max size configured on backend.
+            One floor per upload. PDFs use the first page only; export other pages separately. PNG, JPEG and WebP supported. Maximum decoded size: 45 megapixels.
           </small>
         </div>
-        {error && <p className="notice">{error}</p>}
+        {error && <p role="alert" className="notice">{error}</p>}
         <div className="grid">
           {plans.map((p) => (
             <Link className="panel" key={p.id} href={"/plan/" + p.id}>

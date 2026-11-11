@@ -107,20 +107,16 @@ async def upload(pid:str,file:UploadFile=File(...),page_index:int=0):
         if not s.get(Project,pid):raise HTTPException(404,'Project not found')
     contents=await file.read(settings.max_upload_mb*1024*1024+1)
     if len(contents)>settings.max_upload_mb*1024*1024:raise HTTPException(413,'Upload exceeds configured size')
-    if contents.startswith(b'%PDF-'):
-        try:
-            pdf=fitz.open(stream=contents,filetype='pdf');assert 0<=page_index<len(pdf),'Page out of range';page=pdf[page_index];pix=page.get_pixmap(matrix=fitz.Matrix(2,2),alpha=False)
-            image=Image.open(io.BytesIO(pix.tobytes('png'))).convert('RGB')
-        except Exception:raise HTTPException(422,'Could not read PDF')
-    else:
-        try:image=ImageOps.exif_transpose(Image.open(io.BytesIO(contents))).convert('RGB')
-        except Exception:raise HTTPException(415,'Only PDF and common images are supported')
-    if image.width*image.height>45_000_000:raise HTTPException(413,'Image pixel count too large')
+    from .uploads import decode
+    import hashlib, json
+    image, manifest = decode(contents, page_index)
     bp=Blueprint(project_id=pid,filename=(file.filename or 'plan')[:255],local_path='',preview_path='',width=image.width,height=image.height)
     folder=Path(settings.storage_path)/bp.id;folder.mkdir(parents=True,exist_ok=True)
     suffix='.pdf' if contents.startswith(b'%PDF-') else '.bin'
     raw=folder/('original'+suffix);raw.write_bytes(contents)
     preview=folder/'preview.png';image.save(preview)
+    manifest['previewSha256'] = hashlib.sha256(preview.read_bytes()).hexdigest()
+    (folder/'source-manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
     bp.local_path=str(raw);bp.preview_path=str(preview)
     starting=Geometry(width_px=bp.width,height_px=bp.height,warnings=['No extracted geometry yet. Extract or draw structural walls.'])
     layout=Layout(blueprint_id=bp.id,geometry=starting.model_dump())
