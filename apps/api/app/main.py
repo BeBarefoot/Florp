@@ -39,7 +39,17 @@ from contextlib import asynccontextmanager
 async def lifespan(application):
     from .dataset_workspace import recover_restore
     recover_restore()
-    yield
+    import asyncio
+    from contextlib import suppress
+    from .render_worker import run
+    task = asyncio.create_task(run()) if settings.render_poll_worker_enabled else None
+    try:
+        yield
+    finally:
+        if task:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 app=FastAPI(title='Florp API',version='0.1.0',lifespan=lifespan)
 app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origins.split(','),allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
 

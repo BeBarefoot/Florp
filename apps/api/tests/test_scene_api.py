@@ -62,6 +62,11 @@ def test_scene_render_is_revisioned_and_does_not_resubmit(client, monkeypatch, t
     job = response.json()
     assert job["status"] == "queued"
     assert c.post(path + "/renders", json=payload).json() == job
+    # Retrying identical inputs with different JSON key order/whitespace is still one job.
+    import json
+    reordered = json.dumps(dict(reversed(list(payload.items()))), indent=2)
+    retry = c.post(path + "/renders", content=reordered, headers={'content-type': 'application/json'})
+    assert retry.json() == job
     assert len(calls) == 1
     assert c.post(path + "/renders", json={**payload, "prompt": "Changed"}).status_code == 409
 
@@ -74,7 +79,11 @@ def test_scene_render_is_revisioned_and_does_not_resubmit(client, monkeypatch, t
     assert c.get(url).json()["status"] == "complete"
     assert c.get(url + "/result.png").content == buf.getvalue()
     assert c.get(url + "/manifest.json").json()["sceneRevision"] == 1
-    assert c.get(url + '/manifest.json').json()['provider'] == provider
+    manifest = c.get(url + '/manifest.json').json()
+    assert manifest['provider'] == provider
+    assert manifest['inputHash'].startswith('v2:')
+    import hashlib
+    assert manifest['captureHashes']['depth.png'] == hashlib.sha256(buf.getvalue()).hexdigest()
 
 
 def test_room_context_survives_reextraction(client, monkeypatch):

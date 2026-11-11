@@ -463,6 +463,8 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
         <label>Render variants <select value={job?.id} onChange={e=>setSelectedJob(e.target.value)}>
           {viewJobs.map(j=><option value={j.id} key={j.id}>{j.name} · {j.status}</option>)}</select></label>
         {job&&<p role="status">{job.status} {job.error??""} · {job.model} · Scene {job.sceneRevision}</p>}
+        {job?.status==="failed"&&<p>After fixing the account or configuration issue, select consent and generate a new preview. If the connection was interrupted, check the provider dashboard first to avoid paying twice. Your saved camera and capture remain available.</p>}
+        {job?.status==="failed"&&job.model.startsWith("comfy:")&&<a href="https://cloud.comfy.org" target="_blank" rel="noreferrer">Open Comfy account and credits</a>}
         {job?.status==="complete"&&<>
           <button onClick={()=>setOverlay(!overlay)}>{overlay?"Side by side":"Overlay"}</button>
           <div className={overlay?"scene-compare overlay":"scene-compare"}>

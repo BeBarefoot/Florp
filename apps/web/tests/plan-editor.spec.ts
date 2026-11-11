@@ -429,3 +429,18 @@ test("fixture scan requires an individual insert or dismiss before saving", asyn
   await expect(page.getByText("Review the outlined suggestions. Nothing has been inserted.")).toBeVisible();
   await expect(outlines).toHaveCount(0);
 });
+
+test('failed Comfy render explains credit recovery and preserves the saved camera', async ({page}) => {
+  const scaled = setReference(fixture(), {x:100,y:100}, {x:500,y:100}, 4);
+  await setup(page, {model:scaled});
+  const view = {id:'saved-view',name:'Bedroom',position:{x:300,y:250},yaw:0,pitch:0,horizontalFov:90,eyeHeight:1.6};
+  await page.route('**/blueprints/p/scene', r=>r.fulfill({json:{revision:1,planRevision:1,config:{views:[view],objects:[],style:'Warm oak'}}}));
+  await page.route('**/blueprints/p/scene/render-settings', r=>r.fulfill({json:{width:1024,height:768,configured:true,model:'comfy:flux-depth-lora',provider:'comfy'}}));
+  await page.route('**/blueprints/p/scene/renders', r=>r.fulfill({json:[{id:'failed',viewId:view.id,name:'Bedroom',prompt:'Warm oak',model:'comfy:flux-depth-lora',sceneRevision:1,planRevision:1,status:'failed',error:'Comfy Cloud is out of credits. Add credits to the account associated with COMFY_API_KEY.'}]}));
+  await page.locator('.fe-segment button').nth(2).click();
+  await expect(page.getByRole('link',{name:'Open Comfy account and credits'})).toHaveAttribute('href','https://cloud.comfy.org');
+  await expect(page.getByText('After fixing the account or configuration issue', {exact:false})).toBeVisible();
+  await expect(page.getByLabel('Design prompt')).toHaveValue('Warm oak');
+  await expect(page.getByRole('button',{name:'Capture view',exact:true})).toBeEnabled();
+  await expect(page.getByRole('button',{name:'Generate preview',exact:true})).toBeDisabled();
+});

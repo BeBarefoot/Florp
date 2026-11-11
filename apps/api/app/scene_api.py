@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -214,14 +215,17 @@ async def submit(bid: str, request: Request):
         body = Submit.model_validate_json(payload)
     except ValidationError as exc:
         raise HTTPException(422, "Invalid render request or missing consent") from exc
-    fingerprint = hashlib.sha256(payload).hexdigest()
+    # A JSON serialization change must not create a second billable request.
+    fingerprint = 'v2:' + hashlib.sha256(json.dumps(body.model_dump(mode='json'),
+        sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    legacy_fingerprint = hashlib.sha256(payload).hexdigest()
 
     def existing(s):
         return s.exec(select(SceneRenderJob).where(SceneRenderJob.blueprint_id == bid,
                       SceneRenderJob.request_key == body.request_key)).first()
 
     def duplicate(job):
-        if job.input_hash != fingerprint:
+        if job.input_hash not in (fingerprint, legacy_fingerprint):
             raise HTTPException(409, "This render request key belongs to different inputs")
         return public(job)
 
@@ -254,7 +258,10 @@ async def submit(bid: str, request: Request):
         manifest = {"scene": scene.config, "depthEncoding": "RGB24 view-space millimetres; zero is background",
                     "maskEncoding": "RGB24 IDs; 1 structural details, 2.. room floors, 1000.. scene objects, 2000.. walls",
                     "depthRangeMm": [near, far], "frame": [providers.FRAME_WIDTH, providers.FRAME_HEIGHT],
-                    "provider": config['provider'], **public(job)}
+                    "provider": config['provider'], "inputHash": fingerprint,
+                    "captureHashes": {name: hashlib.sha256(data).hexdigest() for name, data in
+                                      (("depth.png", raw_depth), ("mask.png", mask), ("preview.png", preview))},
+                    **public(job)}
         s.add(job)
         try:
             s.commit()
@@ -312,8 +319,9 @@ async def poll(bid: str, job_id: str):
         j = s.get(SceneRenderJob, job_id)
         if not j or j.blueprint_id != bid:
             raise HTTPException(404, "Render job not found")
+        original_status = j.status
         age = (datetime.now(timezone.utc) - j.created_at.replace(tzinfo=timezone.utc)).total_seconds()
-        if j.status in ("submitting", "queued", "running") and age > 1200:
+        if j.status == "submitting" and age > 1200:
             j.status, j.error = "failed", "Render timed out. Check your provider dashboard before retrying."
         elif j.status in ("queued", "running"):
             try:
@@ -329,13 +337,27 @@ async def poll(bid: str, job_id: str):
                         f.write(image)
                     Path(f.name).replace(folder / "result.png")
                 j.status, j.error = status, None
-            except (httpx.TimeoutException, httpx.NetworkError):
+                if status in ('queued', 'running') and age > 1200:
+                    j.status, j.error = 'failed', 'Render timed out. Check your provider dashboard before retrying.'
+            except (httpx.TimeoutException, httpx.NetworkError, providers.ProviderRetryableError):
                 return {**public(j), "error": "Provider temporarily unreachable; will check again."}
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 429 or exc.response.status_code >= 500:
+                    return {**public(j), "error": "Provider temporarily unavailable; will check again."}
+                j.status, j.error = "failed", providers.render_error(exc)
             except Exception as exc:
                 j.status, j.error = "failed", providers.render_error(exc)
-        s.add(j)
+        result = {"status": j.status, "error": j.error}
+        # Browser and worker can poll together. A stale response must never turn
+        # another poll's completed job back into a running/failed job.
+        s.expunge(j)
+        s.exec(update(SceneRenderJob).where(SceneRenderJob.id == job_id,
+               SceneRenderJob.status == original_status).values(**result))
         s.commit()
-        return public(j)
+        saved = s.get(SceneRenderJob, job_id)
+        if saved is None:
+            raise HTTPException(404, "Render job not found")
+        return public(saved)
 
 
 @router.get("/scene/renders/{job_id}/{asset}")
