@@ -4,12 +4,12 @@ import pytest
 
 from PIL import Image
 
-from app import providers, comfy
+from app import providers, comfy, local_comfy
 from app.config import settings
 from test_plan_api import client, plan, reference  # noqa: F401
 
 
-@pytest.mark.parametrize('provider', ['fal', 'comfy'])
+@pytest.mark.parametrize('provider', ['fal', 'comfy', 'local-comfy'])
 def test_scene_render_is_revisioned_and_does_not_resubmit(client, monkeypatch, tmp_path, provider):
     c, bid = client
     path = f"/blueprints/{bid}"
@@ -35,6 +35,7 @@ def test_scene_render_is_revisioned_and_does_not_resubmit(client, monkeypatch, t
         assert request_key
         return await generate(depth, prompt, model=comfy.MODEL)
     monkeypatch.setattr(comfy, 'generate', generate_comfy)
+    monkeypatch.setattr(local_comfy, 'generate', generate_comfy)
     initial = c.put(path + "/plan", json={"expectedRevision": 0, "model": plan(scale=reference())})
     assert initial.status_code == 200, initial.text
     config = {"views": [{"id": "bedroom", "name": "Bedroom", "position": {"x": 160, "y": 200},
@@ -75,6 +76,7 @@ def test_scene_render_is_revisioned_and_does_not_resubmit(client, monkeypatch, t
 
     monkeypatch.setattr(providers, "poll_image", poll)
     monkeypatch.setattr(comfy, 'poll', poll)
+    monkeypatch.setattr(local_comfy, 'poll', poll)
     url = path + "/scene/renders/" + job["id"]
     assert c.get(url).json()["status"] == "complete"
     assert c.get(url + "/result.png").content == buf.getvalue()

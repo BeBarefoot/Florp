@@ -425,3 +425,21 @@ The next model-improvement cycle is driven by those measured failures, not anoth
 framework rewrite or unbenchmarked checkpoint swap. No remaining hosted feature
 is required just to run the local app. Keep unresolved evidence visible rather
 than marking issue #1 complete.
+
+### Local image backend for M5 / 48 GB
+
+User confirmed an M5 Mac with 48 GB RAM. Add explicit `local-comfy` provider
+selection using core SDXL + depth ControlNet nodes, without cloud keys or paid
+fallback. Check installed model choices before submission; upload the existing
+camera-aligned depth, poll local history and download the fixed-frame output.
+Retain local model filenames in manifests and derive the seed from the job ID.
+Local pending jobs receive a one-hour budget. Standard ComfyUI history and lost
+submission responses are not a durable/idempotent cloud queue; never resubmit
+automatically. API origins are restricted to loopback HTTP.
+
+README and LOCAL_COMFY.md document separate Mac installation/model prerequisites.
+Validation: 451 backend tests pass / one skip, production build and local-consent
+browser regression pass. Protocol/provider tests mock ComfyUI; no weights downloaded
+or GPU run claimed.
+Next acceptance: install the documented models on the user's Mac, measure speed
+and compare wall/opening/camera drift on synthetic scenes before real-plan QA.

@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     image_provider: str = 'auto'
     render_poll_worker_enabled: bool = True
     comfy_api_key: str = ''
+    local_comfy_url: str = 'http://127.0.0.1:8188'
+    local_comfy_checkpoint: str = 'sd_xl_base_1.0.safetensors'
+    local_comfy_controlnet: str = 'diffusers_xl_depth_full.safetensors'
     comfy_unet: str = 'flux1-dev-fp8.safetensors'
     comfy_depth_lora: str = 'flux1-depth-dev-lora.safetensors'
     comfy_clip: str = 'clip_l.safetensors'

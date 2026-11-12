@@ -18,8 +18,12 @@ def render_config():
     provider = settings.image_provider
     if provider == 'auto':
         provider = 'comfy' if settings.comfy_api_key else 'fal'
+    if provider == 'local-comfy':
+        from . import local_comfy
+        local_comfy.base_url()
+        return dict(provider=provider,configured=True,model=local_comfy.MODEL,checkpoint=settings.local_comfy_checkpoint,controlnet=settings.local_comfy_controlnet)
     if provider not in ('comfy', 'fal'):
-        raise ProviderConfigurationError('IMAGE_PROVIDER must be auto, comfy or fal.')
+        raise ProviderConfigurationError('IMAGE_PROVIDER must be auto, local-comfy, comfy or fal.')
     return dict(provider=provider, configured=bool(settings.comfy_api_key if provider == 'comfy' else settings.image_api_key),
                 model=MODEL if provider == 'comfy' else settings.image_model)
 

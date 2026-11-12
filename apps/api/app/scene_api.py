@@ -18,7 +18,7 @@ from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from . import providers, comfy
+from . import providers, comfy, local_comfy
 from .config import settings
 from .depth import control_depth
 from .models import SceneRevision, SceneRenderJob, PlanRevision
@@ -261,7 +261,7 @@ async def submit(bid: str, request: Request):
         manifest = {"architectureReview": review_info(s, plan_row), "planSnapshot": plan_row.model if plan_row else None, "scene": scene.config, "depthEncoding": "RGB24 view-space millimetres; zero is background",
                     "maskEncoding": "RGB24 IDs; 1 structural details, 2.. room floors, 1000.. scene objects, 2000.. walls",
                     "depthRangeMm": [near, far], "frame": [providers.FRAME_WIDTH, providers.FRAME_HEIGHT],
-                    "provider": config['provider'], "inputHash": fingerprint,
+                    "provider": config['provider'], "localModelSettings": {k: config[k] for k in ("checkpoint", "controlnet") if k in config}, "inputHash": fingerprint,
                     "captureHashes": {name: hashlib.sha256(data).hexdigest() for name, data in
                                       (("depth.png", raw_depth), ("mask.png", mask), ("preview.png", preview))},
                     **public(job)}
@@ -283,7 +283,9 @@ async def submit(bid: str, request: Request):
                            ("control.png", control.getvalue())):
             (folder / name).write_bytes(data)
         (folder / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-        if manifest['provider'] == 'comfy':
+        if manifest['provider'] == 'local-comfy':
+            result = await local_comfy.generate(control.getvalue(), body.prompt, request_key=job_id)
+        elif manifest['provider'] == 'comfy':
             result = await comfy.generate(control.getvalue(), body.prompt, request_key=job_id)
         else:
             result = await providers.generate_image(control.getvalue(), body.prompt, model=manifest["model"])
@@ -328,7 +330,9 @@ async def poll(bid: str, job_id: str):
             j.status, j.error = "failed", "Render timed out. Check your provider dashboard before retrying."
         elif j.status in ("queued", "running"):
             try:
-                if j.provider_model.startswith('comfy:'):
+                if j.provider_model.startswith('local-comfy:'):
+                    status, image = await local_comfy.poll(j.status_url)
+                elif j.provider_model.startswith('comfy:'):
                     status, image = await comfy.poll(j.status_url)
                 else:
                     status, image = await providers.poll_image(j.status_url, j.response_url)
@@ -340,7 +344,7 @@ async def poll(bid: str, job_id: str):
                         f.write(image)
                     Path(f.name).replace(folder / "result.png")
                 j.status, j.error = status, None
-                if status in ('queued', 'running') and age > 1200:
+                if status in ('queued', 'running') and age > (3600 if j.provider_model.startswith('local-comfy:') else 1200):
                     j.status, j.error = 'failed', 'Render timed out. Check your provider dashboard before retrying.'
             except (httpx.TimeoutException, httpx.NetworkError, providers.ProviderRetryableError):
                 return {**public(j), "error": "Provider temporarily unreachable; will check again."}
