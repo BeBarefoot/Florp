@@ -472,3 +472,23 @@ test('architecture review requires explicit checks and becomes draft after calib
   await expect.poll(()=>puts.length).toBeGreaterThan(0);
   await expect(page.getByText('Architecture review: draft',{exact:true})).toBeVisible();
 });
+
+test('local generation consent avoids cloud billing and shows local recovery instructions',async({page})=>{
+ await setup(page,{model:setReference(fixture(),{x:100,y:100},{x:500,y:100},4)});
+ const view={id:'local',name:'Local bedroom',position:{x:300,y:250},yaw:0,pitch:0,horizontalFov:90,eyeHeight:1.6};
+ await page.route('**/blueprints/p/scene',r=>r.fulfill({json:{revision:1,planRevision:1,config:{views:[view],objects:[],style:'Warm oak'}}}));
+ await page.route('**/blueprints/p/scene/render-settings',r=>r.fulfill({json:{width:1024,height:768,configured:true,model:'local-comfy:sdxl-depth',provider:'local-comfy'}}));
+ await page.route('**/blueprints/p/scene/renders',r=>r.fulfill({json:[]}));
+ let count=0;
+ await page.route('**/blueprints/p/renders',r=>{
+   expect(r.request().postDataJSON().confirmed).toBe(true);count++;
+   return r.fulfill({json:{id:'local-job',viewId:'local',name:'Local bedroom',prompt:'Warm oak',model:'local-comfy:sdxl-depth',sceneRevision:1,planRevision:1,status:'failed',error:'Local ComfyUI unavailable'}});
+ });
+ await page.locator('.fe-segment button').nth(2).click();
+ const consent=page.getByLabel('Generate on this computer using local ComfyUI — no cloud API charge');
+ await expect(consent).toBeVisible();await consent.check();
+ await page.getByRole('button',{name:'Generate preview',exact:true}).click();
+ await expect(page.getByText('Start local ComfyUI and check', {exact:false})).toBeVisible();
+ expect(count).toBe(1);
+ await expect(page.getByRole('link',{name:'Open Comfy account and credits'})).toHaveCount(0);
+});

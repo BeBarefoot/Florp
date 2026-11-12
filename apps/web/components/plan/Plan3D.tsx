@@ -461,7 +461,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
           <label>Variant name <input maxLength={80} value={variant} onChange={e=>setVariant(e.target.value)}/></label>
         </>}
           {frame.configured?<label><input type="checkbox" checked={authorized} onChange={e=>setAuthorized(e.target.checked)}/>
-            Send this view’s depth image and prompt to {frame.provider==="comfy"?"Comfy Cloud":"fal"} for a billable render</label>:<p>{frame.provider==="comfy"?"Set COMFY_API_KEY":"Set COMFY_API_KEY for Comfy Cloud, or IMAGE_API_KEY for fal"} on the API server to enable generation. Capture and export work without a key.</p>}
+            {frame.provider==="local-comfy"?"Generate on this computer using local ComfyUI — no cloud API charge":<>Send this view’s depth image and prompt to {frame.provider==="comfy"?"Comfy Cloud":"fal"} for a billable render</>}</label>:<p>{frame.provider==="comfy"?"Set COMFY_API_KEY":"Set COMFY_API_KEY for Comfy Cloud, or IMAGE_API_KEY for fal"} on the API server to enable generation. Capture and export work without a key.</p>}
           {dirty&&<p>Save the floor plan before generating.</p>}
           <button disabled={busy||!view||!ready||!authorized||!frame.configured||dirty||!validCamera(view.position)} onClick={()=>void generate()}>Generate preview</button>
       </section>
@@ -469,7 +469,8 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
         <label>Render variants <select value={job?.id} onChange={e=>setSelectedJob(e.target.value)}>
           {viewJobs.map(j=><option value={j.id} key={j.id}>{j.name} · {j.status}</option>)}</select></label>
         {job&&<p role="status">{job.status} {job.error??""} · {job.model} · Scene {job.sceneRevision}</p>}
-        {job?.status==="failed"&&<p>After fixing the account or configuration issue, select consent and generate a new preview. If the connection was interrupted, check the provider dashboard first to avoid paying twice. Your saved camera and capture remain available.</p>}
+        {job?.status==="failed"&&job.model.startsWith("local-comfy:")&&<p>Start local ComfyUI and check that the SDXL checkpoint and depth ControlNet are installed. Keep it running until generation finishes. No cloud credits are used.</p>}
+        {job?.status==="failed"&&!job.model.startsWith("local-comfy:")&&<p>After fixing the account or configuration issue, select consent and generate a new preview. If the connection was interrupted, check the provider dashboard first to avoid paying twice. Your saved camera and capture remain available.</p>}
         {job?.status==="failed"&&job.model.startsWith("comfy:")&&<a href="https://cloud.comfy.org" target="_blank" rel="noreferrer">Open Comfy account and credits</a>}
         {job?.status==="complete"&&<>
           <button onClick={()=>setOverlay(!overlay)}>{overlay?"Side by side":"Overlay"}</button>

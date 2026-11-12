@@ -117,10 +117,12 @@ receipts pending; a lost submission response is never automatically resubmitted.
 For an ambiguous timeout, check the provider dashboard before
 submitting again. No fallback to a different paid provider occurs automatically.
 
-For local ComfyUI, [export a depth workflow bundle](docs/codex-handoff.md#local-depth-workflow-and-photo-normalization).
-This path needs a separate ComfyUI installation and suitable weights; it is not an
-in-app local inference service. Live cloud compatibility and visual quality still need
-an authorized, capped-cost evaluation.
+For generation without cloud credits, use [local ComfyUI setup](docs/LOCAL_COMFY.md).
+`IMAGE_PROVIDER=local-comfy` connects the in-app Generate button to a loopback
+ComfyUI server using SDXL with depth ControlNet. The user's M5 / 48 GB Mac is the
+target; real hardware speed/quality remains to be measured. No cloud key is sent,
+and no paid fallback occurs. Model weights and ComfyUI must be installed separately.
+Local render-input export remains available without an inference server.
 
 ## Back up and restore your local work
 
