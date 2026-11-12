@@ -98,3 +98,14 @@ See [Engine validation](ENGINE_VALIDATION.md) for analytical Python/TypeScript r
 and 3D metric fixtures, semantic split/merge coverage, contextual fixture filtering
 and the auto-capture visibility-facts fix. Full backend baseline is now 413 passes,
 1 skip. Real-world recognition accuracy remains unmeasured; follow the POC gates.
+
+## Local macOS release hardening (November 2026)
+
+README is the current setup guide. PRs #55–#60 add bounded/provenance-tracked
+uploads, locked startup/CI, patched dependencies with React 19-compatible 3D,
+background render receipt recovery, full offline workspace backup/restore, and
+revision-bound architecture review. Use `scripts/demo_project.py` for synthetic
+PNG/JPEG/PDF projects and `npm run test:integration` for the real API/browser
+walkthrough with provider keys disabled. The production plan records remaining
+actual Mac, real-plan and live-provider evidence. Preserve the original dirty
+checkout when continuing work; do not infer held-out model accuracy from CI.

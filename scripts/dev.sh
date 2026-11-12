@@ -8,6 +8,15 @@ command -v npm >/dev/null || { echo 'Install Node.js 22, then follow README setu
   echo 'Install dependencies first: (cd apps/api && uv sync --locked) and (cd apps/web && npm ci)' >&2
   exit 1
 }
+web_mode=dev
+if [[ "${1:-}" == '--production' && "$#" == 1 ]]; then
+  echo 'Building the local app. The browser will be available after this finishes.'
+  (cd "$repo_root/apps/web" && npm run build)
+  web_mode=start
+elif [[ "$#" != 0 ]]; then
+  echo 'Usage: scripts/dev.sh [--production]' >&2
+  exit 2
+fi
 pids=()
 cleanup() {
   trap - EXIT INT TERM
@@ -19,7 +28,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 (cd "$repo_root/apps/api" && exec uv run --locked uvicorn app.main:app --host 127.0.0.1 --port 8000) &
 pids+=("$!")
-(cd "$repo_root/apps/web" && exec node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3000) &
+(cd "$repo_root/apps/web" && exec node node_modules/next/dist/bin/next "$web_mode" --hostname 127.0.0.1 --port 3000) &
 pids+=("$!")
 echo 'Starting Florp at http://localhost:3000 (API http://localhost:8000). Keep this terminal open; Ctrl+C stops both.'
 # Portable to macOS Bash 3: stop the companion if either process exits.

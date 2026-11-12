@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:ui": "playwright test"
+    "test:ui": "playwright test",
+    "test:integration": "playwright test --config playwright.integration.config.ts"
   },
   "dependencies": {
     "@react-three/drei": "10.7.9",

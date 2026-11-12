@@ -1,6 +1,6 @@
 # Production POC delivery plan
 
-Updated 11 November 2026. Canonical execution plan for
+Updated 12 November 2026. Canonical execution plan for
 [issue #1](https://github.com/BeBarefoot/Florp/issues/1). Read the
 [implementation audit](ARCHITECTURE.md) for what exists today.
 
@@ -65,8 +65,8 @@ Owner role: platform engineer, reviewed by product/QA.
 - [ ] Document the supported drafting styles, resolution, units and one-floor/one-page limits.
 - [ ] Validate upload type/decoded size, EXIF orientation, PDF page identity and image
       dimensions. Preserve source hash and every resize/padding/rectification transform.
-- [ ] Add a deterministic fixture command that builds synthetic demo projects without
-      private drawings; make local startup and hosted pilot configuration reproducible.
+- [x] Add a deterministic fixture command that builds synthetic demo projects without
+      private drawings; make local startup reproducible. Hosted configuration is deferred to F.
 - [ ] Pin runtime/dependencies, record optional model hashes/licenses and explain missing
       model/provider configuration in the app. CI must avoid dependency re-resolution drift.
 
@@ -378,3 +378,50 @@ regressions pass. Regression coverage includes API bypass attempts, geometry blo
 invalidation, reopening history, exact export metadata and explicit UI checks.
 Remaining C evidence: broader cross-language/capture parity and independent real
 plan validation. Next: a reproducible synthetic local walkthrough and release checklist.
+
+### Step 7 — Real local walkthrough and release evidence
+
+Step 6 merged as [PR #60](https://github.com/BeBarefoot/Florp/pull/60), all checks
+green. `scripts/demo_project.py` creates reproducible PNG/JPEG/PDF inputs via the
+real local API, extracts them and applies their known synthetic reference. Each
+format produced seven walls and two rooms. It leaves review draft and never calls
+a vision/image provider. Each invocation creates an explicitly named demo project.
+
+Validation: 442 backend tests pass / one skip, and the production-build integration
+walkthrough passes locally. A separate Playwright integration configuration starts actual FastAPI and Next
+servers (production frontend build/start) with a temporary DB/storage and blank provider keys. It verifies all three
+formats, camera/bed/prompt persistence, matching depth/mask after reload, capture
+export metadata and object removal/undo. Add this as the fourth CI job; retain its
+synthetic screenshot/results artifact. The existing mock UI suite remains separate.
+
+The integration workspace was backed up and restored into a new directory, then
+opened through a fresh API: three plans/previews at revision 2, saved camera, bed
+and prompt all verified. No current user database was touched. A new failing
+regression exposed transparent PNGs turning black; alpha now composites on white
+without moving strokes, recorded in the source manifest. A `scripts/start.sh` entry point builds and runs the local production UI; the
+existing dev launcher retains hot reload and shared shutdown handling. Screenshot inspection
+also exposed white inspector text on a pale background; set an explicit dark color.
+
+### Local release decision after this pass
+
+Target: single-user macOS, localhost API, local SQLite/files, optional paid image
+provider. Hosted gate F and mobile/PWA gate D are deferred from this immediate
+release, but remain on the roadmap through issue #1. The implemented local workflow
+is a candidate for user validation, not a certified architectural product.
+
+Required acceptance evidence still open:
+
+1. On the user's Mac: locked install, start/stop, open/edit/save/reload a project,
+   place a camera/object, export a capture, then stop and perform backup/restore
+   into a new directory. Linux CI is not actual macOS hardware evidence.
+2. Representative consented real plans with one independently known dimension,
+   reviewed walls/openings/rooms and fixture truth. Follow gate B's frozen split
+   and scoring protocol before selecting weights or claiming model accuracy.
+3. Comfy account access and credits plus explicit provider/spend-cap authorization
+   for live render QA. All automated generation tests remain mocked; no credits
+   were spent. Depth guidance alone cannot guarantee preserved architecture.
+
+The next model-improvement cycle is driven by those measured failures, not another
+framework rewrite or unbenchmarked checkpoint swap. No remaining hosted feature
+is required just to run the local app. Keep unresolved evidence visible rather
+than marking issue #1 complete.

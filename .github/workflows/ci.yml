@@ -44,3 +44,29 @@ jobs:
           npm ci --no-audit --no-fund
           npx playwright install --with-deps chromium
           npm run test:ui
+  local-integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.5"
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked API dependencies
+        working-directory: apps/api
+        run: uv sync --locked
+      - name: Exercise the real local app without provider credentials
+        working-directory: apps/web
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          npm run test:integration
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: local-integration-results
+          path: apps/web/test-results/

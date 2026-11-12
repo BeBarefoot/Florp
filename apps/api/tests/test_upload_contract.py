@@ -78,3 +78,16 @@ def test_rejected_upload_preserves_project_and_valid_upload_records_hashes(clien
     assert meta['sourceSha256'] == hashlib.sha256(raw).hexdigest()
     assert meta['previewSha256'] == hashlib.sha256((folder / 'preview.png').read_bytes()).hexdigest()
     assert (folder / 'original.bin').read_bytes() == raw
+
+
+def test_transparent_plan_is_composited_on_white_without_moving_strokes():
+    from PIL import ImageDraw
+    source = Image.new('RGBA',(80,40),(0,0,0,0))
+    ImageDraw.Draw(source).line((10,10,70,10),fill=(0,0,0,255),width=3)
+    out=io.BytesIO()
+    source.save(out,format='PNG')
+    image,meta=uploads.decode(out.getvalue())
+    assert image.getpixel((0,0)) == (255,255,255)
+    assert image.getpixel((40,10)) == (0,0,0)
+    assert image.size == (80,40)
+    assert {'operation':'alpha-composite','background':[255,255,255]} in meta['transforms']

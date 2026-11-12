@@ -44,8 +44,14 @@ def decode(contents, page_index=0):
                         raise HTTPException(415, 'Animated images are not supported. Export a single PNG or JPEG.')
                     manifest.update(sourceFormat=source.format, sourceSize=list(source.size))
                     orientation = source.getexif().get(274, 1)
-                    image = ImageOps.exif_transpose(source).convert('RGB')
+                    normalized = ImageOps.exif_transpose(source)
                     manifest['transforms'].append({'operation': 'exif-transpose', 'orientation': orientation})
+                    if normalized.mode in ('RGBA', 'LA') or 'transparency' in normalized.info:
+                        rgba = normalized.convert('RGBA')
+                        image = Image.alpha_composite(Image.new('RGBA', rgba.size, 'white'), rgba).convert('RGB')
+                        manifest['transforms'].append({'operation': 'alpha-composite', 'background': [255, 255, 255]})
+                    else:
+                        image = normalized.convert('RGB')
         check_size(*image.size)
     except HTTPException:
         raise
