@@ -75,7 +75,7 @@
 .fe-error{position:absolute;z-index:15;left:12px;right:12px;top:12px;display:flex;gap:8px;align-items:center;background:#fff4ef;color:#8a2c0c;border:1px solid #f6c7b4;border-radius:10px;padding:8px 12px;font-size:13px}.fe-error span{flex:1}
 .fe-progress{position:absolute;z-index:12;top:0;left:0;width:100%;height:3px}
 .plan3d{position:relative;flex:1;min-width:0;background:#eef2f5}.plan3d-note{position:absolute;left:12px;bottom:8px;font-size:12px;color:var(--muted)}
-.fe-inspector{grid-area:inspector;overflow-y:auto;padding:12px;display:grid;align-content:start;gap:10px;background:#f7f9f9;border-left:1px solid var(--line);min-height:0}
+.fe-inspector{color:var(--ink);grid-area:inspector;overflow-y:auto;padding:12px;display:grid;align-content:start;gap:10px;background:#f7f9f9;border-left:1px solid var(--line);min-height:0}
 .fe-card{background:white;border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;gap:8px}.fe-card h3{margin:0;font-size:15px}.fe-card p{margin:0;font-size:13px;line-height:1.45}
 .fe-card label{display:grid;gap:4px;font-size:12px;color:var(--muted);font-weight:600}.fe-accent{border-color:#a7dccf;background:#f3fbf8}
 .fe-approval{border-color:#f3c3ad;background:#fffaf7}.fe-approval header{display:flex;justify-content:space-between;align-items:baseline}.fe-nav button{font-size:12px}

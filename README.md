@@ -25,8 +25,11 @@ Keep any existing `.env`. No API key is needed for local extraction, editing, 3D
 or capture/export. Then start both servers:
 
 ```bash
-./scripts/dev.sh
+./scripts/start.sh
 ```
+
+The launcher builds the production UI first; wait for startup to finish. For
+development with hot reload, use `./scripts/dev.sh` instead.
 
 Keep the terminal open and visit **http://localhost:3000**. API documentation is at
 http://localhost:8000/docs. Ctrl+C stops the servers. This starts the app on the
@@ -49,6 +52,21 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 
 If Chrome reports connection refused, check that both commands are still running
 and resolve the error in their terminals. Ports 3000 and 8000 must be available.
+
+## Try a synthetic demo
+
+With the API running, use a second terminal:
+
+```bash
+cd apps/api
+uv run --locked python scripts/demo_project.py
+```
+
+This creates PNG, JPEG and PDF versions of a generated two-room plan, runs local
+extraction, and sets its known synthetic 6 m reference. It prints the project URL.
+Review is left draft and no paid provider is called. You can place a camera, add or
+remove objects, save, reload and export a capture without using your own plans.
+Each run creates a separate demo project that you can delete from the home page.
 
 ## Use the app
 
@@ -136,7 +154,13 @@ overwritten. Missing source files fail visibly instead of creating a partial bac
 (cd apps/api && uv run --locked pytest -q)
 (cd apps/web && npm run build)
 (cd apps/web && npx playwright install chromium && npm run test:ui)
+(cd apps/web && npm run test:integration)
 ```
+
+The integration test starts a real API and production frontend in a browser in a temporary workspace on
+ports 8008/3108, disables provider keys, and checks the synthetic import → extraction
+→ calibration → scene/camera → capture → reload journey. It does not touch your
+configured database. The standard UI suite separately mocks provider jobs/errors.
 
 CI uses Python 3.12, Node 22, uv 0.13.5 and committed lockfiles. Update lockfiles
 explicitly when changing dependencies. Tests use synthetic/approved fixtures and
@@ -157,9 +181,12 @@ keep the 3D renderer compatible with the App Router runtime. Production npm audi
 installed base Python environment audit reported zero known vulnerabilities on
 11 November 2026. Audits do not establish complete application security.
 
-Held-out full-plan accuracy, independent accuracy evaluation, real-device usability,
-live image drift/cost, authentication, durable job execution and hosted operations remain
-release work. Keep this unauthenticated development server on trusted localhost until
+For the macOS local release, remaining acceptance evidence is an actual Mac
+install/run/backup check, representative real-plan accuracy, and authorized live
+image drift/cost evaluation after provider credits are available. The tested local
+features are ready for that evaluation; this is not a claim of final production
+quality. Hosted authentication/storage and the mobile/PWA journey remain later
+roadmap work toward issue #1. Keep this unauthenticated development server on trusted localhost until
 the hosting gates pass. Default extraction is local; external image generation sends
 derived depth and the prompt only after consent. Optional legacy vision extraction
 sends the source image when explicitly invoked.
