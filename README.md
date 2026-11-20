@@ -193,3 +193,5 @@ roadmap work toward issue #1. Keep this unauthenticated development server on tr
 the hosting gates pass. Default extraction is local; external image generation sends
 derived depth and the prompt only after consent. Optional legacy vision extraction
 sends the source image when explicitly invoked.
+
+The synthetic demo reports upload, extraction, upload-to-draft and calibration times in milliseconds for PNG, JPEG and PDF. Run `npm run test:integration` from `apps/web` for the production browser capture and export timing in `test-results/**/workspace.json`. Each format has one sample per run.

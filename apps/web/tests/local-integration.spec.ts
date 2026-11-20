@@ -41,7 +41,9 @@ test('real local PNG/JPEG/PDF extraction, scene persistence and capture',async({
    const path=await(await download).path();
    return JSON.parse(readFileSync(path!,'utf8'));
  }
+ const captureStart=performance.now();
  const before=await capture();
+ const captureAndExportMs=Math.round(performance.now()-captureStart);
  expect(before.planRevision).toBe(2);
  expect(before.architectureReview.status).toBe('draft');
  expect(before.planSnapshot.walls.length).toBeGreaterThan(0);
@@ -64,5 +66,5 @@ test('real local PNG/JPEG/PDF extraction, scene persistence and capture',async({
  await expect(objects.getByRole('button',{name:/Remove/})).toHaveCount(1);
  expect(errors).toEqual([]);
  await page.screenshot({path:testInfo.outputPath('local-scene.png'),fullPage:true});
- writeFileSync(testInfo.outputPath('workspace.json'),JSON.stringify({workspace:testInfo.config.metadata.workspace,...demo},null,2));
+ writeFileSync(testInfo.outputPath('workspace.json'),JSON.stringify({workspace:testInfo.config.metadata.workspace,captureAndExportMs,...demo},null,2));
 });

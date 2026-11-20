@@ -2,6 +2,7 @@
 import argparse
 import io
 import json
+from time import perf_counter
 from urllib.parse import urlsplit
 
 import httpx
@@ -32,16 +33,26 @@ def create_demo(api='http://127.0.0.1:8000'):
         project = checked(client.post('/projects', json={'title':'Synthetic demo — not a real property'}))
         results=[]
         for name,mime,raw in fixtures():
+            started = perf_counter()
             bp=checked(client.post(f"/projects/{project['id']}/blueprints",files={'file':(name,raw,mime)}))
+            uploaded = perf_counter()
             url=f"/blueprints/{bp['id']}/plan"
             extracted=checked(client.post(url+'/extract?expected_revision=0'))
+            drafted = perf_counter()
             model=extracted['model']
             if not model['walls'] or not model['rooms']:
                 raise RuntimeError(f'Synthetic extraction produced no usable rooms for {name}; inspect the demo project.')
             # This is generated ground truth, not inferred scale on a user's scan.
             model['scale']={'reference':{'p1':{'x':100,'y':550},'p2':{'x':700,'y':550},'lengthMeters':6}}
             saved=checked(client.put(url,json={'expectedRevision':extracted['revision'],'model':model}))
-            results.append({'id':bp['id'],'filename':name,'revision':saved['revision'],
+            calibrated = perf_counter()
+            timings = {key: round(seconds * 1000, 2) for key, seconds in {
+                'upload': uploaded - started,
+                'extract': drafted - uploaded,
+                'uploadToDraft': drafted - started,
+                'calibrateAndSave': calibrated - drafted,
+            }.items()}
+            results.append({'id':bp['id'],'filename':name,'timingsMs':timings,'revision':saved['revision'],
                             'walls':len(saved['model']['walls']),'rooms':len(saved['model']['rooms'])})
         return {'projectId':project['id'],'projectUrl':f"http://localhost:3000/project/{project['id']}",
                 'blueprints':results,'note':'Review is intentionally left draft. No external model or image provider was called.'}

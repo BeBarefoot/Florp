@@ -445,3 +445,5 @@ browser regression pass. Protocol/provider tests mock ComfyUI; no weights downlo
 or GPU run claimed.
 Next acceptance: install the documented models on the user's Mac, measure speed
 and compare wall/opening/camera drift on synthetic scenes before real-plan QA.
+
+The synthetic demo reports upload, extraction, upload-to-draft and calibration times in milliseconds for PNG, JPEG and PDF. Run `npm run test:integration` from `apps/web` for the production browser capture and export timing in `test-results/**/workspace.json`. Each format has one sample per run.
