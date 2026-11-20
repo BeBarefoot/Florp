@@ -453,3 +453,5 @@ With a calibrated plan, place and aim a camera, then focus the 3D view. WASD wal
 Use **Floor finish** in the 3D scene for an immediate whole-floor color and roughness preview. Save the scene to keep the finish. Camera capture and export include it without invoking an image provider.
 
 With local ComfyUI, use **Render area** to target a visible piece of furniture. Florp runs image-to-image generation on the padded crop using its preview and depth, then replaces only pixels belonging to the selected object in the captured view. Evaluate seams, speed and appearance on the target Mac.
+
+The extraction regression suite includes a synthetic JPEG with pink and blue walls, dimension lines and furniture marks. The mixed-colour enclosure case recovers three rooms and avoids six spurious window proposals observed before the fix. Real-photo accuracy still requires independent annotations.

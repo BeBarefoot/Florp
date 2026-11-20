@@ -450,15 +450,19 @@ def wall_strips(image: np.ndarray) -> Strips:
         bounded, widths, annotation_bars = bounded_red_bands(gray, paper, pale_colour, da, w_wall)
         # Solid coloured wall networks can lack darker outlines. A component
         # enclosing room-sized holes is not a detached dimension bar.
-        contours, hierarchy = cv2.findContours(
-            red.astype(np.uint8), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE
-        )
+        # Use both source colours: a blue bearing wall can close a pink room.
+        # Only protect the connected boundary, since detached marks may sit inside it.
+        network = (red_cand | blue_cand).astype(np.uint8)
+        contours, hierarchy = cv2.findContours(network, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
         if hierarchy is not None:
-            protected = np.zeros((h, w), np.uint8)
+            _, labels = cv2.connectedComponents(network)
+            protected = set()
             for contour, entry in zip(contours, hierarchy[0]):
                 if entry[3] >= 0 and cv2.contourArea(contour) >= (6 * w_wall) ** 2:
-                    cv2.drawContours(protected, contours, int(entry[3]), 1, -1)
-            annotation_bars &= ~(protected.astype(bool) & red)
+                    x, y = contours[entry[3]][0, 0]
+                    protected.add(labels[y, x])
+            if protected:
+                annotation_bars &= ~np.isin(labels, list(protected))
         # Opening classification must see the same pale masonry evidence as
         # wall recovery. The stricter seed mask alone makes a recovered pale
         # partition look empty, so its two outline strokes become a window.
