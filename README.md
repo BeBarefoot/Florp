@@ -173,6 +173,7 @@ regressions and their limits.
 
 - [Current architecture](docs/ARCHITECTURE.md): revisioned PlanModel, scenes, captures and providers.
 - [Production POC plan](docs/PRODUCTION_POC_PLAN.md): ordered implementation and release evidence.
+- [Enviz capability roadmap](docs/ENVIZ_CAPABILITY_ROADMAP.md): technical findings and the path from a fast local walkthrough to whole-home design.
 - [Contributor handoff](docs/codex-handoff.md): detailed workflows and configuration.
 - [Deterministic color-plan service](services/deterministic-blueprint/README.md): separate CPU service.
 - [Historical milestones](HISTORY.md): earlier experiments, not current setup instructions.

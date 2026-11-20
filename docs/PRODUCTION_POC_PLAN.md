@@ -1,8 +1,10 @@
 # Production POC delivery plan
 
-Updated 12 November 2026. Canonical execution plan for
+Updated 20 November 2026. Canonical execution plan for
 [issue #1](https://github.com/BeBarefoot/Florp/issues/1). Read the
-[implementation audit](ARCHITECTURE.md) for what exists today.
+[implementation audit](ARCHITECTURE.md) for what exists today. The
+[Enviz capability roadmap](ENVIZ_CAPABILITY_ROADMAP.md) extends these gates with
+a fast editable walkthrough, model edits from prompts, and whole-home capabilities.
 
 ## Deliverable and boundary
 
