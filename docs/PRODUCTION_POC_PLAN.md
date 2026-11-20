@@ -447,3 +447,5 @@ Next acceptance: install the documented models on the user's Mac, measure speed
 and compare wall/opening/camera drift on synthetic scenes before real-plan QA.
 
 The synthetic demo reports upload, extraction, upload-to-draft and calibration times in milliseconds for PNG, JPEG and PDF. Run `npm run test:integration` from `apps/web` for the production browser capture and export timing in `test-results/**/workspace.json`. Each format has one sample per run.
+
+With a calibrated plan, place and aim a camera, then focus the 3D view. WASD walks and arrow keys turn or move. Movement checks the path against wall chunks from floor to head height, closed doors and furniture. Save the scene to retain the viewpoint.

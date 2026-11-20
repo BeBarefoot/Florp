@@ -30,6 +30,10 @@ test('real local PNG/JPEG/PDF extraction, scene persistence and capture',async({
  }
  await page.getByRole('button',{name:'Place camera',exact:true}).click();
  await at(250,200);await at(250,450);
+ const walk=page.getByRole('group',{name:'Walkthrough'});
+ await walk.focus();
+ await walk.press('ArrowRight');
+ await walk.press('w');
  await page.getByRole('button',{name:'Place object',exact:true}).click();await at(250,350);
  await page.getByLabel('Design prompt').fill('Warm oak bedroom');
  await page.getByRole('button',{name:'Save scene',exact:true}).click();
@@ -44,6 +48,8 @@ test('real local PNG/JPEG/PDF extraction, scene persistence and capture',async({
  const captureStart=performance.now();
  const before=await capture();
  const captureAndExportMs=Math.round(performance.now()-captureStart);
+ expect(before.view.yaw).toBe(95);
+ expect(before.view.position.y).toBeGreaterThan(200);
  expect(before.planRevision).toBe(2);
  expect(before.architectureReview.status).toBe('draft');
  expect(before.planSnapshot.walls.length).toBeGreaterThan(0);

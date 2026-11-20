@@ -125,20 +125,21 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     change({...scene,objects:scene.objects.map(o=>o.id===item.id?next:o)},checkpoint);
     setMessage("");
   }
-  function clearance(p:Pt) {
+  function clearance(p:Pt, walking=false) {
+    const eye=view?.eyeHeight??1.6;
     let nearest=Infinity;
     for(const wall of pieces) {
       const x=p.x*scale-wall.centre[0], z=p.y*scale-wall.centre[1], a=-wall.angle;
       const u=x*Math.cos(a)+z*Math.sin(a)+wall.lengthM/2;
       const v=-x*Math.sin(a)+z*Math.cos(a);
       for(const c of wall.chunks) {
-        if(c.low>(view?.eyeHeight??1.6)||c.high<(view?.eyeHeight??1.6))continue;
+        if(c.low>(walking?eye+.12:eye)||c.high<(walking ? .02 : eye))continue;
         nearest=Math.min(nearest,Math.hypot(Math.max(0,c.start-u,u-c.end),Math.max(0,Math.abs(v)-wall.thicknessM/2)));
       }
     }
     for(const o of m.openings) {
       if(o.kind!=="door"||o.status!=="confirmed"||!scene.closedDoorIds?.includes(o.id)||
-         o.heightM<(view?.eyeHeight??1.6))continue;
+         (!walking && o.heightM<eye))continue;
       const ends=openingEnds(m,o,nodeMap);if(!ends)continue;
       const [a,b]=ends, dx=b.x-a.x, dy=b.y-a.y, len2=dx*dx+dy*dy;
       if(len2<1e-8)continue;
@@ -147,8 +148,8 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     }
     return nearest;
   }
-  function validCamera(p:Pt){
-    return rooms.some(r=>contains(p,r.polygon)) && clearance(p)>=.3 &&
+  function validCamera(p:Pt, walking=false){
+    return rooms.some(r=>contains(p,r.polygon)) && clearance(p,walking)>=.3 &&
       !scene.objects.some(o=>contains(p,footprint(o,scale)));
   }
   function snap(p:Pt, o:Item){
@@ -226,7 +227,12 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     const a=view.yaw*Math.PI/180;
     const p={x:view.position.x+(forward*Math.cos(a)-side*Math.sin(a))/scale,
       y:view.position.y+(forward*Math.sin(a)+side*Math.cos(a))/scale};
-    if(validCamera(p)){updateView({position:p});setMessage("");}
+    const steps=Math.ceil(Math.hypot(forward,side)/.025);
+    const clear=Array.from({length:steps},(_,i)=>(i+1)/steps).every(t=>validCamera({
+      x:view.position.x+(p.x-view.position.x)*t,
+      y:view.position.y+(p.y-view.position.y)*t,
+    },true));
+    if(clear){updateView({position:p});setMessage("");}
     else setMessage("That move would put the camera too close to a wall or inside furniture.");
   }
   function editRoom(patch:{label?:string;roomType?:RoomType|null;ceilingHeightM?:number|null}){
@@ -353,7 +359,21 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
             mode==="sight"?"Click a target to check the eye-level sightline.":mode==="zone"?"Click two opposite corners of the room zone.":
             mode?"Click where the object should go.":"Click a room or object to edit it."}</p>
         </div>
-        <div className="scene-frame" style={{aspectRatio:`${frame.width}/${frame.height}`}}>
+        <div className="scene-frame" role="group" aria-label="Walkthrough" tabIndex={preview&&view?0:-1}
+          onKeyDown={e=>{
+            if(!preview||!view||busy||e.altKey||e.ctrlKey||e.metaKey)return;
+            switch(e.key.toLowerCase()){
+              case "w": case "arrowup": nudge(.1,0); break;
+              case "s": case "arrowdown": nudge(-.1,0); break;
+              case "a": nudge(0,-.1); break;
+              case "d": nudge(0,.1); break;
+              case "arrowleft": updateView({yaw:wrap(view.yaw-5)}); break;
+              case "arrowright": updateView({yaw:wrap(view.yaw+5)}); break;
+              default: return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+          }} style={{aspectRatio:`${frame.width}/${frame.height}`}}>
           <Canvas camera={{position:[w/2+w*.6,Math.max(7,h*.9),h/2+Math.max(8,h)],fov:55}}>
             <color attach="background" args={["#e9eff2"]}/>
             <SceneMesh m={m} objects={scene.objects} closedDoorIds={scene.closedDoorIds}/>
@@ -364,6 +384,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
       </div>
       <div className="scene-actions">
         {view&&<>
+          {preview&&<p>Focus the walkthrough to walk with WASD and turn with the arrow keys, or use the movement buttons below.</p>}
           <label>Saved view <select value={view.id} onChange={e=>{setViewId(e.target.value);setPreview(true);setSight("");}}>{scene.views.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
           <label>Name <input maxLength={80} value={view.name} onChange={e=>updateView({name:e.target.value})}/></label>
           <button onClick={()=>setMode("aim")}>Aim</button>
