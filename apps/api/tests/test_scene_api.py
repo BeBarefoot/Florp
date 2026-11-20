@@ -9,8 +9,11 @@ from app.config import settings
 from test_plan_api import client, plan, reference  # noqa: F401
 
 
-@pytest.mark.parametrize('provider', ['fal', 'comfy', 'local-comfy'])
+@pytest.mark.parametrize('provider', ['fal', 'comfy', 'local-comfy', 'masked-local'])
 def test_scene_render_is_revisioned_and_does_not_resubmit(client, monkeypatch, tmp_path, provider):
+    masked = provider == 'masked-local'
+    if masked:
+        provider = 'local-comfy'
     c, bid = client
     path = f"/blueprints/{bid}"
     monkeypatch.setattr(settings, "image_api_key", "mock")
@@ -31,7 +34,12 @@ def test_scene_render_is_revisioned_and_does_not_resubmit(client, monkeypatch, t
         return "mock-job", "https://queue.fal.run/status", "https://queue.fal.run/result"
 
     monkeypatch.setattr(providers, "generate_image", generate)
-    async def generate_comfy(depth, prompt, *, request_key):
+    async def generate_comfy(depth, prompt, *, request_key, preview_png=None):
+        if masked:
+            assert Image.open(io.BytesIO(preview_png)).size == (192, 192)
+            assert Image.open(io.BytesIO(depth)).size == (192, 192)
+            calls.append(prompt)
+            return "local-job", "local-status", "local-result"
         assert request_key
         return await generate(depth, prompt, model=comfy.MODEL)
     monkeypatch.setattr(comfy, 'generate', generate_comfy)
@@ -58,6 +66,14 @@ def test_scene_render_is_revisioned_and_does_not_resubmit(client, monkeypatch, t
     assert c.post(path + "/renders", json=payload).status_code == 422
     assert not calls
     payload["confirmed"] = True
+    if masked:
+        payload["targetObjectId"] = "bed"
+        assert c.post(path + "/renders", json=payload).status_code == 422
+        ids = Image.new("RGB", image.size)
+        ids.paste((0, 3, 232), (10, 10, 50, 50))
+        mask_bytes = io.BytesIO()
+        ids.save(mask_bytes, format="PNG")
+        payload["mask"] = base64.b64encode(mask_bytes.getvalue()).decode()
     response = c.post(path + "/renders", json=payload)
     assert response.status_code == 200, response.text
     job = response.json()
@@ -71,7 +87,12 @@ def test_scene_render_is_revisioned_and_does_not_resubmit(client, monkeypatch, t
     assert len(calls) == 1
     assert c.post(path + "/renders", json={**payload, "prompt": "Changed"}).status_code == 409
 
-    async def poll(*_):
+    async def poll(*args):
+        if masked:
+            assert args[1] == (192, 192)
+            patch = io.BytesIO()
+            Image.new("RGB", args[1], "red").save(patch, format="PNG")
+            return "complete", patch.getvalue()
         return "complete", buf.getvalue()
 
     monkeypatch.setattr(providers, "poll_image", poll)
@@ -79,7 +100,14 @@ def test_scene_render_is_revisioned_and_does_not_resubmit(client, monkeypatch, t
     monkeypatch.setattr(local_comfy, 'poll', poll)
     url = path + "/scene/renders/" + job["id"]
     assert c.get(url).json()["status"] == "complete"
-    assert c.get(url + "/result.png").content == buf.getvalue()
+    result = c.get(url + "/result.png").content
+    if masked:
+        output = Image.open(io.BytesIO(result))
+        assert output.size == image.size
+        assert output.getpixel((20, 20)) == (255, 0, 0)
+        assert output.getpixel((51, 51)) == image.getpixel((51, 51))
+    else:
+        assert result == buf.getvalue()
     assert c.get(url + "/manifest.json").json()["sceneRevision"] == 1
     manifest = c.get(url + '/manifest.json').json()
     assert manifest['provider'] == provider
