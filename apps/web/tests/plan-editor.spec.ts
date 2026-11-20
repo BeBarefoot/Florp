@@ -493,3 +493,29 @@ test('local generation consent avoids cloud billing and shows local recovery ins
  expect(count).toBe(1);
  await expect(page.getByRole('link',{name:'Open Comfy account and credits'})).toHaveCount(0);
 });
+
+test('walker crosses a confirmed interior door and stops at a closed one',async({page})=>{
+  const door={id:'passage',kind:'door' as const,hostWallId:'w6',offsetPx:150,widthPx:100,
+    span:null,heightM:2.1,sillM:0,swing:null,hinge:'start' as const,confidence:1,status:'confirmed' as const};
+  const model=setReference(fixture({openings:[door]}),{x:100,y:100},{x:500,y:100},4);
+  await setup(page,{model});
+  const view={id:'walker',name:'Walker',position:{x:450,y:300},yaw:0,pitch:0,horizontalFov:90,eyeHeight:1.6};
+  let savedX=view.position.x;
+  await page.route('**/blueprints/p/scene',r=>{
+    const config=r.request().method()==='PUT'?r.request().postDataJSON().config:{views:[view],objects:[],style:''};
+    savedX=config.views[0].position.x;
+    return r.fulfill({json:{revision:1,planRevision:model.revision,config}});
+  });
+  await page.locator('.fe-segment button').nth(2).click();
+  const walk=page.getByRole('group',{name:'Walkthrough'});
+  await walk.focus();
+  for(let i=0;i<10;i++)await walk.press('w');
+  await page.getByRole('button',{name:'Save scene',exact:true}).click();
+  await expect.poll(()=>savedX).toBeCloseTo(550);
+  await page.getByText('Door positions',{exact:true}).click();
+  await page.getByLabel('Door 1 closed').check();
+  await walk.focus();
+  for(let i=0;i<10;i++)await walk.press('s');
+  await page.getByRole('button',{name:'Save scene',exact:true}).click();
+  await expect.poll(()=>savedX).toBeCloseTo(540);
+});

@@ -41,7 +41,9 @@ All timing is a target to validate on the user's Mac. Record upload-to-draft, ti
 | 5. Extend to whole homes | Add selected PDF pages, floor/elevation alignment, level and stair connections, roofs/site imports, and GLB import with scale, axes and semantic coverage checks. Keep unsupported CAD elements visibly opaque. Benchmark multi-floor separately with held-out stairs, voids and differing floorplate outlines. Consider native CAD adapters only when real inputs justify their complexity and licensing cost. | After single-floor gates |
 | 6. Share and extend devices | Package a slim read-only walkthrough. Add secure revocable external sharing after gate F, then evaluate WebXR, native headset and on-site AR against device requirements and tracking accuracy. Measure transfer size, time to interactive, FPS and memory on actual devices. | POC D/F |
 
-**First implementation PR:** instrument the existing real local integration fixture for timed stages and add a benchmark report broken down by source format. Use the same run to identify where the first-minute budget is spent. Follow with a collision-aware single-floor walking mode based on the same calibrated geometry. These steps use synthetic data and need no Enviz purchase, provider credits or user input. Representative drawings with permission to use them and an actual M5 run are needed for the real-plan and hardware gates.
+**Implementation status, 20 November 2026.** The integration benchmark, first-person movement, floor swatches and selected-object image edits have landed. On one Linux run the synthetic two-room draft took 721 ms for PNG, 598 ms for JPEG and 627 ms for PDF. Browser capture and export took 774 ms. These measurements exclude human review and AI sampling. The masked-edit tests use a simulated provider and verify pixel identity outside the selected object, including occluded regions.
+
+**Next measurements.** On the M5, compare direct floor previews, cropped local edits and full-frame SDXL with the same saved camera. Record cold and warm latency, peak memory, visible edge seams and human preference. Expand extraction evaluation to consented drawings with independently annotated walls and openings. Keep the synthetic mixed-colour regression in CI while collecting these results.
 
 **Optional direct comparison:** if an Enviz project is already available, compare the same approved plan on both products. Record the initial deliverable, corrections and wait, rerun a selected object or opening edit, and compare model geometry, camera, GLB download and image output. Keep a versioned rubric and compare equivalent deliverables before making any claims about cost, turnaround or parity.
 
@@ -49,8 +51,10 @@ The synthetic demo reports upload, extraction, upload-to-draft and calibration t
 
 With a calibrated plan, place and aim a camera, then focus the 3D view. WASD walks and arrow keys turn or move. Movement checks the path against wall chunks from floor to head height, closed doors and furniture. Save the scene to retain the viewpoint.
 
-Use **Floor finish** in the 3D scene for an immediate whole-floor color and roughness preview. Save the scene to keep the finish. Camera capture and export include it without invoking an image provider.
+Use **Floor finish** in the 3D scene for an immediate whole-floor color and roughness preview. Save the scene to keep the finish. Camera captures and the render-inputs export include it without invoking an image provider.
 
 With local ComfyUI, use **Render area** to target a visible piece of furniture. Florp runs image-to-image generation on the padded crop using its preview and depth, then replaces only pixels belonging to the selected object in the captured view. Evaluate seams, speed and appearance on the target Mac.
 
 The extraction regression suite includes a synthetic JPEG with pink and blue walls, dimension lines and furniture marks. The mixed-colour enclosure case recovers three rooms and avoids six spurious window proposals observed before the fix. Real-photo accuracy still requires independent annotations.
+
+Walk through a confirmed open doorway between rooms when the opening fits the camera clearance. Closing the door in the scene blocks passage.
