@@ -5,7 +5,14 @@ export type View = { id: string; name: string; position: Pt; yaw: number; pitch:
 export type ObjectKind = "bed" | "wardrobe" | "toilet" | "vanity" | "shower" | "bathtub";
 export type Item = { id: string; kind: ObjectKind; position: Pt; rotation: number;
   width: number; depth: number; height: number; mattressWidth?: number | null; mattressDepth?: number | null };
-export type Scene = { views: View[]; objects: Item[]; style: string; closedDoorIds?: string[]; dismissedFixtureIds?: string[] };
+export const floorFinishes = {
+  default: {name:"Original",color:"#dbe2d8",roughness:1},
+  oak: {name:"Warm oak",color:"#bf946d",roughness:.65},
+  slate: {name:"Dark slate",color:"#535c63",roughness:.83},
+  limestone: {name:"Pale limestone",color:"#e4dac6",roughness:.74},
+};
+export type FloorFinish = keyof typeof floorFinishes;
+export type Scene = { floorFinish?: FloorFinish; views: View[]; objects: Item[]; style: string; closedDoorIds?: string[]; dismissedFixtureIds?: string[] };
 export type Saved = { revision: number; planRevision: number | null; config: Scene };
 export type Frame = { width: number; height: number; configured: boolean; model: string; provider: string };
 export type Job = { id: string; viewId: string; name: string; prompt: string; model: string;

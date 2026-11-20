@@ -7,7 +7,7 @@ import { ROOM_TYPES } from "../../lib/plan/model";
 import { metersPerPixel, openingEnds } from "../../lib/plan/derive";
 import { meshSignature, wallPieces } from "../../lib/plan/mesh";
 import { API, request } from "../../lib/api";
-import { catalog, contains, footprint, intersects, newItem, promptFor, type Capture, type Frame, type Item,
+import { floorFinishes, type FloorFinish, catalog, contains, footprint, intersects, newItem, promptFor, type Capture, type Frame, type Item,
   type Job, type ObjectKind, type Saved, type Scene, type View } from "../../lib/plan/scene";
 import { CaptureBridge, EyeCamera, roomsOf, SceneMesh } from "./SceneMesh";
 
@@ -53,7 +53,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
   const nodeMap=useMemo(()=>new Map(m.nodes.map(n=>[n.id,n])),[m.nodes]);
   const w=m.imageTransform.width*scale, h=m.imageTransform.height*scale;
   const cameraTarget:[number,number,number]=[w/2,0,h/2];
-  const fingerprint=JSON.stringify([m,view,scene.objects,scene.closedDoorIds,frame.width,frame.height]);
+  const fingerprint=JSON.stringify([m,view,scene.objects,scene.closedDoorIds,scene.floorFinish,frame.width,frame.height]);
   const shot=capture?.fingerprint===fingerprint?capture:null;
   const fixtureSuggestions=fixtureScan?.planRevision===m.revision&&!dirty?
     fixtureScan.suggestions.filter(o=>!scene.dismissedFixtureIds?.includes(o.id)&&
@@ -243,6 +243,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
   const visibleIn=(capture:Capture|null,id:number)=>!!capture&&(capture.coverage[id]||0)>=Math.max(24,frame.width*frame.height*.00015);
   const visible=(id:number)=>visibleIn(shot,id);
   function factsFor(capture:Capture|null){return [
+    ...(scene.floorFinish && scene.floorFinish!=="default" ? [`Floor finish: ${floorFinishes[scene.floorFinish].name}.`] : []),
     ...rooms.filter((r,i)=>visibleIn(capture,i+2)||(view&&contains(view.position,r.polygon))).flatMap(r=>r.roomType?
       [`Space type: ${r.roomType}.`]:[]),
     ...scene.objects.flatMap((o,i)=>visibleIn(capture,1000+i)?
@@ -256,6 +257,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     if(saved.planRevision===planRevision&&JSON.stringify(saved.config)===JSON.stringify(scene))return saved;
     const r=await request<Saved>(path+"/scene",json("PUT",{expectedRevision:saved.revision,planRevision,config:scene}));
     setSaved(r);
+    setScene(current=>current===scene?r.config:current);
     return r;
   }
   async function save(){
@@ -304,7 +306,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
       maskIds:{1:"Structure",...Object.fromEntries(rooms.map((r,i)=>[i+2,r.roomType??"room"])),
         ...Object.fromEntries(scene.objects.map((o,i)=>[1000+i,o.id])),
         ...Object.fromEntries(pieces.map((p,i)=>[2000+i,p.id]))},
-      prompt,depth:shot.depth,mask:shot.mask,preview:shot.preview};
+      floorFinish:scene.floorFinish??"default",prompt,depth:shot.depth,mask:shot.mask,preview:shot.preview};
     const url=URL.createObjectURL(new Blob([JSON.stringify(content)],{type:"application/json"}));
     const a=document.createElement("a");a.href=url;a.download="florp-render-inputs.json";a.click();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -321,6 +323,10 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
         <button disabled={!edited&&!dirty} onClick={()=>void save()}>Save scene</button>
         <button disabled={!undo.length} onClick={()=>{setScene(undo[undo.length-1]);setUndo(undo.slice(0,-1));}}>Undo scene edit</button>
       </div>
+      <label>Floor finish <select value={scene.floorFinish??"default"}
+        onChange={e=>change({...scene,floorFinish:e.target.value as FloorFinish})}>
+        {Object.entries(floorFinishes).map(([key,finish])=><option key={key} value={key}>{finish.name}</option>)}
+      </select></label>
       {message&&<p role="status">{message}</p>}
       {saved?.planRevision&&saved.planRevision!==m.revision&&<p>Plan updated. Review camera and furniture clearances, then save the scene against this revision.</p>}
       <div className="scene-layout">
@@ -376,7 +382,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
           }} style={{aspectRatio:`${frame.width}/${frame.height}`}}>
           <Canvas camera={{position:[w/2+w*.6,Math.max(7,h*.9),h/2+Math.max(8,h)],fov:55}}>
             <color attach="background" args={["#e9eff2"]}/>
-            <SceneMesh m={m} objects={scene.objects} closedDoorIds={scene.closedDoorIds}/>
+            <SceneMesh floorFinish={scene.floorFinish} m={m} objects={scene.objects} closedDoorIds={scene.closedDoorIds}/>
             <CaptureBridge bind={bind}/>
             {preview&&view?<EyeCamera view={view} scale={scale} frame={frame}/>:<><Grid infiniteGrid cellSize={1} sectionSize={5}/><OrbitControls makeDefault target={cameraTarget}/></>}
           </Canvas>

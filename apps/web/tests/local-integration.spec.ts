@@ -46,8 +46,16 @@ test('real local PNG/JPEG/PDF extraction, scene persistence and capture',async({
    return JSON.parse(readFileSync(path!,'utf8'));
  }
  const captureStart=performance.now();
- const before=await capture();
+ const original=await capture();
  const captureAndExportMs=Math.round(performance.now()-captureStart);
+ await page.getByLabel('Floor finish').selectOption('oak');
+ await page.getByRole('button',{name:'Save scene',exact:true}).click();
+ await expect(page.getByText('Scene saved.',{exact:true})).toBeVisible();
+ const before=await capture();
+ expect(before.preview).not.toEqual(original.preview);
+ expect(before.depth).toEqual(original.depth);
+ expect(before.mask).toEqual(original.mask);
+
  expect(before.view.yaw).toBe(95);
  expect(before.view.position.y).toBeGreaterThan(200);
  expect(before.planRevision).toBe(2);
@@ -57,6 +65,7 @@ test('real local PNG/JPEG/PDF extraction, scene persistence and capture',async({
  expect(before.depth).toMatch(/^data:image\/png;base64,/);
  await page.reload();await enter();
  await expect(page.getByLabel('Design prompt')).toHaveValue('Warm oak bedroom');
+ await expect(page.getByLabel('Floor finish')).toHaveValue('oak');
  const after=await capture();
  expect(after.view).toEqual(before.view);
  expect(after.depth).toEqual(before.depth);

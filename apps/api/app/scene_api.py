@@ -56,6 +56,7 @@ class SceneObject(Data):
 
 
 class Scene(Data):
+    floor_finish: Literal["default", "oak", "slate", "limestone"] = "default"
     views: list[View] = Field(default_factory=list, max_length=30)
     objects: list[SceneObject] = Field(default_factory=list, max_length=100)
     style: str = Field(default="", max_length=1200)
