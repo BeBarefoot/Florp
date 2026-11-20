@@ -46,3 +46,5 @@ All timing is a target to validate on the user's Mac. Record upload-to-draft, ti
 **Optional direct comparison:** if an Enviz project is already available, compare the same approved plan on both products. Record the initial deliverable, corrections and wait, rerun a selected object or opening edit, and compare model geometry, camera, GLB download and image output. Keep a versioned rubric and compare equivalent deliverables before making any claims about cost, turnaround or parity.
 
 The synthetic demo reports upload, extraction, upload-to-draft and calibration times in milliseconds for PNG, JPEG and PDF. Run `npm run test:integration` from `apps/web` for the production browser capture and export timing in `test-results/**/workspace.json`. Each format has one sample per run.
+
+With a calibrated plan, place and aim a camera, then focus the 3D view. WASD walks and arrow keys turn or move. Movement checks the path against wall chunks from floor to head height, closed doors and furniture. Save the scene to retain the viewpoint.
