@@ -149,8 +149,24 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     }
     return nearest;
   }
+  // Room floor polygons can end at the inside wall face on each side of a door.
+  // Include the threshold of an open, hosted door in the walkable footprint.
+  function inDoorway(p:Pt){
+    return m.openings.some(o=>{
+      if(o.kind!=="door" || o.status!=="confirmed" || scene.closedDoorIds?.includes(o.id))return false;
+      const wall=m.walls.find(w=>w.id===o.hostWallId);
+      const ends=openingEnds(m,o,nodeMap);
+      if(!wall || !ends || o.sillM>.02 || o.heightM<(view?.eyeHeight??1.6)+.12)return false;
+      const [a,b]=ends, dx=b.x-a.x, dy=b.y-a.y;
+      const length=Math.hypot(dx,dy);
+      if(length<=0)return false;
+      const along=((p.x-a.x)*dx+(p.y-a.y)*dy)/length;
+      const across=Math.abs((p.x-a.x)*dy-(p.y-a.y)*dx)/length;
+      return along*scale>=.3 && (length-along)*scale>=.3 && across<=wall.thicknessPx/2+.5;
+    });
+  }
   function validCamera(p:Pt, walking=false){
-    return rooms.some(r=>contains(p,r.polygon)) && clearance(p,walking)>=.3 &&
+    return (rooms.some(r=>contains(p,r.polygon)) || inDoorway(p)) && clearance(p,walking)>=.3 &&
       !scene.objects.some(o=>contains(p,footprint(o,scale)));
   }
   function snap(p:Pt, o:Item){

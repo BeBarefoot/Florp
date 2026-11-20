@@ -194,12 +194,16 @@ the hosting gates pass. Default extraction is local; external image generation s
 derived depth and the prompt only after consent. Optional legacy vision extraction
 sends the source image when explicitly invoked.
 
+## Local walkthrough, finishes and timing
+
 The synthetic demo reports upload, extraction, upload-to-draft and calibration times in milliseconds for PNG, JPEG and PDF. Run `npm run test:integration` from `apps/web` for the production browser capture and export timing in `test-results/**/workspace.json`. Each format has one sample per run.
 
 With a calibrated plan, place and aim a camera, then focus the 3D view. WASD walks and arrow keys turn or move. Movement checks the path against wall chunks from floor to head height, closed doors and furniture. Save the scene to retain the viewpoint.
 
-Use **Floor finish** in the 3D scene for an immediate whole-floor color and roughness preview. Save the scene to keep the finish. Camera capture and export include it without invoking an image provider.
+Use **Floor finish** in the 3D scene for an immediate whole-floor color and roughness preview. Save the scene to keep the finish. Camera captures and the render-inputs export include it without invoking an image provider.
 
 With local ComfyUI, use **Render area** to target a visible piece of furniture. Florp runs image-to-image generation on the padded crop using its preview and depth, then replaces only pixels belonging to the selected object in the captured view. Evaluate seams, speed and appearance on the target Mac.
 
 The extraction regression suite includes a synthetic JPEG with pink and blue walls, dimension lines and furniture marks. The mixed-colour enclosure case recovers three rooms and avoids six spurious window proposals observed before the fix. Real-photo accuracy still requires independent annotations.
+
+Walk through a confirmed open doorway between rooms when the opening fits the camera clearance. Closing the door in the scene blocks passage.
