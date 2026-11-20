@@ -62,3 +62,5 @@ The API protocol, errors, provider routing and UI are tested with mocks. This
 cloud workspace does not have the user's M5 GPU. Real Mac installation, speed and
 image drift must be measured there. Depth conditioning guides architecture but
 cannot guarantee that generated walls/openings match the measured scene.
+
+With local ComfyUI, use **Render area** to target a visible piece of furniture. Florp runs image-to-image generation on the padded crop using its preview and depth, then replaces only pixels belonging to the selected object in the captured view. Evaluate seams, speed and appearance on the target Mac.

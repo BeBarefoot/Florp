@@ -36,6 +36,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
   const [preview,setPreview]=useState(false), [capture,setCapture]=useState<Capture|null>(null);
   const [sight,setSight]=useState(""), [message,setMessage]=useState(""), [busy,setBusy]=useState(false);
   const [authorized,setAuthorized]=useState(false), [variant,setVariant]=useState("");
+  const [editObject,setEditObject]=useState("");
   const [selectedJob,setSelectedJob]=useState(""), [overlay,setOverlay]=useState(false);
   const [undo,setUndo]=useState<Scene[]>([]);
   const [ready,setReady]=useState(false);
@@ -284,10 +285,12 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
       setCapture(currentShot);setPreview(true);
       const renderPrompt=promptFor(view,[...new Set(factsFor(currentShot))],scene.style);
       const r=await persistScene(m.revision);
-      const signature=JSON.stringify([currentShot.fingerprint,renderPrompt,variant,r.revision]);
+      const target=frame.provider==="local-comfy" && scene.objects.some(o=>o.id===editObject) ? editObject : "";
+      if(target && !scene.objects.some((o,i)=>o.id===target && visibleIn(currentShot,1000+i)))throw new Error("Choose an object visible in this view.");
+      const signature=JSON.stringify([target,currentShot.fingerprint,renderPrompt,variant,r.revision]);
       if(submitRetry.current?.signature!==signature)submitRetry.current={signature,key:crypto.randomUUID()};
       const job=await request<Job>(path+"/renders",json("POST",{requestKey:submitRetry.current.key,
-        sceneRevision:r.revision,viewId:view.id,name:variant.trim()||view.name,prompt:renderPrompt,confirmed:true,
+        ...(target?{targetObjectId:target}:{}),sceneRevision:r.revision,viewId:view.id,name:variant.trim()||view.name,prompt:renderPrompt,confirmed:true,
         depth:currentShot.depth.split(",")[1],mask:currentShot.mask.split(",")[1],preview:currentShot.preview.split(",")[1]}));
       submitRetry.current=null;setAuthorized(false);
       setJobs(all=>[job,...all.filter(j=>j.id!==job.id)]);setSelectedJob(job.id);
@@ -487,6 +490,10 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
           <button onClick={exportInputs}>Export render inputs</button>
           <label>Variant name <input maxLength={80} value={variant} onChange={e=>setVariant(e.target.value)}/></label>
         </>}
+          {frame.provider==="local-comfy"&&<label>Render area <select value={editObject} onChange={e=>{setEditObject(e.target.value);setAuthorized(false);}}>
+            <option value="">Whole view</option>
+            {scene.objects.map((o,i)=><option key={o.id} value={o.id} disabled={!!shot&&!visible(1000+i)}>{fixtureName(o)} {i+1}</option>)}
+          </select></label>}
           {frame.configured?<label><input type="checkbox" checked={authorized} onChange={e=>setAuthorized(e.target.checked)}/>
             {frame.provider==="local-comfy"?"Generate on this computer using local ComfyUI — no cloud API charge":<>Send this view’s depth image and prompt to {frame.provider==="comfy"?"Comfy Cloud":"fal"} for a billable render</>}</label>:<p>{frame.provider==="comfy"?"Set COMFY_API_KEY":"Set COMFY_API_KEY for Comfy Cloud, or IMAGE_API_KEY for fal"} on the API server to enable generation. Capture and export work without a key.</p>}
           {dirty&&<p>Save the floor plan before generating.</p>}
