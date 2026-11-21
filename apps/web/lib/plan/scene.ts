@@ -18,7 +18,8 @@ export type Saved = { revision: number; planRevision: number | null; config: Sce
 export type Frame = { width: number; height: number; configured: boolean; model: string; provider: string };
 export type Job = { id: string; viewId: string; name: string; prompt: string; model: string;
   sceneRevision: number; planRevision: number; status: string; error: string | null };
-export type Capture = { preview: string; depth: string; mask: string; coverage: Record<number, number>; fingerprint: string };
+export type VisibleRegion = { pixels:number; boundsXY:[number,number,number,number]; depthMm:[number,number] };
+export type Capture = { preview: string; depth: string; mask: string; coverage: Record<number, number>; visibleRegions:Record<number,VisibleRegion>; fingerprint: string };
 
 export const catalog: Record<ObjectKind, [number, number, number]> = {
   bed: [1.9, 2.12, .9], toilet: [.38, .68, .8], shower: [.9, .9, 2],

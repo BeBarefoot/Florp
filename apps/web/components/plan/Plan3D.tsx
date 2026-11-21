@@ -246,7 +246,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
       [`Visible ${o.kind}: ${o.kind==="bed"?(o.mattressWidth??o.width).toFixed(2)+" × "+(o.mattressDepth??o.depth).toFixed(2)+" m mattress":o.width.toFixed(2)+" × "+o.depth.toFixed(2)+" m footprint"}.`]:[]),
   ];}
   const facts=factsFor(shot);
-  const prompt=view?renderPrompt(m,scene,view,frame,[...new Set(facts)]):"";
+  const prompt=view?renderPrompt(m,scene,view,frame,[...new Set(facts)],false,shot):"";
   useEffect(()=>setAuthorized(false),[fingerprint,prompt]);
   async function persistScene(planRevision:number, config=scene){
     if(!saved)throw Error("The scene has not loaded.");
@@ -282,7 +282,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
       const currentShot=capture?.fingerprint===key?capture:captureFn.current(current,scale,frame,key);
       const config={...scene,views:scene.views.map(v=>v.id===current.id?current:v)};
       setCapture(currentShot);setCameraMode("preview");
-      const submittedPrompt=renderPrompt(m,config,current,frame,[...new Set(factsFor(currentShot,current))]);
+      const submittedPrompt=renderPrompt(m,config,current,frame,[...new Set(factsFor(currentShot,current))],false,currentShot);
       const r=await persistScene(m.revision,config);
       const target=frame.provider==="local-comfy" && scene.objects.some(o=>o.id===editObject) ? editObject : "";
       if(target && !scene.objects.some((o,i)=>o.id===target && visibleIn(currentShot,1000+i)))throw new Error("Choose an object visible in this view.");
@@ -303,7 +303,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
       try{architectureReview=await request(path+`/plan/review?revision=${m.revision}`);}
       catch(e){setMessage(`Review status could not be loaded: ${String(e)}`);return;}
     }
-    const content={architectureReview,view,planRevision:dirty?null:m.revision,planSnapshot:m,frame:{width:frame.width,height:frame.height},
+    const content={sceneSnapshot:scene,visibleRegions:shot.visibleRegions,architectureReview,view,planRevision:dirty?null:m.revision,planSnapshot:m,frame:{width:frame.width,height:frame.height},
       depthEncoding:"RGB24 view-space millimetres; zero is background",
       maskIds:{1:"Structure",...Object.fromEntries(rooms.map((r,i)=>[i+2,r.roomType??"room"])),
         ...Object.fromEntries(scene.objects.map((o,i)=>[1000+i,o.id])),

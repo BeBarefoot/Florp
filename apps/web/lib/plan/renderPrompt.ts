@@ -1,10 +1,10 @@
 import {savedPose} from "./camera";
 import {metersPerPixel, nodeMap, openingEnds, wallEnds} from "./derive";
 import type {PlanModel, Pt} from "./model";
-import {contains, floorFinishes, promptFor, type Scene, type View} from "./scene";
+import {contains, floorFinishes, promptFor, type Scene, type View, type Capture} from "./scene";
 import {roomsOf} from "./walkSpace";
 
-export function renderPrompt(plan:PlanModel, scene:Scene, view:View, frame:{width:number;height:number}, facts:string[], approximate=false) {
+export function renderPrompt(plan:PlanModel, scene:Scene, view:View, frame:{width:number;height:number}, facts:string[], approximate=false, capture?:Capture|null) {
   const scale=metersPerPixel(plan);
   if (!scale) throw new Error("A display scale is required for the camera specification.");
   const pose=savedPose(view,scale,frame.width/frame.height);
@@ -13,6 +13,7 @@ export function renderPrompt(plan:PlanModel, scene:Scene, view:View, frame:{widt
   const length=(a:Pt,b:Pt)=>Math.hypot(a.x-b.x,a.y-b.y)*scale;
   const rooms=roomsOf(plan);
   const geometry={
+    imageCoordinates:capture?"Visible object boundsXY are inclusive [left,top,right,bottom] pixels from the top left. pixels counts only unoccluded pixels. depthMm is the minimum and maximum visible camera-space depth in millimetres. A null region is fully hidden.":undefined,
     coordinates:"Metres from the top-left of the floor plan. +X right, +Y up, +Z down the plan. Floor coordinates are [X,Z].",
     scale:approximate?"Approximate display scale": "Plan reference scale",
     metresPerPixel:scale,
@@ -35,9 +36,19 @@ export function renderPrompt(plan:PlanModel, scene:Scene, view:View, frame:{widt
         sill:o.sillM,height:o.heightM,...(o.kind==="door"?{hinge:o.hinge,swing:o.swing,closed:scene.closedDoorIds?.includes(o.id)??false}:{})};
     }),
     stairs:plan.stairs?.map(s=>({id:s.id,risePerStep:s.riseM,treadsXZ:s.treads.map(poly=>poly.map(xz))})),
-    objects:scene.objects.map(({position,rotation,...o})=>({...o,centreXZ:xz(position),rotationDegreesFromXToZ:rotation})),
+    objects:scene.objects.map(({position,rotation,...o},i)=>({...o,
+      ...(capture?{visibleInFrame:capture.visibleRegions[1000+i]??null}:{}),centreXZ:xz(position),rotationDegreesFromXToZ:rotation})),
   };
+  const framing=scene.objects.flatMap((object,i)=>{
+    const region=capture?.visibleRegions[1000+i];
+    if(!region)return [];
+    const [left,top,right,bottom]=region.boundsXY;
+    const percent=100*region.pixels/(frame.width*frame.height);
+    return [`Visible ${object.kind} occupies ${percent.toFixed(2)}% of the image, within pixels (${left}, ${top}) to (${right}, ${bottom}) from the upper left. Preserve that visible portion.`];
+  });
   return [promptFor(view,facts,scene.style),
+    `Camera eye [X,Y,Z] = [${pose.position.join(", ")}] m, looking along [${pose.direction.join(", ")}]. Frame ${frame.width} × ${frame.height} px.`,
+    ...framing,
     "Match the supplied frame edge for edge. Preserve occlusion, silhouettes, perspective and cropping. Keep off-camera geometry outside the frame.",
     JSON.stringify(geometry)].join("\n");
 }

@@ -141,7 +141,9 @@ export function CaptureBridge({bind}: {bind: (fn: ((view: View, scale: number, f
         `varying float depth; ${pack} void main(){gl_FragColor=vec4(packId(max(1.0,floor(depth*1000.0+0.5))),1.0);}`,
         side:T.DoubleSide});
       const coverage:Record<number,number>={};
-      function pass(mask=false) {
+      const visibleRegions:Capture["visibleRegions"]={};
+      let depthPixels:Uint8Array;
+      function pass(kind:"preview"|"depth"|"mask") {
         gl.clear();
         gl.render(scene,camera);
         const rgba=new Uint8Array(width*height*4);
@@ -151,9 +153,20 @@ export function CaptureBridge({bind}: {bind: (fn: ((view: View, scale: number, f
         const ctx=canvas.getContext("2d")!;
         const img=ctx.createImageData(width,height);
         for(let y=0;y<height;y++) img.data.set(rgba.subarray(y*width*4,(y+1)*width*4),(height-y-1)*width*4);
-        if(mask) for(let i=0;i<rgba.length;i+=4){
+        if(kind==="depth")depthPixels=rgba;
+        if(kind==="mask") for(let i=0;i<rgba.length;i+=4){
           const id=rgba[i]*65536+rgba[i+1]*256+rgba[i+2];
           coverage[id]=(coverage[id]||0)+1;
+          if(!id)continue;
+          const pixel=i/4, x=pixel%width, y=height-1-Math.floor(pixel/width);
+          const mm=depthPixels[i]*65536+depthPixels[i+1]*256+depthPixels[i+2];
+          const region=visibleRegions[id]??={pixels:0,boundsXY:[x,y,x,y],depthMm:[mm,mm]};
+          const box=region.boundsXY;
+          box[0]=Math.min(box[0],x); box[1]=Math.min(box[1],y);
+          box[2]=Math.max(box[2],x); box[3]=Math.max(box[3],y);
+          region.depthMm[0]=Math.min(region.depthMm[0],mm);
+          region.depthMm[1]=Math.max(region.depthMm[1],mm);
+          region.pixels++;
         }
         ctx.putImageData(img,0,0);
         return canvas.toDataURL("image/png");
@@ -168,7 +181,7 @@ export function CaptureBridge({bind}: {bind: (fn: ((view: View, scale: number, f
         gl.setRenderTarget(target);
         gl.setScissorTest(false);
         target.texture.colorSpace=T.SRGBColorSpace;
-        const preview=pass();
+        const preview=pass("preview");
         target.texture.colorSpace=T.NoColorSpace;
         scene.background=new T.Color(0);
         for(const m of meshes){
@@ -176,15 +189,15 @@ export function CaptureBridge({bind}: {bind: (fn: ((view: View, scale: number, f
           original.set(m,m.material);
           m.material=depth;
         }
-        const depthPNG=pass();
+        const depthPNG=pass("depth");
         for(const m of meshes){
           const id=m.userData.maskId as number;
           if(!masks.has(id)) masks.set(id,new T.ShaderMaterial({vertexShader:vertex,
             fragmentShader:`${pack} void main(){gl_FragColor=vec4(packId(${id}.0),1.0);}`, side:T.DoubleSide}));
           m.material=masks.get(id)!;
         }
-        const mask=pass(true);
-        return {preview,depth:depthPNG,mask,coverage,fingerprint};
+        const mask=pass("mask");
+        return {preview,depth:depthPNG,mask,coverage,visibleRegions,fingerprint};
       } finally {
         original.forEach((v,k)=>k.material=v);
         hidden.forEach(o=>o.visible=true);

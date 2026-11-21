@@ -325,6 +325,12 @@ test("saved interior framing and depth match after reopening at a different widt
   await enter();
   await expect(page.getByRole("button",{name:"Back to orbit"})).toBeVisible();
   const after=await depth();
+  expect(after.sceneSnapshot.objects.length).toBe(2);
+  const bed=after.visibleRegions[1000];
+  expect(bed.pixels).toBeGreaterThan(0);
+  expect(bed.depthMm[0]).toBeGreaterThan(0);
+  expect(bed.boundsXY[2]).toBeLessThan(after.frame.width);
+  expect(JSON.parse(after.prompt.split("\n").at(-1)).objects[0].visibleInFrame).toEqual(bed);
   expect(after.view).toEqual(before.view);
   expect(after.depth).toEqual(before.depth);
   expect(after.mask).toEqual(before.mask);
