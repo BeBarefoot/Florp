@@ -10,7 +10,8 @@ import { API, request } from "../../lib/api";
 import { newUuid } from "../../lib/uuid";
 import { floorFinishes, type FloorFinish, catalog, contains, footprint, intersects, newItem, promptFor, type Capture, type Frame, type Item,
   type Job, type ObjectKind, type Saved, type Scene, type View } from "../../lib/plan/scene";
-import { CaptureBridge, EyeCamera, roomsOf, SceneMesh } from "./SceneMesh";
+import { CaptureBridge, EyeCamera, SceneMesh } from "./SceneMesh";
+import { roomsOf, walkSpace } from "../../lib/plan/walkSpace";
 import { WalkCamera } from "./WalkCamera";
 
 type Mode = "camera" | "aim" | "sight" | "object" | "move" | "zone" | null;
@@ -134,49 +135,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
     change({...scene,objects:scene.objects.map(o=>o.id===item.id?next:o)},checkpoint);
     setMessage("");
   }
-  function clearance(p:Pt, walking=false) {
-    const eye=view?.eyeHeight??1.6;
-    let nearest=Infinity;
-    for(const wall of pieces) {
-      const x=p.x*scale-wall.centre[0], z=p.y*scale-wall.centre[1], a=-wall.angle;
-      const u=x*Math.cos(a)+z*Math.sin(a)+wall.lengthM/2;
-      const v=-x*Math.sin(a)+z*Math.cos(a);
-      for(const c of wall.chunks) {
-        if(c.low>(walking?eye+.12:eye)||c.high<(walking ? .02 : eye))continue;
-        nearest=Math.min(nearest,Math.hypot(Math.max(0,c.start-u,u-c.end),Math.max(0,Math.abs(v)-wall.thicknessM/2)));
-      }
-    }
-    for(const o of m.openings) {
-      if(o.kind!=="door"||o.status!=="confirmed"||!scene.closedDoorIds?.includes(o.id)||
-         (!walking && o.heightM<eye))continue;
-      const ends=openingEnds(m,o,nodeMap);if(!ends)continue;
-      const [a,b]=ends, dx=b.x-a.x, dy=b.y-a.y, len2=dx*dx+dy*dy;
-      if(len2<1e-8)continue;
-      const t=Math.min(1,Math.max(0,((p.x-a.x)*dx+(p.y-a.y)*dy)/len2));
-      nearest=Math.min(nearest,Math.max(0,Math.hypot(p.x-a.x-t*dx,p.y-a.y-t*dy)*scale-.02));
-    }
-    return nearest;
-  }
-  // Room floor polygons can end at the inside wall face on each side of a door.
-  // Include the threshold of an open, hosted door in the walkable footprint.
-  function inDoorway(p:Pt){
-    return m.openings.some(o=>{
-      if(o.kind!=="door" || o.status!=="confirmed" || scene.closedDoorIds?.includes(o.id))return false;
-      const wall=m.walls.find(w=>w.id===o.hostWallId);
-      const ends=openingEnds(m,o,nodeMap);
-      if(!wall || !ends || o.sillM>.02 || o.heightM<(view?.eyeHeight??1.6)+.12)return false;
-      const [a,b]=ends, dx=b.x-a.x, dy=b.y-a.y;
-      const length=Math.hypot(dx,dy);
-      if(length<=0)return false;
-      const along=((p.x-a.x)*dx+(p.y-a.y)*dy)/length;
-      const across=Math.abs((p.x-a.x)*dy-(p.y-a.y)*dx)/length;
-      return along*scale>=.3 && (length-along)*scale>=.3 && across<=wall.thicknessPx/2+.5;
-    });
-  }
-  function validCamera(p:Pt, walking=false){
-    return (rooms.some(r=>contains(p,r.polygon)) || inDoorway(p)) && clearance(p,walking)>=.3 &&
-      !scene.objects.some(o=>contains(p,footprint(o,scale)));
-  }
+  const {clearance,validCamera}=walkSpace(m,scale,scene,view?.eyeHeight,pieces,nodeMap);
   function snap(p:Pt, o:Item){
     const a=o.rotation*Math.PI/180;
     let best=.22, result=p;

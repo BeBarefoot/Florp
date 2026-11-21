@@ -1,10 +1,11 @@
 "use client";
-import { useLayoutEffect, useMemo } from "react";
+import { useEffect, useLayoutEffect, useMemo } from "react";
 import { useThree } from "@react-three/fiber";
 import * as T from "three";
 import type { PlanModel } from "../../lib/plan/model";
 import { metersPerPixel, openingEnds } from "../../lib/plan/derive";
 import { wallPieces } from "../../lib/plan/mesh";
+import { roomsOf } from "../../lib/plan/walkSpace";
 import { stairPieces } from "../../lib/plan/stairs";
 import { savedPose } from "../../lib/plan/camera";
 import { floorFinishes, type FloorFinish, blocks, type Capture, type Frame, type Item, type View } from "../../lib/plan/scene";
@@ -30,10 +31,39 @@ export function EyeCamera({view, scale, frame}: {view: View; scale: number; fram
   return null;
 }
 
-export const roomsOf = (m: PlanModel) => [...m.rooms, ...(m.roomZones || [])].slice(0, 990);
 
-export function SceneMesh({m, objects, closedDoorIds, floorFinish="default"}: {m: PlanModel; objects: Item[]; closedDoorIds?: string[]; floorFinish?:FloorFinish}) {
+
+function oakTexture() {
+  const canvas=document.createElement("canvas");
+  canvas.width=canvas.height=256;
+  const context=canvas.getContext("2d")!;
+  const image=context.createImageData(256,256);
+  for(let y=0;y<256;y++){
+    const plank=Math.floor(y/16), joint=(plank*73)%256;
+    for(let x=0;x<256;x++){
+      const grain=Math.sin(y*2.1+Math.sin(x*.072+plank)*1.3)*7+Math.sin(y*.71+x*.04)*4;
+      const seam=y%16===0||x===joint;
+      const tone=seam?130:216+grain+(plank*19%29)-14+(x>joint?0:7);
+      const i=(y*256+x)*4;
+      image.data.set([tone,tone,tone,255],i);
+    }
+  }
+  context.putImageData(image,0,0);
+  const texture=new T.CanvasTexture(canvas);
+  texture.wrapS=texture.wrapT=T.RepeatWrapping;
+  texture.repeat.set(.28,.55);
+  texture.colorSpace=T.SRGBColorSpace;
+  texture.anisotropy=4;
+  return texture;
+}
+
+export function SceneMesh({m, objects, closedDoorIds, floorFinish="default", presentation=false, cutaway=false}: {m: PlanModel; objects: Item[]; closedDoorIds?: string[]; floorFinish?:FloorFinish; presentation?:boolean; cutaway?:boolean}) {
   const scale = metersPerPixel(m)!;
+  const floorMap=useMemo(()=>presentation&&floorFinish==="oak"?oakTexture():null,[presentation,floorFinish]);
+  useEffect(()=>()=>floorMap?.dispose(),[floorMap]);
+  const width=m.imageTransform.width*scale, depth=m.imageTransform.height*scale;
+  const sunTarget=useMemo(()=>{const target=new T.Object3D();target.position.set(width/2,0,depth/2);return target;},[width,depth]);
+  const shadowSize=Math.max(4,width,depth)*.8;
   const walls = useMemo(()=>wallPieces(m),[m]);
   const stairs = useMemo(()=>stairPieces(m),[m]);
   const rooms = useMemo(()=>roomsOf(m).map(r=>{
@@ -41,20 +71,25 @@ export function SceneMesh({m, objects, closedDoorIds, floorFinish="default"}: {m
     return {room:r, shape};
   }),[m,scale]);
   return <>
-    <ambientLight intensity={1.25}/>
-    <directionalLight position={[5,10,3]} intensity={2}/>
+    {presentation?<><hemisphereLight color="#fff3df" groundColor="#9b9b8f" intensity={1.45}/>
+      <primitive object={sunTarget}/>
+      <directionalLight color="#fff0d6" intensity={2} castShadow target={sunTarget}
+        position={[width*.25,shadowSize*1.5,-depth*.25]} shadow-mapSize={[1024,1024]}
+        shadow-camera-left={-shadowSize} shadow-camera-right={shadowSize} shadow-camera-top={shadowSize}
+        shadow-camera-bottom={-shadowSize} shadow-camera-far={shadowSize*4} shadow-normalBias={.035}/>
+    </>:<><ambientLight intensity={1.25}/><directionalLight position={[5,10,3]} intensity={2}/></>}
     {rooms.map(({room,shape}, i)=><group key={room.id}>
-      <mesh rotation={[-Math.PI/2,0,0]} position={[0,i*0.00002,0]} userData={{maskId:i+2}}>
-        <shapeGeometry args={[shape]}/><meshStandardMaterial color={floorFinishes[floorFinish].color} roughness={floorFinishes[floorFinish].roughness} side={T.DoubleSide}/>
+      <mesh receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,i*0.00002,0]} userData={{maskId:i+2}}>
+        <shapeGeometry args={[shape]}/><meshStandardMaterial map={floorMap} color={floorFinishes[floorFinish].color} roughness={floorFinishes[floorFinish].roughness} side={T.DoubleSide}/>
       </mesh>
-      <mesh rotation={[-Math.PI/2,0,0]} position={[0,room.ceilingHeightM ?? 2.8,0]} userData={{maskId:1}}>
+      {!cutaway&&<mesh receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,room.ceilingHeightM ?? 2.8,0]} userData={{maskId:1}}>
         <shapeGeometry args={[shape]}/><meshStandardMaterial color="#f1efea" side={T.BackSide}/>
-      </mesh>
+      </mesh>}
     </group>)}
     {walls.map((p,wallIndex)=><group key={p.id} position={[p.centre[0],0,p.centre[1]]} rotation={[0,p.angle,0]}>
-      {p.chunks.map((c,i)=><mesh key={i} userData={{maskId:2000+wallIndex}} position={[(c.start+c.end-p.lengthM)/2,(c.low+c.high)/2,0]}>
+      {p.chunks.map((c,i)=><mesh key={i} castShadow={presentation} receiveShadow={presentation} userData={{maskId:2000+wallIndex}} position={[(c.start+c.end-p.lengthM)/2,(c.low+c.high)/2,0]}>
         <boxGeometry args={[c.end-c.start,c.high-c.low,p.thicknessM]}/>
-        <meshStandardMaterial color={p.material==="concrete"?"#98a9b6":"#c9d6db"}/>
+        <meshStandardMaterial color={presentation?(p.material==="concrete"?"#c7c5be":"#efeae0"):(p.material==="concrete"?"#98a9b6":"#c9d6db")}/>
       </mesh>)}
     </group>)}
     {m.openings.filter(o=>o.status==="confirmed"&&(o.kind==="door"||o.kind==="window")).map(o=>{
@@ -81,7 +116,7 @@ export function SceneMesh({m, objects, closedDoorIds, floorFinish="default"}: {m
       <extrudeGeometry args={[step.shape,{depth:step.height,bevelEnabled:false}]}/><meshStandardMaterial color="#a9b9b2"/>
     </mesh>)}</group>)}
     {objects.map((o,i)=><group key={o.id} position={[o.position.x*scale,0,o.position.y*scale]} rotation={[0,-o.rotation*Math.PI/180,0]}>
-      {blocks(o).map((b,j)=><mesh key={j} position={b.position} userData={{maskId:1000+i}}>
+      {blocks(o).map((b,j)=><mesh key={j} castShadow={presentation} receiveShadow={presentation} position={b.position} userData={{maskId:1000+i}}>
         <boxGeometry args={b.size}/><meshStandardMaterial color={b.color}/>
       </mesh>)}
     </group>)}

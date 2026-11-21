@@ -1,5 +1,5 @@
 "use client";
-import {useEffect,useMemo,useState} from "react";
+import {useEffect,useMemo,useRef,useState} from "react";
 import {Canvas,useThree} from "@react-three/fiber";
 import {Html,OrbitControls} from "@react-three/drei";
 import {Vector3} from "three";
@@ -7,13 +7,14 @@ import Link from "next/link";
 import {ArrowLeft,Maximize2,Minimize2,Box,ChevronLeft,ChevronRight,MapPin,Pause,Play,Share2} from "lucide-react";
 import {SceneMesh} from "./SceneMesh";
 import {metersPerPixel} from "../../lib/plan/derive";
-import {savedPose} from "../../lib/plan/camera";
+import {WalkCamera} from "./WalkCamera";
+import {findWalkStart,walkSpace} from "../../lib/plan/walkSpace";
 import type {PlanModel} from "../../lib/plan/model";
-import type {Scene,View} from "../../lib/plan/scene";
+import type {Frame,Scene,View} from "../../lib/plan/scene";
 
 function SampleFurniture({interior}:{interior:boolean}){
   function block(x:number,y:number,z:number,w:number,h:number,d:number,color:string){
-    return <mesh position={[x,y,z]}><boxGeometry args={[w,h,d]}/><meshStandardMaterial color={color}/></mesh>;
+    return <mesh castShadow receiveShadow position={[x,y,z]}><boxGeometry args={[w,h,d]}/><meshStandardMaterial color={color}/></mesh>;
   }
   return <>
     {Array.from({length:27},(_,i)=><group key={"board"+i}>
@@ -57,38 +58,48 @@ function SampleFurniture({interior}:{interior:boolean}){
     {block(3.96,.77,5.07,1.75,.12,1,"#b8875f")}
     {[3.3,4.64].flatMap(x=>[4.72,5.42].map(z=><group key={x+"-"+z}>{block(x,.38,z,.09,.74,.09,"#796046")}</group>))}
     {[4.27,5.88].map(z=><group key={z}>{block(3.95,.26,z,.55,.48,.5,"#a08a71")}{block(3.95,.61,z+(z<5?-.2:.2),.55,.46,.09,"#bda48a")}</group>)}
-    <mesh position={[.75,.25,1]}><cylinderGeometry args={[.28,.2,.5,20]}/><meshStandardMaterial color="#bb845e"/></mesh>
-    <mesh position={[.75,.82,1]} scale={[.46,.76,.42]}><icosahedronGeometry args={[1,1]}/><meshStandardMaterial color="#708763" flatShading/></mesh>
+    <mesh castShadow receiveShadow position={[.75,.25,1]}><cylinderGeometry args={[.28,.2,.5,20]}/><meshStandardMaterial color="#bb845e"/></mesh>
+    <mesh castShadow receiveShadow position={[.75,.82,1]} scale={[.46,.76,.42]}><icosahedronGeometry args={[1,1]}/><meshStandardMaterial color="#708763" flatShading/></mesh>
   </>;
 }
 
-function CameraRig({plan,view}:{plan:PlanModel;view?:View}){
+function OverviewCamera({plan}:{plan:PlanModel}){
   const {camera,size}=useThree();
   const scale=metersPerPixel(plan)!;
-  const rig=useMemo(()=>{
+  const {eye,target}=useMemo(()=>{
     const aspect=size.width/Math.max(1,size.height);
-    if(view){
-      const pose=savedPose(view,scale,aspect);
-      const eye=new Vector3(...pose.position);
-      return {eye,target:eye.clone().addScaledVector(new Vector3(...pose.direction),.01),fov:pose.verticalFovDeg};
-    }
     const span=Math.max(1,plan.imageTransform.width*scale,plan.imageTransform.height*scale);
     const target=new Vector3(plan.imageTransform.width*scale/2,.65,plan.imageTransform.height*scale/2);
     const distance=span*1.85/Math.min(1,aspect);
-    return {target,eye:target.clone().addScaledVector(new Vector3(.82,1.1,1.22).normalize(),distance),fov:42};
-  },[plan,view,scale,size.width,size.height]);
+    return {target,eye:target.clone().addScaledVector(new Vector3(.82,1.1,1.22).normalize(),distance)};
+  },[plan,scale,size.width,size.height]);
   const perspective=camera as import("three").PerspectiveCamera;
-  // Set the initial pose before OrbitControls reads the camera.
-  return <><primitive object={perspective} position={rig.eye} fov={rig.fov} onUpdate={()=>perspective.updateProjectionMatrix()}/>
-    <OrbitControls target={rig.target} enablePan={false} enableZoom={!view} rotateSpeed={view?-.52:.65}
-      minPolarAngle={view ? .12 : .08} maxPolarAngle={view?Math.PI-.12:Math.PI*.47}/></>;
+  return <><primitive object={perspective} position={eye} fov={42} onUpdate={()=>perspective.updateProjectionMatrix()}/>
+    <OrbitControls target={target} enablePan={false} rotateSpeed={.65} minPolarAngle={.08} maxPolarAngle={Math.PI*.47}/></>;
 }
 
-export default function Showcase({plan,scene,title,back,sample=false,renders={}}:{plan:PlanModel;scene:Scene;title:string;back:string;sample?:boolean;renders?:Record<string,string>}){
-  const [stop,setStop]=useState(scene.views.length?0:-1),[playing,setPlaying]=useState(false),[notice,setNotice]=useState("");
+function ShowcaseWalk({plan,scene,view,sample}:{plan:PlanModel;scene:Scene;view:View;sample:boolean}){
+  const {size}=useThree();
+  const pose=useRef<View|null>(null);
+  const scale=metersPerPixel(plan)!;
+  const space=useMemo(()=>walkSpace(plan,scale,scene,view.eyeHeight),[plan,scene,scale,view.eyeHeight]);
+  const frame=useMemo<Frame>(()=>({width:size.width,height:Math.max(1,size.height),configured:false,model:"",provider:""}),[size.width,size.height]);
+  return <WalkCamera view={view} scale={scale} frame={frame} pose={pose} canMove={p=>
+    space.validCamera(p,true)&&(!sample||![[.99,.96,3.81,1.96],[1.75,2.51,3.25,3.19],[3.08,4.57,4.84,5.57],[3.67,4,4.23,4.52],[3.67,5.63,4.23,6.13],[.41,.66,1.09,1.34]]
+      .some(([a,b,c,d])=>p.x*scale>=a&&p.x*scale<=c&&p.y*scale>=b&&p.y*scale<=d))}/>;
+}
+
+export default function Showcase({plan,scene,title,back,edit,sample=false,approximate=false,renders={}}:{plan:PlanModel;scene:Scene;title:string;back:string;edit?:string;sample?:boolean;approximate?:boolean;renders?:Record<string,string>}){
+  const views=useMemo(()=>{
+    if(scene.views.length)return scene.views;
+    const start=findWalkStart(plan,walkSpace(plan,metersPerPixel(plan)!,scene).validCamera);
+    const entry:View={id:"walk-start",name:"Walkthrough",position:start??{x:0,y:0},yaw:0,pitch:-5,horizontalFov:90,eyeHeight:1.6};
+    return start?[entry]:[];
+  },[plan,scene]);
+  const [stop,setStop]=useState(views.length?0:-1),[playing,setPlaying]=useState(false),[notice,setNotice]=useState("");
   const [rendered,setRendered]=useState(false),[immersive,setImmersive]=useState(false);
   const scale=metersPerPixel(plan)!;
-  const views=scene.views,view=views[stop];
+  const view=views[stop];
   useEffect(()=>{
     const read=()=>{const id=new URLSearchParams(location.hash.slice(1)).get("view");setStop(location.hash==="#overview"||!views.length?-1:Math.max(0,views.findIndex(v=>v.id===id)));};
     read();window.addEventListener("hashchange",read);return ()=>window.removeEventListener("hashchange",read);
@@ -107,30 +118,31 @@ export default function Showcase({plan,scene,title,back,sample=false,renders={}}
     }catch(e){if(!(e instanceof Error&&e.name==="AbortError"))setNotice(url.href);}
   }
   return <main className="showcase-player" data-immersive={immersive} aria-label="3D showcase">
-    <Canvas dpr={[1,1.6]} camera={{near:.005,far:2000}} fallback={<p>Enable WebGL to view this tour.</p>}>
+    <Canvas shadows frameloop="demand" dpr={[1,1.6]} camera={{near:.005,far:2000}} fallback={<p>Enable WebGL to view this tour.</p>}>
       <color attach="background" args={[sample&&view?"#cfdfdf":"#d8d9cb"]}/>
-      <SceneMesh m={plan} objects={scene.objects} closedDoorIds={scene.closedDoorIds} floorFinish={scene.floorFinish}/>
+      <SceneMesh m={plan} objects={scene.objects} closedDoorIds={scene.closedDoorIds} floorFinish={scene.floorFinish} presentation cutaway={!view}/>
       {sample&&<SampleFurniture interior={!!view}/>}
-      <CameraRig key={view?.id??"overview"} plan={plan} view={view}/>
+      {view?<ShowcaseWalk key={view.id} plan={plan} scene={scene} view={view} sample={sample}/>:<OverviewCamera plan={plan}/>}
       {!view&&views.map((v,i)=><Html key={v.id} center position={[v.position.x*scale,2,v.position.y*scale]} zIndexRange={[2,1]}>
         <button className="show-pin" aria-label={"Visit "+v.name} onClick={()=>select(i)}>{i+1}</button>
       </Html>)}
     </Canvas>
     {view&&rendered&&renders[view.id]&&<div className="show-render"><img src={renders[view.id]} alt={"Saved design render for "+view.name}/></div>}
     <div className="show-top"><Link href={back}><ArrowLeft size={18}/> Exit tour</Link><div className="show-tools"><button aria-label={immersive?"Show tour controls":"Hide tour controls"} aria-pressed={immersive} onClick={()=>setImmersive(!immersive)}>{immersive?<Minimize2 size={18}/>:<Maximize2 size={18}/>}</button><button onClick={share} aria-label="Share this tour"><Share2 size={18}/></button></div></div>
-    <section className="show-panel"><small>{sample?"Sample tour · ":""}{title}</small><h1>{view?.name??"Dollhouse view"}</h1>
-      <p>{view&&rendered&&renders[view.id]?"Saved design render":view?"Drag to look around.":"Drag to orbit. Pinch or scroll to zoom."}</p>
+    <section className="show-panel"><small>{sample?"Sample tour · ":""}{title}{approximate?" · Approximate scale":""}</small><h1>{view?.name??"Dollhouse view"}</h1>
+      <p>{view&&rendered&&renders[view.id]?"Saved design render":view?"Drag sideways to turn and vertically to walk. Pinch or scroll to zoom.":"Drag to orbit. Pinch or scroll to zoom."}</p>
       {view&&renders[view.id]&&<button aria-pressed={rendered} onClick={()=>{setPlaying(false);setRendered(!rendered);}}>{rendered?"Return to 3D":"Show saved design"}</button>}
       <div className="show-stops" aria-label="Tour stops">
         <button aria-pressed={!view} onClick={()=>select(-1)}><Box size={15}/> Overview</button>
         {views.map((v,i)=><button key={v.id} aria-pressed={stop===i} onClick={()=>select(i)}><MapPin size={14}/>{v.name}</button>)}
       </div>
-      {!!views.length&&<div className="show-transport">
+      {views.length>1&&<div className="show-transport">
         <button onClick={()=>{setRendered(false);if(!playing&&stop===views.length-1)setStop(-1);setPlaying(!playing);}}>{playing?<Pause size={16}/>:<Play size={16}/>} {playing?"Pause":"Play tour"}</button>
         <button aria-label="Previous stop" disabled={stop<0} onClick={()=>select(stop-1)}><ChevronLeft/></button>
         <button aria-label="Next stop" disabled={stop>=views.length-1} onClick={()=>select(stop+1)}><ChevronRight/></button>
       </div>}
       {notice&&<p role="status">{notice}</p>}
+    {edit&&<Link className="show-edit" href={edit}>Edit floor</Link>}
     </section>
   </main>;
 }
