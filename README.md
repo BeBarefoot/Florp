@@ -172,6 +172,7 @@ regressions and their limits.
 ## Architecture and next gates
 
 - [Current architecture](docs/ARCHITECTURE.md): revisioned PlanModel, scenes, captures and providers.
+- [Phone app plan](docs/PHONE_APP_PLAN.md): upload, walk and design using the existing Florp engine.
 - [Production POC plan](docs/PRODUCTION_POC_PLAN.md): ordered implementation and release evidence.
 - [Enviz capability roadmap](docs/ENVIZ_CAPABILITY_ROADMAP.md): technical findings and the path from a fast local walkthrough to whole-home design.
 - [Contributor handoff](docs/codex-handoff.md): detailed workflows and configuration.

@@ -129,6 +129,8 @@ resize preserve pose/FOV/frame and known depth within the established encoding t
 
 ### D — Mobile-first guided journey
 
+The [phone app plan](PHONE_APP_PLAN.md) describes the three-screen experience, private Mac connection and device acceptance checks.
+
 Owner role: product/frontend engineer + usability reviewer.
 
 - [ ] Implement upload/photo → review → calibrate → 3D → camera → design as clear steps,
