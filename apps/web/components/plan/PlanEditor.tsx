@@ -5,6 +5,7 @@ import { API, request, type Blueprint } from "../../lib/api";
 import type { Finding, PlanModel, PlanResponse, Pt } from "../../lib/plan/model";
 import { metersPerPixel, withDerived } from "../../lib/plan/derive";
 import { deleteOpening, deleteWall, decideOpening, setReference } from "../../lib/plan/ops";
+import {regionArea} from "../SiteOutline";
 import PlanCanvas from "./PlanCanvas";
 import Inspector from "./Inspector";
 import PlanReview, {type ReviewState} from "./PlanReview";
@@ -16,6 +17,7 @@ import type { Focus, Selection, Tool, ViewMode } from "./types";
 const Plan3D = dynamic(() => import("./Plan3D"), { ssr: false });
 
 export default function PlanEditor({ id }: { id: string }) {
+  const [showSite,setShowSite]=useState(true);
   const [info, setInfo] = useState<Blueprint | null>(null);
   const [model, setModel] = useState<PlanModel | null>(null);
   const [past, setPast] = useState<PlanModel[]>([]);
@@ -378,6 +380,7 @@ export default function PlanEditor({ id }: { id: string }) {
   const canvas = (
     <PlanCanvas
       model={m}
+      siteRegions={showSite?info?.floor?.regions:undefined}
       imageUrl={`${API}/blueprints/${id}/preview`}
       view={view}
       tool={tool}
@@ -484,7 +487,13 @@ export default function PlanEditor({ id }: { id: string }) {
           savePlan={async () => live.current && await persist(live.current) ? live.current : null} />}
       </main>
       <Inspector
-        reviewPanel={<PlanReview id={id} revision={m.revision} dirty={dirty}/> }
+        reviewPanel={<>{info?.floor&&<section className="fe-section">
+          <h3>{info.floor.level===1?"First floor":"Second floor"}</h3>
+          <label><input type="checkbox" checked={showSite} onChange={e=>setShowSite(e.target.checked)}/> Garden and stair outlines</label>
+          {info.floor.regions.filter(r=>r.kind==="garden").map((r,i)=><p key={i}>Garden {i+1} · {mpp?
+            regionArea(r,info.width,info.height,mpp).toFixed(1)+" m²":"Set a known distance to estimate area"}</p>)}
+          <a href={"/plan/"+info.floor.otherId} target="_blank" rel="noopener noreferrer">Open {info.floor.level===1?"second":"first"} floor in a new tab</a>
+        </section>}<PlanReview id={id} revision={m.revision} dirty={dirty}/></>}
         model={m}
         onDetectStairs={() => void detectStairs()}
         busy={busy}
