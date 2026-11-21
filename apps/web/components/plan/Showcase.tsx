@@ -5,6 +5,7 @@ import {Html,OrbitControls} from "@react-three/drei";
 import {Vector3} from "three";
 import Link from "next/link";
 import {ArrowLeft,Maximize2,Minimize2,Box,ChevronLeft,ChevronRight,MapPin,Pause,Play,Share2} from "lucide-react";
+import {downloadPrompt,renderPrompt} from "../../lib/plan/renderPrompt";
 import {SceneMesh} from "./SceneMesh";
 import {metersPerPixel} from "../../lib/plan/derive";
 import {WalkCamera} from "./WalkCamera";
@@ -78,9 +79,23 @@ function OverviewCamera({plan}:{plan:PlanModel}){
     <OrbitControls target={target} enablePan={false} rotateSpeed={.65} minPolarAngle={.08} maxPolarAngle={Math.PI*.47}/></>;
 }
 
-function ShowcaseWalk({plan,scene,view,sample}:{plan:PlanModel;scene:Scene;view:View;sample:boolean}){
-  const {size}=useThree();
-  const pose=useRef<View|null>(null);
+type WalkFrame = {viewId:string;width:number;height:number;image:()=>string};
+
+function ShowcaseWalk({plan,scene,view,sample,pose,onFrame}:{
+  plan:PlanModel;scene:Scene;view:View;sample:boolean;pose:{current:View|null};onFrame:(frame:WalkFrame|null)=>void;
+}){
+  const {size,gl,get}=useThree();
+  useEffect(()=>{
+    onFrame({
+      viewId:view.id,width:gl.domElement.width,height:gl.domElement.height,
+      image:()=>{
+        const {scene,camera}=get();
+        gl.render(scene,camera);
+        return gl.domElement.toDataURL("image/png");
+      },
+    });
+    return ()=>onFrame(null);
+  },[get,gl,size,onFrame,view.id]);
   const scale=metersPerPixel(plan)!;
   const space=useMemo(()=>walkSpace(plan,scale,scene,view.eyeHeight),[plan,scene,scale,view.eyeHeight]);
   const frame=useMemo<Frame>(()=>({width:size.width,height:Math.max(1,size.height),configured:false,model:"",provider:""}),[size.width,size.height]);
@@ -100,6 +115,8 @@ export default function Showcase({plan,scene,title,back,edit,sample=false,approx
   const [rendered,setRendered]=useState(false),[immersive,setImmersive]=useState(false);
   const scale=metersPerPixel(plan)!;
   const view=views[stop];
+  const pose=useRef<View|null>(null);
+  const [viewport,setViewport]=useState<WalkFrame|null>(null);
   useEffect(()=>{
     const read=()=>{const id=new URLSearchParams(location.hash.slice(1)).get("view");setStop(location.hash==="#overview"||!views.length?-1:Math.max(0,views.findIndex(v=>v.id===id)));};
     read();window.addEventListener("hashchange",read);return ()=>window.removeEventListener("hashchange",read);
@@ -122,7 +139,7 @@ export default function Showcase({plan,scene,title,back,edit,sample=false,approx
       <color attach="background" args={[sample&&view?"#cfdfdf":"#d8d9cb"]}/>
       <SceneMesh m={plan} objects={scene.objects} closedDoorIds={scene.closedDoorIds} floorFinish={scene.floorFinish} presentation cutaway={!view}/>
       {sample&&<SampleFurniture interior={!!view}/>}
-      {view?<ShowcaseWalk key={view.id} plan={plan} scene={scene} view={view} sample={sample}/>:<OverviewCamera plan={plan}/>}
+      {view?<ShowcaseWalk key={view.id} plan={plan} scene={scene} view={view} sample={sample} pose={pose} onFrame={setViewport}/>:<OverviewCamera plan={plan}/>}
       {!view&&views.map((v,i)=><Html key={v.id} center position={[v.position.x*scale,2,v.position.y*scale]} zIndexRange={[2,1]}>
         <button className="show-pin" aria-label={"Visit "+v.name} onClick={()=>select(i)}>{i+1}</button>
       </Html>)}
@@ -142,6 +159,14 @@ export default function Showcase({plan,scene,title,back,edit,sample=false,approx
         <button aria-label="Next stop" disabled={stop>=views.length-1} onClick={()=>select(stop+1)}><ChevronRight/></button>
       </div>}
       {notice&&<p role="status">{notice}</p>}
+    {view&&!rendered&&viewport?.viewId===view.id&&<><button onClick={()=>{
+      setPlaying(false);
+      if(pose.current?.id===view.id)downloadPrompt(renderPrompt(plan,scene,pose.current,viewport,[],approximate));
+    }}>Download view prompt</button><button onClick={()=>{
+      setPlaying(false);
+      const link=document.createElement("a");
+      link.href=viewport.image();link.download="florp-view.png";link.click();
+    }}>Download view image</button></>}
     {edit&&<Link className="show-edit" href={edit}>Edit floor</Link>}
     </section>
   </main>;

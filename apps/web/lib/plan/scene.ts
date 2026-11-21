@@ -52,7 +52,7 @@ export function blocks(o: Item): Block[] {
 
 export function promptFor(view: View, facts: string[], style: string) {
   return [
-    "Scene facts: Photorealistic interior from the supplied depth view.",
+    "Scene facts: Photorealistic interior from the supplied camera view.",
     `Eye height ${view.eyeHeight.toFixed(2)} m; horizontal field of view ${view.horizontalFov} degrees.`,
     ...facts,
     "Preserve the camera, walls, existing openings, visible object positions and proportions. Do not add architectural openings or reveal objects behind walls.",

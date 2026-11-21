@@ -20,6 +20,9 @@ To update, stop Florp, run `git pull --ff-only` from a clean local `main` checko
 
 ## Run and install the smartphone app
 
+For an AI still of your current walkthrough view, stop moving and select **Download view image** and **Download view prompt**. Upload the PNG and text together to your image generator. The prompt describes the camera pose, framing, room boundaries, wall and opening dimensions, stairs and placed objects in model coordinates. Calibrate the plan against a known measurement for real-world dimensions. A tour marked **Approximate scale** uses estimated distances.
+
+
 [Preview the phone walkthrough library](docs/images/phone-library.png). The cover uses an illustrative interior photograph. [Photo source](https://images.unsplash.com/photo-1600210492486-724fe5c67fb0)
 
 Florp’s smartphone app is a progressive web app (PWA) served by the same

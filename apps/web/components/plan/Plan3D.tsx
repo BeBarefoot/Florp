@@ -8,8 +8,9 @@ import { metersPerPixel, openingEnds } from "../../lib/plan/derive";
 import { meshSignature, wallPieces } from "../../lib/plan/mesh";
 import { API, request } from "../../lib/api";
 import { newUuid } from "../../lib/uuid";
-import { floorFinishes, type FloorFinish, catalog, contains, footprint, intersects, newItem, promptFor, type Capture, type Frame, type Item,
+import { floorFinishes, type FloorFinish, catalog, contains, footprint, intersects, newItem, type Capture, type Frame, type Item,
   type Job, type ObjectKind, type Saved, type Scene, type View } from "../../lib/plan/scene";
+import {renderPrompt, downloadPrompt} from "../../lib/plan/renderPrompt";
 import { CaptureBridge, EyeCamera, SceneMesh } from "./SceneMesh";
 import { roomsOf, walkSpace } from "../../lib/plan/walkSpace";
 import { WalkCamera } from "./WalkCamera";
@@ -237,20 +238,20 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
   const overlaps=!!item&&scene.objects.some(o=>o.id!==item.id&&intersects(footprint(item,scale),footprint(o,scale)));
   const visibleIn=(capture:Capture|null,id:number)=>!!capture&&(capture.coverage[id]||0)>=Math.max(24,frame.width*frame.height*.00015);
   const visible=(id:number)=>visibleIn(shot,id);
-  function factsFor(capture:Capture|null){return [
+  function factsFor(capture:Capture|null, camera=view){return [
     ...(scene.floorFinish && scene.floorFinish!=="default" ? [`Floor finish: ${floorFinishes[scene.floorFinish].name}.`] : []),
-    ...rooms.filter((r,i)=>visibleIn(capture,i+2)||(view&&contains(view.position,r.polygon))).flatMap(r=>r.roomType?
+    ...rooms.filter((r,i)=>visibleIn(capture,i+2)||(camera&&contains(camera.position,r.polygon))).flatMap(r=>r.roomType?
       [`Space type: ${r.roomType}.`]:[]),
     ...scene.objects.flatMap((o,i)=>visibleIn(capture,1000+i)?
       [`Visible ${o.kind}: ${o.kind==="bed"?(o.mattressWidth??o.width).toFixed(2)+" × "+(o.mattressDepth??o.depth).toFixed(2)+" m mattress":o.width.toFixed(2)+" × "+o.depth.toFixed(2)+" m footprint"}.`]:[]),
   ];}
   const facts=factsFor(shot);
-  const prompt=view?promptFor(view,[...new Set(facts)],scene.style):"";
+  const prompt=view?renderPrompt(m,scene,view,frame,[...new Set(facts)]):"";
   useEffect(()=>setAuthorized(false),[fingerprint,prompt]);
-  async function persistScene(planRevision:number){
+  async function persistScene(planRevision:number, config=scene){
     if(!saved)throw Error("The scene has not loaded.");
-    if(saved.planRevision===planRevision&&JSON.stringify(saved.config)===JSON.stringify(scene))return saved;
-    const r=await request<Saved>(path+"/scene",json("PUT",{expectedRevision:saved.revision,planRevision,config:scene}));
+    if(saved.planRevision===planRevision&&JSON.stringify(saved.config)===JSON.stringify(config))return saved;
+    const r=await request<Saved>(path+"/scene",json("PUT",{expectedRevision:saved.revision,planRevision,config}));
     setSaved(r);
     setScene(current=>current===scene?r.config:current);
     return r;
@@ -264,27 +265,31 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
     }catch(e){setMessage(String(e));}finally{setBusy(false);}
   }
   function takeCapture(){
-    if(!view||!captureFn.current||!validCamera(view.position)){
+    const current=cameraMode==="walk"&&walkPose.current?.id===view?.id?walkPose.current:view;
+    if(!current||!captureFn.current||!validCamera(current.position)){
       setMessage("Move the camera to a clear position before capturing.");return;
     }
-    try{setCapture(captureFn.current(view,scale,frame,fingerprint));setCameraMode("preview");setMessage("");}
+    try{setCapture(captureFn.current(current,scale,frame,fingerprintFor(current)));updateView(current);setCameraMode("preview");setMessage("");}
     catch(e){setMessage(`Capture failed: ${String(e)}`);}
   }
   async function generate(){
     if(!view||!authorized||dirty||!frame.configured||busy)return;
-    if(!validCamera(view.position)||!captureFn.current){setMessage("Place and aim a camera inside a room before generating.");return;}
+    const current=cameraMode==="walk"&&walkPose.current?.id===view.id?walkPose.current:view;
+    if(!validCamera(current.position)||!captureFn.current){setMessage("Place and aim a camera inside a room before generating.");return;}
     setBusy(true);setMessage("");
     try {
-      const currentShot=shot??captureFn.current(view,scale,frame,fingerprint);
+      const key=fingerprintFor(current);
+      const currentShot=capture?.fingerprint===key?capture:captureFn.current(current,scale,frame,key);
+      const config={...scene,views:scene.views.map(v=>v.id===current.id?current:v)};
       setCapture(currentShot);setCameraMode("preview");
-      const renderPrompt=promptFor(view,[...new Set(factsFor(currentShot))],scene.style);
-      const r=await persistScene(m.revision);
+      const submittedPrompt=renderPrompt(m,config,current,frame,[...new Set(factsFor(currentShot,current))]);
+      const r=await persistScene(m.revision,config);
       const target=frame.provider==="local-comfy" && scene.objects.some(o=>o.id===editObject) ? editObject : "";
       if(target && !scene.objects.some((o,i)=>o.id===target && visibleIn(currentShot,1000+i)))throw new Error("Choose an object visible in this view.");
-      const signature=JSON.stringify([target,currentShot.fingerprint,renderPrompt,variant,r.revision]);
+      const signature=JSON.stringify([target,currentShot.fingerprint,submittedPrompt,variant,r.revision]);
       if(submitRetry.current?.signature!==signature)submitRetry.current={signature,key:newUuid()};
       const job=await request<Job>(path+"/renders",json("POST",{requestKey:submitRetry.current.key,
-        ...(target?{targetObjectId:target}:{}),sceneRevision:r.revision,viewId:view.id,name:variant.trim()||view.name,prompt:renderPrompt,confirmed:true,
+        ...(target?{targetObjectId:target}:{}),sceneRevision:r.revision,viewId:view.id,name:variant.trim()||view.name,prompt:submittedPrompt,confirmed:true,
         depth:currentShot.depth.split(",")[1],mask:currentShot.mask.split(",")[1],preview:currentShot.preview.split(",")[1]}));
       submitRetry.current=null;setAuthorized(false);
       setJobs(all=>[job,...all.filter(j=>j.id!==job.id)]);setSelectedJob(job.id);
@@ -505,6 +510,8 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
           <p>{facts.length?facts.join(" "):"No labelled spaces or furniture are visible in this view."}</p>
           {scene.objects.some((o,i)=>o.kind==="toilet"&&!visible(1000+i))&&<p>A placed toilet is not visible in this view.</p>}
           <details><summary>Prompt sent to the renderer</summary><pre>{prompt}</pre></details>
+          <button onClick={()=>downloadPrompt(prompt)}>Download view prompt</button>
+          <a href={shot.preview} download="florp-view.png">Download captured image</a>
           <button onClick={exportInputs}>Export render inputs</button>
           <label>Variant name <input maxLength={80} value={variant} onChange={e=>setVariant(e.target.value)}/></label>
         </>}
