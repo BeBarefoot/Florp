@@ -36,3 +36,29 @@ test("saved floor tour opens its linked camera and makes no project edits",async
   await expect(page.getByRole("heading",{name:"Dining corner"})).toBeVisible();
   expect(writes).toEqual([]);
 });
+
+test("downloaded showcase prompt follows the live position, heading and zoom",async({page})=>{
+  const {readFile}=await import("node:fs/promises");
+  await page.setViewportSize({width:390,height:844});
+  await page.goto("/phone/showcase/sample");
+  async function camera(){
+    const pending=page.waitForEvent("download");
+    await page.getByRole("button",{name:"Download view prompt"}).click();
+    const file=await (await pending).path();
+    return JSON.parse((await readFile(file!,"utf8")).trim().split("\n").at(-1)!).camera;
+  }
+  const before=await camera();
+  await page.mouse.move(160,230);
+  await page.mouse.down();
+  await page.mouse.move(190,200,{steps:4});
+  await page.mouse.up();
+  await page.mouse.wheel(0,-120);
+  const after=await camera();
+  expect(after.eyeXYZ).not.toEqual(before.eyeXYZ);
+  expect(after.forwardUnitXYZ).not.toEqual(before.forwardUnitXYZ);
+  expect(after.horizontalFovDegrees).toBeLessThan(before.horizontalFovDegrees);
+  const pending=page.waitForEvent("download");
+  await page.getByRole("button",{name:"Download view image"}).click();
+  const png=await readFile((await (await pending).path())!);
+  expect([png.readUInt32BE(16),png.readUInt32BE(20)]).toEqual(after.framePixels);
+});

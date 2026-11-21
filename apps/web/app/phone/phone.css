@@ -51,3 +51,5 @@
 .show-tools{display:flex;gap:6px}.showcase-player[data-immersive=true] .show-panel{display:none}
 .tour-shell .showcase-player[data-immersive=true]{grid-template:100%/100%}
 .showcase-player[data-immersive=true] .show-top{right:16px}
+
+.show-edit{display:inline-flex;align-items:center;min-height:44px;text-decoration:underline;font-size:14px}

@@ -41,7 +41,7 @@ export default function PhoneSpace(){
     {error&&<p role="alert">{error} <button onClick={()=>location.reload()}>Reload</button></p>}
     {!plans&&!error&&<p>Opening space…</p>}
     {plans?.length===0&&<p>Add a drawing or photograph to start your walkthrough.</p>}
-    <div className="tour-grid">{plans?.map(p=><Link className="tour-floor" key={p.id} href={"/phone/"+p.id}>
+    <div className="tour-grid">{plans?.map(p=><Link className="tour-floor" key={p.id} href={"/phone/showcase/"+p.id}>
       <img src={API+"/blueprints/"+p.id+"/preview"} alt=""/><span><strong>{p.filename}</strong><ArrowUpRight size={18}/></span>
     </Link>)}</div>
     {!!plans&&plans.length>=2&&<Link className="tour-back" href={"/project/"+id}>Review floor pairing <ArrowUpRight size={16}/></Link>}

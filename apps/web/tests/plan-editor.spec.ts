@@ -319,7 +319,7 @@ test("saved interior framing and depth match after reopening at a different widt
   }
   const before=await depth();
   expect(before.prompt).toContain("Visible bed: 1.80 × 2.00 m mattress");
-  expect(before.prompt).not.toContain("toilet");
+  expect(before.prompt).not.toContain("Visible toilet:");
   await page.setViewportSize({width:950,height:850});
   await page.reload();
   await enter();
@@ -350,6 +350,13 @@ test("saved interior framing and depth match after reopening at a different widt
   await page.getByRole("button",{name:"Generate preview"}).click();
   await expect(page.getByAltText("Generated design visualisation")).toBeVisible();
   expect(submitted).toMatchObject({viewId:after.view.id,confirmed:true,depth:after.depth.split(",")[1]});
+  const geometry=JSON.parse(submitted!.prompt.split("\n").at(-1)!);
+  const scale=metersPerPixel(after.planSnapshot)!;
+  expect(geometry.camera.eyeXYZ).toEqual([after.view.position.x*scale,after.view.eyeHeight,after.view.position.y*scale]);
+  expect(geometry.camera.framePixels).toEqual([after.frame.width,after.frame.height]);
+  expect(geometry.camera.forwardUnitXYZ).toEqual(savedPose(after.view,scale,after.frame.width/after.frame.height).direction);
+  expect(geometry.rooms[0].perimeterXZ.length).toBeGreaterThanOrEqual(3);
+  expect(geometry.openings.find((o:{id:string})=>o.id==="win")).toMatchObject({height:1.2,sill:.9});
   expect(submitted!.prompt).toContain(design);
   expect(submitted!.prompt).toContain("Visible bed:");
   expect(submitted!.prompt).toContain("Do not bring an out-of-view room");
@@ -372,7 +379,7 @@ test("bed mesh keeps the specified mattress and prompt separates style from geom
   expect(parts[2].size[0]).toBeCloseTo(1.8);
   expect(parts[2].size[2]).toBeCloseTo(2);
   expect(promptFor(view,["Space type: bedroom."],"Oak")).toBe([
-    "Scene facts: Photorealistic interior from the supplied depth view.",
+    "Scene facts: Photorealistic interior from the supplied camera view.",
     "Eye height 1.60 m; horizontal field of view 90 degrees.",
     "Space type: bedroom.",
     "Preserve the camera, walls, existing openings, visible object positions and proportions. Do not add architectural openings or reveal objects behind walls.",

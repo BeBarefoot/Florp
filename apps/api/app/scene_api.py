@@ -175,7 +175,7 @@ class Submit(Data):
     scene_revision: int = Field(gt=0)
     view_id: str
     name: str = Field(min_length=1, max_length=80)
-    prompt: str = Field(min_length=1, max_length=10000)
+    prompt: str = Field(min_length=1, max_length=2_000_000)
     depth: str
     mask: str
     preview: str

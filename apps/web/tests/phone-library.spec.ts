@@ -1,4 +1,5 @@
 import {expect,test} from "@playwright/test";
+import {samplePlan} from "../lib/plan/showcaseSample";
 
 for (const width of [390,1280]) {
   test(`phone library opens its own space and floor screens at ${width}px`,async({page})=>{
@@ -13,6 +14,12 @@ for (const width of [390,1280]) {
     });
     await page.route("**/blueprints/f/info",r=>r.fulfill({json:floor}));
     await page.route("**/blueprints/f/plan",r=>r.fulfill({json:{model:null,revision:0}}));
+    await page.route("**/blueprints/f/plan/extract?expected_revision=0",r=>{
+      expect(r.request().method()).toBe("POST");
+      return r.fulfill({json:{model:{...samplePlan,id:"f",scale:{reference:null,metersPerPixel:null}},revision:1}});
+    });
+    await page.route("**/blueprints/f/scene",r=>r.fulfill({json:{revision:0,planRevision:null,config:{views:[],objects:[],style:""}}}));
+    await page.route("**/blueprints/f/scene/renders",r=>r.fulfill({json:[]}));
     await page.goto("/phone");
     await expect(page.getByRole("heading",{name:"Your walkthroughs"})).toBeVisible();
     await expect(page.locator(".app aside")).toHaveCount(0);
@@ -24,7 +31,9 @@ for (const width of [390,1280]) {
     await page.getByLabel("Upload plans").setInputFiles({name:"ground.png",mimeType:"image/png",buffer:Buffer.from("fixture")});
     await page.getByRole("link",{name:floor.filename}).click();
     expect(uploaded).toBe(true);
-    await expect(page).toHaveURL(/\/phone\/f$/,{timeout:20000});
-    await expect(page.getByRole("link",{name:"Floors"})).toHaveAttribute("href","/phone/spaces/s");
+    await expect(page).toHaveURL(/\/phone\/showcase\/f$/,{timeout:20000});
+    await expect(page.getByRole("heading",{name:"Walkthrough",exact:true})).toBeVisible({timeout:20000});
+    await expect(page.getByText(/Approximate scale/)).toBeVisible();
+    await expect(page.getByRole("link",{name:"Exit tour"})).toHaveAttribute("href","/phone/spaces/s");
   });
 }
