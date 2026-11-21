@@ -53,6 +53,110 @@ npm run dev -- --hostname 127.0.0.1 --port 3000
 If Chrome reports connection refused, check that both commands are still running
 and resolve the error in their terminals. Ports 3000 and 8000 must be available.
 
+### Run and install the smartphone app
+
+Florp’s smartphone app is a progressive web app (PWA) served by the same
+production launcher as the desktop editor. From the repository root, after the
+dependency installation above, run:
+
+```bash
+./scripts/start.sh
+```
+
+- **On the computer:** open `http://localhost:3000` in Chrome. Use the install
+  icon in the address bar or **Install page as app** in the browser menu. Launch
+  Florp from the installed shortcut to open your projects in a standalone window.
+- **Android over USB:** enable USB debugging, connect the phone, accept its
+  debugging prompt and run the following on the computer with Android Platform
+  Tools installed. Open `http://localhost:3000` in Android Chrome and choose
+  **Install app** or **Add to Home screen** from the menu.
+
+  ```bash
+  adb reverse tcp:3000 tcp:3000
+  adb reverse tcp:8000 tcp:8000
+  ```
+
+- **iPhone simulator on Mac:** start an iPhone in Xcode Simulator, open
+  `http://localhost:3000` in Safari, and choose **Share → Add to Home Screen**.
+  For installation on a physical iPhone, use a trusted HTTPS origin for Florp
+  with an HTTPS-accessible API. The private Wi-Fi instructions below cover
+  browser testing over HTTP. Service workers require HTTPS or localhost.
+
+Create a project, open it, and choose a plan file or **Take a plan photo**.
+Review the extracted geometry and calibrate one known measurement before
+opening 3D. The app reads and saves projects on the computer running Florp.
+Offline launches show a reconnect screen. Editing, uploads and generation
+require connectivity. The app does not queue offline render requests.
+
+#### Install on a physical iPhone over private Wi-Fi
+
+On your Mac, install Caddy and mkcert (`brew install caddy mkcert`). Replace
+`192.168.1.23` below with the Mac’s Wi-Fi IP. Keep the Mac and iPhone on a
+trusted network because Florp gives connected clients access to your projects.
+
+1. Stop the existing launcher and, from the Florp root, run
+   `NEXT_PUBLIC_API_URL=/florp-api ./scripts/start.sh`. Keep it running.
+2. In another terminal, create a certificate and start a single HTTPS endpoint
+   for the app and API:
+
+   ```bash
+   mkdir -p ~/florp-local-tls && cd ~/florp-local-tls
+   mkcert -install
+   mkcert -cert-file florp.pem -key-file florp-key.pem 192.168.1.23
+   cat > Caddyfile <<'EOF'
+   https://192.168.1.23:8443 {
+       tls florp.pem florp-key.pem
+       handle_path /florp-api/* {
+           reverse_proxy 127.0.0.1:8000
+       }
+       handle {
+           reverse_proxy 127.0.0.1:3000
+       }
+   }
+   EOF
+   caddy run --config Caddyfile --adapter caddyfile
+   ```
+
+3. Run `mkcert -CAROOT` to locate the CA folder. Transfer **only**
+   `rootCA.pem` to the iPhone. Install the downloaded profile in Settings,
+   then enable its trust under **General → About → Certificate Trust Settings**.
+4. Open `https://192.168.1.23:8443` in Safari and use **Share → Add to Home
+   Screen**. Enable **Open as Web App** if offered. Keep both Mac terminals open.
+
+### Test the smartphone view locally
+
+Florp runs in a mobile browser. On your computer, start it as above, open
+`http://localhost:3000` in Chrome, then open DevTools and toggle the device
+toolbar. Choose a phone preset and open a calibrated project's **3D** tab.
+Place and aim a camera, then select **Walkthrough**. Drag sideways to turn and
+up or down to walk. Use the mouse wheel or pinch with two fingers to zoom.
+In the orbit view, drag to rotate around the model and right-drag or drag with
+two fingers to pan. Use **Preview view** to return to the saved camera framing.
+
+To try touch gestures on a real phone, connect it and your computer to the same
+trusted Wi-Fi. Stop the loopback launcher if it is running. From the repository
+root, use two terminals and replace `192.168.1.23` with your computer's LAN IPv4
+address (on macOS, see **System Settings → Wi-Fi → Details → TCP/IP**):
+
+```bash
+# Terminal 1
+cd apps/api
+CORS_ORIGINS=http://192.168.1.23:3000,http://localhost:3000 \
+  uv run --locked uvicorn app.main:app --host 192.168.1.23 --port 8000
+```
+
+```bash
+# Terminal 2
+cd apps/web
+NEXT_PUBLIC_API_URL=http://192.168.1.23:8000 \
+  npm run dev -- --hostname 192.168.1.23 --port 3000
+```
+
+On the phone, browse to `http://192.168.1.23:3000`. Anyone who can reach these
+ports can access your local workspace, so use a private network and stop both
+servers with Ctrl+C after testing. For your regular desktop session, use
+`./scripts/start.sh` again.
+
 ## Try a synthetic demo
 
 With the API running, use a second terminal:

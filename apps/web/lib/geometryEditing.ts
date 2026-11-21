@@ -1,3 +1,4 @@
+import { newUuid } from "./uuid";
 import type {Geometry,Pt,Wall,Opening} from './api';
 export type DraftEdge={id:string;start:Pt;end:Pt;thickness_m:number;height_m:number};
 const dist=(a:Pt,b:Pt)=>Math.hypot(a.x-b.x,a.y-b.y);
@@ -57,7 +58,7 @@ export function openingPlacement(edge:DraftEdge,p:Pt,g:Geometry,kind:'door'|'win
   if(width<=.1)return null;
   const t=Math.max(0,Math.min(1,((p.x-edge.start.x)*dx+(p.y-edge.start.y)*dy)/(len*len)));
   const offset=Math.max(0,Math.min(meters-width,t*meters-width/2));
-  return {id:'opening-'+crypto.randomUUID(),kind,wall_id:edge.id,
+  return {id:'opening-'+newUuid(),kind,wall_id:edge.id,
     offset_m:Number(offset.toFixed(3)),width_m:Number(width.toFixed(3)),
     height_m:kind==='door'?2.1:1.2,sill_m:kind==='door'?0:.9,inferred:true};
 }

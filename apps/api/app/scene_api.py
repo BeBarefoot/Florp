@@ -325,12 +325,15 @@ async def poll(bid: str, job_id: str):
         if not j or j.blueprint_id != bid:
             raise HTTPException(404, "Render job not found")
         original_status = j.status
+        local = j.provider_model.startswith('local-comfy:')
+        timeout_error = ('Render timed out. Check the local ComfyUI queue before generating again.' if local else
+                         'Render timed out. Check your provider dashboard before retrying.')
         age = (datetime.now(timezone.utc) - j.created_at.replace(tzinfo=timezone.utc)).total_seconds()
         if j.status == "submitting" and age > 1200:
-            j.status, j.error = "failed", "Render timed out. Check your provider dashboard before retrying."
+            j.status, j.error = "failed", timeout_error
         elif j.status in ("queued", "running"):
             try:
-                if j.provider_model.startswith('local-comfy:'):
+                if local:
                     status, image = await local_comfy.poll(j.status_url)
                 elif j.provider_model.startswith('comfy:'):
                     status, image = await comfy.poll(j.status_url)
@@ -344,10 +347,14 @@ async def poll(bid: str, job_id: str):
                         f.write(image)
                     Path(f.name).replace(folder / "result.png")
                 j.status, j.error = status, None
-                if status in ('queued', 'running') and age > (3600 if j.provider_model.startswith('local-comfy:') else 1200):
-                    j.status, j.error = 'failed', 'Render timed out. Check your provider dashboard before retrying.'
-            except (httpx.TimeoutException, httpx.NetworkError, providers.ProviderRetryableError):
-                return {**public(j), "error": "Provider temporarily unreachable; will check again."}
+                if status in ('queued', 'running') and age > (3600 if local else 1200):
+                    j.status, j.error = 'failed', timeout_error
+            except (httpx.TransportError, providers.ProviderRetryableError):
+                if not local or age <= 3600:
+                    message = ('Local ComfyUI is temporarily unreachable. Florp will check again.' if local else
+                               'Provider temporarily unreachable; will check again.')
+                    return {**public(j), "error": message}
+                j.status, j.error = 'failed', timeout_error
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 429 or exc.response.status_code >= 500:
                     return {**public(j), "error": "Provider temporarily unavailable; will check again."}

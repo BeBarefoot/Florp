@@ -14,8 +14,7 @@ export default function ProjectPage() {
       .then(setPlans)
       .catch((e) => setError(String(e)));
   }, [id]);
-  async function upload() {
-    const f = file.current?.files?.[0];
+  async function upload(f = file.current?.files?.[0]) {
     if (!f) return;
     setBusy(true);
     setError("");
@@ -76,8 +75,16 @@ export default function ProjectPage() {
             type="file"
             accept="application/pdf,image/png,image/jpeg,image/webp"
           />
+          <label className="plan-photo">Take a plan photo
+            <input type="file" accept="image/jpeg,image/png" capture="environment" disabled={busy}
+              onChange={event=>{
+                const photo = event.currentTarget.files?.[0];
+                event.currentTarget.value = "";
+                if (photo) void upload(photo);
+              }}/>
+          </label>
           <div>
-            <button disabled={busy} onClick={upload}>
+            <button disabled={busy} onClick={()=>void upload()}>
               {busy ? "Uploading…" : "Upload plan"}
             </button>
           </div>

@@ -1,3 +1,4 @@
+import { newUuid } from "../uuid";
 import type { Pt } from "./model";
 
 export type View = { id: string; name: string; position: Pt; yaw: number; pitch: number;
@@ -18,7 +19,7 @@ export const catalog: Record<ObjectKind, [number, number, number]> = {
 };
 export function newItem(kind: ObjectKind, position: Pt): Item {
   const [width, depth, height] = catalog[kind];
-  return { id: crypto.randomUUID(), kind, position, rotation: 0, width, depth, height,
+  return { id: newUuid(), kind, position, rotation: 0, width, depth, height,
     mattressWidth:kind==="bed"?1.8:null, mattressDepth:kind==="bed"?2:null };
 }
 

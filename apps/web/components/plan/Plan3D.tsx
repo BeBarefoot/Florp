@@ -7,9 +7,11 @@ import { ROOM_TYPES } from "../../lib/plan/model";
 import { metersPerPixel, openingEnds } from "../../lib/plan/derive";
 import { meshSignature, wallPieces } from "../../lib/plan/mesh";
 import { API, request } from "../../lib/api";
+import { newUuid } from "../../lib/uuid";
 import { catalog, contains, footprint, intersects, newItem, promptFor, type Capture, type Frame, type Item,
   type Job, type ObjectKind, type Saved, type Scene, type View } from "../../lib/plan/scene";
 import { CaptureBridge, EyeCamera, roomsOf, SceneMesh } from "./SceneMesh";
+import { WalkCamera } from "./WalkCamera";
 
 type Mode = "camera" | "aim" | "sight" | "object" | "move" | "zone" | null;
 type CaptureFn = (v: View, s: number, f: Frame, key: string) => Capture;
@@ -33,7 +35,8 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
   const [viewId,setViewId]=useState(""), [itemId,setItemId]=useState(""), [roomId,setRoomId]=useState("");
   const [mode,setMode]=useState<Mode>(null), [kind,setKind]=useState<ObjectKind>("bed");
   const [zoneStart,setZoneStart]=useState<Pt|null>(null);
-  const [preview,setPreview]=useState(false), [capture,setCapture]=useState<Capture|null>(null);
+  const [cameraMode,setCameraMode]=useState<"orbit"|"preview"|"walk">("orbit");
+  const [capture,setCapture]=useState<Capture|null>(null);
   const [sight,setSight]=useState(""), [message,setMessage]=useState(""), [busy,setBusy]=useState(false);
   const [authorized,setAuthorized]=useState(false), [variant,setVariant]=useState("");
   const [selectedJob,setSelectedJob]=useState(""), [overlay,setOverlay]=useState(false);
@@ -64,7 +67,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
 
   useEffect(()=>{
     let cancelled=false;
-    request<Saved>(path+"/scene").then(r=>{if(!cancelled){setSaved(r);setScene(r.config);setViewId(r.config.views[0]?.id??"");setPreview(!!r.config.views.length);}})
+    request<Saved>(path+"/scene").then(r=>{if(!cancelled){setSaved(r);setScene(r.config);setViewId(r.config.views[0]?.id??"");setCameraMode(r.config.views.length?"preview":"orbit");}})
       .catch(e=>{if(!cancelled)setMessage(String(e));});
     request<Frame>(path+"/scene/render-settings").then(r=>{if(!cancelled)setFrame(r);}).catch(e=>setMessage(`Image generation settings could not be loaded: ${String(e)}`));
     request<Job[]>(path+"/scene/renders").then(r=>{if(!cancelled)setJobs(r);}).catch(e=>{if(!cancelled)setMessage(String(e));});
@@ -151,6 +154,10 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     return rooms.some(r=>contains(p,r.polygon)) && clearance(p)>=.3 &&
       !scene.objects.some(o=>contains(p,footprint(o,scale)));
   }
+  function canWalk(p:Pt){
+    return p.x>=0 && p.x<=m.imageTransform.width && p.y>=0 && p.y<=m.imageTransform.height &&
+      clearance(p)>=.16 && !scene.objects.some(o=>contains(p,footprint(o,scale)));
+  }
   function snap(p:Pt, o:Item){
     const a=o.rotation*Math.PI/180;
     let best=.22, result=p;
@@ -189,12 +196,12 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     if(mode==="camera"){
       if(!validCamera(p)){setMessage("Place the camera inside a room or room zone, at least 30 cm from the wall and outside furniture.");return;}
       if(scene.views.length>=30){setMessage("Delete a saved view before adding another.");return;}
-      const v:View={id:crypto.randomUUID(),name:`View ${scene.views.length+1}`,position:p,yaw:0,pitch:-10,horizontalFov:90,eyeHeight:1.6};
-      change({...scene,views:[...scene.views,v]});setViewId(v.id);setMode("aim");setPreview(false);setMessage("");
+      const v:View={id:newUuid(),name:`View ${scene.views.length+1}`,position:p,yaw:0,pitch:-10,horizontalFov:90,eyeHeight:1.6};
+      change({...scene,views:[...scene.views,v]});setViewId(v.id);setMode("aim");setCameraMode("orbit");setMessage("");
     }else if(mode==="aim"&&view){
       if(Math.hypot(x-view.position.x,y-view.position.y)*scale<.1)return;
       updateView({yaw:Math.round(Math.atan2(y-view.position.y,x-view.position.x)*180/Math.PI)});
-      setMode(null);setPreview(true);setMessage("");
+      setMode(null);setCameraMode("preview");setMessage("");
     }else if(mode==="sight"&&view){
       // Sample solid wall chunks along a horizontal eye-level line, respecting cut door openings.
       const a=view.position;
@@ -213,7 +220,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     }else if(mode==="zone"){
       if(!zoneStart){setZoneStart(p);return;}
       if(Math.abs(x-zoneStart.x)*scale<.2||Math.abs(y-zoneStart.y)*scale<.2)return;
-      const id=crypto.randomUUID();
+      const id=newUuid();
       onPlanEdit?.({...m,roomZones:[...(m.roomZones||[]),{id,label:null,polygon:[zoneStart,{x,y:zoneStart.y},p,{x:zoneStart.x,y}]}]});
       setZoneStart(null);setMode(null);setRoomId(id);
     }else{
@@ -264,7 +271,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     if(!view||!captureFn.current||!validCamera(view.position)){
       setMessage("Move the camera to a clear position before capturing.");return;
     }
-    try{setCapture(captureFn.current(view,scale,frame,fingerprint));setPreview(true);setMessage("");}
+    try{setCapture(captureFn.current(view,scale,frame,fingerprint));setCameraMode("preview");setMessage("");}
     catch(e){setMessage(`Capture failed: ${String(e)}`);}
   }
   async function generate(){
@@ -273,11 +280,11 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     setBusy(true);setMessage("");
     try {
       const currentShot=shot??captureFn.current(view,scale,frame,fingerprint);
-      setCapture(currentShot);setPreview(true);
+      setCapture(currentShot);setCameraMode("preview");
       const renderPrompt=promptFor(view,[...new Set(factsFor(currentShot))],scene.style);
       const r=await persistScene(m.revision);
       const signature=JSON.stringify([currentShot.fingerprint,renderPrompt,variant,r.revision]);
-      if(submitRetry.current?.signature!==signature)submitRetry.current={signature,key:crypto.randomUUID()};
+      if(submitRetry.current?.signature!==signature)submitRetry.current={signature,key:newUuid()};
       const job=await request<Job>(path+"/renders",json("POST",{requestKey:submitRetry.current.key,
         sceneRevision:r.revision,viewId:view.id,name:variant.trim()||view.name,prompt:renderPrompt,confirmed:true,
         depth:currentShot.depth.split(",")[1],mask:currentShot.mask.split(",")[1],preview:currentShot.preview.split(",")[1]}));
@@ -310,8 +317,9 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     <fieldset disabled={busy||!saved} className="scene-controls">
       {saved&&saved.planRevision!==null&&saved.planRevision!==m.revision&&<p>Saved scene uses plan revision {saved.planRevision}. Review camera and object placement, then save the scene for this plan.</p>}
       <div className="scene-actions">
-        <button onClick={()=>{setMode("camera");setPreview(false);}}>Place camera</button>
-        <button disabled={!view} onClick={()=>setPreview(!preview)}>{preview?"Back to orbit":"Preview view"}</button>
+        <button onClick={()=>{setMode("camera");setCameraMode("orbit");}}>Place camera</button>
+        <button disabled={!view} onClick={()=>setCameraMode(cameraMode==="preview"?"orbit":"preview")}>{cameraMode==="preview"?"Back to orbit":"Preview view"}</button>
+        <button disabled={!view} aria-pressed={cameraMode==="walk"} onClick={()=>setCameraMode(cameraMode==="walk"?"orbit":"walk")}>Walkthrough</button>
         <button disabled={!edited&&!dirty} onClick={()=>void save()}>Save scene</button>
         <button disabled={!undo.length} onClick={()=>{setScene(undo[undo.length-1]);setUndo(undo.slice(0,-1));}}>Undo scene edit</button>
       </div>
@@ -353,22 +361,28 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
             mode==="sight"?"Click a target to check the eye-level sightline.":mode==="zone"?"Click two opposite corners of the room zone.":
             mode?"Click where the object should go.":"Click a room or object to edit it."}</p>
         </div>
-        <div className="scene-frame" style={{aspectRatio:`${frame.width}/${frame.height}`}}>
-          <Canvas camera={{position:[w/2+w*.6,Math.max(7,h*.9),h/2+Math.max(8,h)],fov:55}}>
-            <color attach="background" args={["#e9eff2"]}/>
-            <SceneMesh m={m} objects={scene.objects} closedDoorIds={scene.closedDoorIds}/>
-            <CaptureBridge bind={bind}/>
-            {preview&&view?<EyeCamera view={view} scale={scale} frame={frame}/>:<><Grid infiniteGrid cellSize={1} sectionSize={5}/><OrbitControls makeDefault target={cameraTarget}/></>}
-          </Canvas>
+        <div className="scene-viewport">
+          <div className="scene-frame" data-mode={view?cameraMode:"orbit"} style={{aspectRatio:`${frame.width}/${frame.height}`}}>
+            <Canvas dpr={[1,2]} camera={{position:[w/2+w*.6,Math.max(7,h*.9),h/2+Math.max(8,h)],fov:55}}>
+              <color attach="background" args={["#e9eff2"]}/>
+              <SceneMesh m={m} objects={scene.objects} closedDoorIds={scene.closedDoorIds}/>
+              <CaptureBridge bind={bind}/>
+              {view&&cameraMode==="walk"?<WalkCamera view={view} scale={scale} frame={frame} canMove={canWalk}/>:
+                view&&cameraMode==="preview"?<EyeCamera view={view} scale={scale} frame={frame}/>:
+                <><Grid infiniteGrid cellSize={1} sectionSize={5}/><OrbitControls makeDefault target={cameraTarget}/></>}
+            </Canvas>
+          </div>
+          {view&&cameraMode==="walk"&&<p>Drag left or right to turn and up or down to walk. Scroll or pinch to zoom.</p>}
+          {(!view||cameraMode==="orbit")&&<p>Drag to orbit. Scroll or pinch to zoom. Right-drag or drag with two fingers to pan.{!view&&" Place and aim a camera to start a walkthrough."}</p>}
         </div>
       </div>
       <div className="scene-actions">
         {view&&<>
-          <label>Saved view <select value={view.id} onChange={e=>{setViewId(e.target.value);setPreview(true);setSight("");}}>{scene.views.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
+          <label>Saved view <select value={view.id} onChange={e=>{setViewId(e.target.value);setCameraMode("preview");setSight("");}}>{scene.views.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
           <label>Name <input maxLength={80} value={view.name} onChange={e=>updateView({name:e.target.value})}/></label>
           <button onClick={()=>setMode("aim")}>Aim</button>
           <button onClick={()=>setMode("sight")}>Check sightline</button>
-          <button onClick={()=>{change({...scene,views:scene.views.filter(v=>v.id!==view.id)});setPreview(false);}}>Remove view</button>
+          <button onClick={()=>{change({...scene,views:scene.views.filter(v=>v.id!==view.id)});setCameraMode("orbit");}}>Remove view</button>
           <label>Eye height <input type="number" min=".8" max="2.2" step=".05" value={view.eyeHeight} onChange={e=>{
             const n=e.target.valueAsNumber;if(n>=.8&&n<=2.2)updateView({eyeHeight:n});}}/> m</label>
           <label>Pitch <input type="range" min="-45" max="30" step="1" value={view.pitch} onChange={e=>updateView({pitch:Number(e.target.value)})}/> {view.pitch}°</label>
@@ -469,7 +483,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
         <label>Render variants <select value={job?.id} onChange={e=>setSelectedJob(e.target.value)}>
           {viewJobs.map(j=><option value={j.id} key={j.id}>{j.name} · {j.status}</option>)}</select></label>
         {job&&<p role="status">{job.status} {job.error??""} · {job.model} · Scene {job.sceneRevision}</p>}
-        {job?.status==="failed"&&job.model.startsWith("local-comfy:")&&<p>Start local ComfyUI and check that the SDXL checkpoint and depth ControlNet are installed. Keep it running until generation finishes. No cloud credits are used.</p>}
+        {job?.status==="failed"&&job.model.startsWith("local-comfy:")&&<p>See the local ComfyUI setup guide in the Florp README for port and model checks. Keep ComfyUI running until generation finishes.</p>}
         {job?.status==="failed"&&!job.model.startsWith("local-comfy:")&&<p>After fixing the account or configuration issue, select consent and generate a new preview. If the connection was interrupted, check the provider dashboard first to avoid paying twice. Your saved camera and capture remain available.</p>}
         {job?.status==="failed"&&job.model.startsWith("comfy:")&&<a href="https://cloud.comfy.org" target="_blank" rel="noreferrer">Open Comfy account and credits</a>}
         {job?.status==="complete"&&<>
