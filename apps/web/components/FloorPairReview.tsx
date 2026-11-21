@@ -1,5 +1,6 @@
 "use client";
 import {useEffect,useState} from "react";
+import {SiteOutline} from "./SiteOutline";
 import Link from "next/link";
 import {API,Blueprint,request} from "../lib/api";
 
@@ -23,8 +24,7 @@ function FloorMap({plan,level,regions,change}:{plan:Blueprint;level:string;regio
         setPoints([...points,[(e.clientX-rect.left)/rect.width,(e.clientY-rect.top)/rect.height]]);
       }}>
       <image href={API+"/blueprints/"+plan.id+"/preview"} width="1" height="1" preserveAspectRatio="none"/>
-      {regions.map((r,i)=><path key={i} d={[r.points,...(r.holes??[])].map(ring=>"M"+ring.map(p=>p.join(",")).join(" L")+" Z").join(" ")}
-        fillRule="evenodd" fill={r.kind==="garden"?"#3d994a":"#de9219"} fillOpacity=".32" stroke={r.kind==="garden"?"#247439":"#a85e00"} strokeWidth="2" vectorEffect="non-scaling-stroke"><title>{r.kind}</title></path>)}
+      {regions.map((region,i)=><SiteOutline key={i} region={region}/>)}
       <polyline points={points.map(p=>p.join(",")).join(" ")} fill="none" stroke="#c31548" strokeWidth="3" vectorEffect="non-scaling-stroke"/>
     </svg>
     {regions.map((r,i)=><button key={i} onClick={()=>change(regions.filter((_,j)=>j!==i))}>Remove {r.kind} {i+1}</button>)}

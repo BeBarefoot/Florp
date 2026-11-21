@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 import cv2
 import numpy as np
 from PIL import Image
+from shapely.geometry import Polygon
 from pydantic import BaseModel, Field, model_validator
 
 from .stair_detection import detect_stairs
@@ -17,6 +18,13 @@ class Region(BaseModel):
     holes: list[Annotated[list[tuple[Unit, Unit]], Field(min_length=3, max_length=256)]] = Field(default_factory=list, max_length=128)
     kind: Literal['garden', 'stairs']
     points: list[tuple[Unit, Unit]] = Field(min_length=3, max_length=256)
+
+    @model_validator(mode='after')
+    def measurable(self):
+        polygon = Polygon(self.points, self.holes)
+        if not polygon.is_valid or polygon.area <= 0:
+            raise ValueError('Trace a closed area without crossing its edges. Remove or redraw the marked outline.')
+        return self
 
 
 class Pair(BaseModel):

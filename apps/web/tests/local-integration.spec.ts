@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {regionArea} from '../components/SiteOutline';
 import {execFileSync} from 'node:child_process';
 import {resolve} from 'node:path';
 import {readFileSync,writeFileSync} from 'node:fs';
@@ -110,4 +111,17 @@ test('two floor photos can be reviewed, swapped and reopened',async({page,reques
  await floor.getByRole('link',{name:'Open first floor editor'}).click();
  await expect(page).toHaveURL(/\/plan\/[^/]+$/);
  await expect(page.getByText('second-floor.png',{exact:true})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'First floor',exact:true})).toBeVisible();
+ await expect(page.locator('[data-site-region="garden"]')).toBeVisible();
+ await page.getByLabel('Garden and stair outlines').uncheck();
+ await expect(page.locator('[data-site-region="garden"]')).toHaveCount(0);
+ const secondTab=page.waitForEvent('popup');
+ await page.getByRole('link',{name:'Open second floor in a new tab'}).click();
+ await expect((await secondTab).getByRole('heading',{name:'Second floor',exact:true})).toBeVisible();
+});
+
+test('garden area subtracts enclosed patios using calibrated source dimensions',()=>{
+ const region={kind:'garden' as const,points:[[0,0],[.5,0],[.5,.5],[0,.5]] as [number,number][],
+   holes:[[[.1,.1],[.2,.1],[.2,.2],[.1,.2]] as [number,number][]]};
+ expect(regionArea(region,800,600,.01)).toBeCloseTo(11.52);
 });

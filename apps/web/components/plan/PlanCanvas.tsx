@@ -16,9 +16,13 @@ type Drag =
 
 const COLORS = { wall: "#24414d", selected: "#e08a2c", window: "#3fb4c4", room: "#eef6f2", roomSel: "#d2ece3" };
 
+import type {SiteRegion} from "../../lib/api";
+import {SiteOutline} from "../SiteOutline";
+
 export default function PlanCanvas(props: {
   model: PlanModel;
   imageUrl: string;
+  siteRegions?: SiteRegion[];
   view: ViewMode;
   tool: Tool;
   setTool: (t: Tool) => void;
@@ -425,6 +429,7 @@ export default function PlanCanvas(props: {
             pointerEvents="none"
           />
         )}
+        <g transform={`scale(${W} ${H})`} pointerEvents="none">{props.siteRegions?.map((region,i)=><SiteOutline key={i} region={region}/>)}</g>
         {previewFrom && previewTo && (
           <line
             data-testid="rubber-band"
