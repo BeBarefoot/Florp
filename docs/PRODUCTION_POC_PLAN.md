@@ -457,3 +457,7 @@ With local ComfyUI, use **Render area** to target a visible piece of furniture. 
 The extraction regression suite includes a synthetic JPEG with pink and blue walls, dimension lines and furniture marks. The mixed-colour enclosure case recovers three rooms and avoids six spurious window proposals observed before the fix. Real-photo accuracy still requires independent annotations.
 
 Walk through a confirmed open doorway between rooms when the opening fits the camera clearance. Closing the door in the scene blocks passage.
+
+### Review a first and second floor
+
+Open the project, upload both floor pictures together and choose **Identify floors, garden and stairs**. The workspace suggests floor order from filenames or garden shading. Select the garden level as **First floor** and review the outlines on each drawing. Green outlines show possible planted areas and orange outlines show turning stairs. Remove a mistaken outline or trace a missing area, then **Save floor pair**. Both levels open in their own calibrated plan editors. Site-review outlines are annotations. Stair tread geometry in each editor comes from its architectural extraction. Alignment and walkable connections between levels remain future work.
