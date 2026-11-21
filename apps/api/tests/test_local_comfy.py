@@ -5,7 +5,7 @@ import pytest
 from PIL import Image
 from app import local_comfy,comfy
 from app.config import settings
-from app.providers import ProviderConfigurationError
+from app.providers import ProviderConfigurationError, ProviderOutputError
 
 JID='11111111-1111-4111-8111-111111111111'
 
@@ -38,7 +38,10 @@ async def test_local_submission_and_result_never_use_cloud_credentials(monkeypat
         assert request.url.path=='/view'
         return httpx.Response(200,content=png.getvalue())
     original=httpx.AsyncClient
-    monkeypatch.setattr(local_comfy.httpx,'AsyncClient',lambda **kw:original(transport=httpx.MockTransport(handle),**kw))
+    def client(**kwargs):
+        assert kwargs['trust_env'] is False
+        return original(transport=httpx.MockTransport(handle),**kwargs)
+    monkeypatch.setattr(local_comfy.httpx,'AsyncClient',client)
     receipt=await local_comfy.generate(png.getvalue(),'Warm bedroom',request_key=JID)
     status,image=await local_comfy.poll(receipt[1])
     assert status=='complete' and Image.open(io.BytesIO(image)).size==(1024,768)
@@ -59,6 +62,29 @@ async def test_missing_models_do_not_upload_or_submit(monkeypatch):
         return httpx.Response(200,json={})
     monkeypatch.setattr(local_comfy.httpx,'AsyncClient',lambda **kw:original(transport=httpx.MockTransport(handle),**kw))
     with pytest.raises(ProviderConfigurationError,match='missing'):
+        await local_comfy.generate(b'depth','style',request_key=JID)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('phase,error,message',[
+    ('/object_info',ProviderConfigurationError,'Florp could not reach local ComfyUI'),
+    ('/upload/image',ProviderConfigurationError,'before a render was submitted'),
+    ('/prompt',ProviderOutputError,'Check its queue'),
+])
+async def test_network_error_reports_submission_phase(monkeypatch,phase,error,message):
+    original=httpx.AsyncClient
+    def handle(request):
+        if request.url.path==phase:
+            raise httpx.ReadError('connection interrupted',request=request)
+        if request.url.path=='/object_info':
+            return httpx.Response(200,json={
+                'CheckpointLoaderSimple':{'input':{'required':{'ckpt_name':[[settings.local_comfy_checkpoint]]}}},
+                'ControlNetLoader':{'input':{'required':{'control_net_name':[[settings.local_comfy_controlnet]]}}},
+            })
+        assert request.url.path=='/upload/image'
+        return httpx.Response(200,json={'name':'depth.png'})
+    monkeypatch.setattr(local_comfy.httpx,'AsyncClient',lambda **kw:original(transport=httpx.MockTransport(handle),**kw))
+    with pytest.raises(error,match=message):
         await local_comfy.generate(b'depth','style',request_key=JID)
 
 

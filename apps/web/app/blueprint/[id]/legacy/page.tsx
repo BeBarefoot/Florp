@@ -1,4 +1,5 @@
 'use client';
+import { newUuid } from "../../../../lib/uuid";
 import {useEffect,useMemo,useState} from 'react';
 import {useDraftHistory} from '../../../../lib/draftHistory';
 import dynamic from 'next/dynamic';
@@ -447,7 +448,7 @@ export default function Editor(){
      if(!old)return old;
      if(old.walls.some(w=>(dist(w.start,gap.start)<5&&dist(w.end,gap.end)<5)||
                        (dist(w.start,gap.end)<5&&dist(w.end,gap.start)<5)))return old;
-     const wall:Wall={id:'user-gap-'+crypto.randomUUID(),start:gap.start,end:gap.end,
+     const wall:Wall={id:'user-gap-'+newUuid(),start:gap.start,end:gap.end,
        thickness_m:.15,height_m:2.8,inferred:true};
      return {...old,structure_reviewed:false,walls:[...old.walls,wall]};
    });
@@ -513,7 +514,7 @@ export default function Editor(){
   if(!geometry)return;
   if(!wallStart){setWallStart(p);setStatus('Choose the second endpoint of the new wall.');return;}
   if(dist(wallStart,p)<8){setStatus('Wall too short. Choose a more distant endpoint.');return;}
-  const wall:Wall={id:'user-'+crypto.randomUUID(),start:wallStart,end:p,thickness_m:.15,height_m:2.8,inferred:true};
+  const wall:Wall={id:'user-'+newUuid(),start:wallStart,end:p,thickness_m:.15,height_m:2.8,inferred:true};
   setGeometry({...geometry,walls:[...geometry.walls,wall]});setWallStart(null);
   setStatus('Draft wall added; save the draft when finished.');
  }
@@ -592,7 +593,7 @@ export default function Editor(){
     return;
   }
   const opening:Opening={
-    id:'reviewed-'+crypto.randomUUID(),source_detection_id:detectionId,reviewed:true,
+    id:'reviewed-'+newUuid(),source_detection_id:detectionId,reviewed:true,
     kind,wall_id:edge.id,offset_m:Number(offset.toFixed(3)),
     width_m:Number(width.toFixed(3)),height_m:kind==='door'?2.1:1.2,
     sill_m:kind==='door'?0:.9,inferred:true
@@ -621,7 +622,7 @@ export default function Editor(){
   if(geometry.openings.some(o=>o.wall_id===edge.id&&offset<o.offset_m+o.width_m&&o.offset_m<offset+width)){
     setStatus('An opening already exists here. Edit that opening in the sidebar.');return;
   }
-  const opening:Opening={id:'user-opening-'+crypto.randomUUID(),reviewed:true,kind,wall_id:edge.id,
+  const opening:Opening={id:'user-opening-'+newUuid(),reviewed:true,kind,wall_id:edge.id,
    offset_m:Number(offset.toFixed(3)),width_m:Number(width.toFixed(3)),
    height_m:kind==='door'?2.1:1.2,sill_m:kind==='door'?0:.9,inferred:true};
   setGeometry(old=>old?{...old,structure_reviewed:false,openings:[...old.openings,opening]}:old);

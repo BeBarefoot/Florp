@@ -24,9 +24,12 @@ def base_url():
 def checked(response):
     if response.status_code == 429 or response.status_code >= 500:
         raise ProviderRetryableError('Local ComfyUI is temporarily unavailable. Keep it running; Florp will check saved jobs again.')
-    if response.status_code >= 400:
-        raise ProviderConfigurationError('Local ComfyUI rejected the request. Check its terminal, checkpoint and depth ControlNet settings.')
-    return response.json()
+    if not response.is_success:
+        raise ProviderConfigurationError('Local ComfyUI rejected the request. Check LOCAL_COMFY_URL and the ComfyUI terminal for details.')
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise ProviderConfigurationError('The server at LOCAL_COMFY_URL did not return ComfyUI data. Check its port and make sure it is different from Florp’s API port.') from exc
 
 
 def workflow(image, prompt, seed, preview=None):
@@ -54,8 +57,11 @@ def workflow(image, prompt, seed, preview=None):
 
 async def generate(depth_png, prompt, *, request_key, preview_png=None):
     base = base_url()
-    async with httpx.AsyncClient(timeout=45, follow_redirects=False) as client:
-        info = checked(await client.get(base+'/object_info'))
+    async with httpx.AsyncClient(timeout=45, follow_redirects=False, trust_env=False) as client:
+        try:
+            info = checked(await client.get(base+'/object_info'))
+        except httpx.TransportError as exc:
+            raise ProviderConfigurationError(f'Florp could not reach local ComfyUI at {base}. Start ComfyUI on the computer running the Florp API and verify LOCAL_COMFY_URL.') from exc
         for kind, field, value in [('CheckpointLoaderSimple','ckpt_name',settings.local_comfy_checkpoint),('ControlNetLoader','control_net_name',settings.local_comfy_controlnet)]:
             choices = info.get(kind,{}).get('input',{}).get('required',{}).get(field,[[]])[0]
             if value not in choices:
@@ -68,11 +74,18 @@ async def generate(depth_png, prompt, *, request_key, preview_png=None):
             if path.is_absolute() or '..' in path.parts or '\\' in str(path):
                 raise ProviderOutputError('Invalid local ComfyUI upload path.')
             return str(path)
-        depth_path = await upload('depth', depth_png)
-        source_path = await upload('source', preview_png) if preview_png else None
+        try:
+            depth_path = await upload('depth', depth_png)
+            source_path = await upload('source', preview_png) if preview_png else None
+        except httpx.TransportError as exc:
+            raise ProviderConfigurationError('Upload to local ComfyUI was interrupted before a render was submitted. Check ComfyUI and try again.') from exc
         seed = int(hashlib.sha256(request_key.encode()).hexdigest()[:12],16)
-        receipt = checked(await client.post(base+'/prompt',json={'prompt':workflow(depth_path,prompt,seed,source_path),'client_id':request_key}))
-        job_id = str(UUID(receipt['prompt_id']))
+        try:
+            response = await client.post(base+'/prompt',json={'prompt':workflow(depth_path,prompt,seed,source_path),'client_id':request_key})
+            receipt = checked(response)
+            job_id = str(UUID(receipt['prompt_id']))
+        except (httpx.TransportError, ProviderRetryableError, KeyError, TypeError, ValueError) as exc:
+            raise ProviderOutputError('Florp did not receive a render receipt from local ComfyUI. Check its queue on the same computer before generating again.') from exc
     url = base+'/history/'+job_id
     return job_id,url,url
 
@@ -83,7 +96,7 @@ async def poll(status_url, expected_size=(1024,768)):
     if not status_url.startswith(prefix):
         raise ProviderConfigurationError('Local ComfyUI address changed. Restore LOCAL_COMFY_URL to recover this job.')
     jid = str(UUID(status_url[len(prefix):]))
-    async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
+    async with httpx.AsyncClient(timeout=20, follow_redirects=False, trust_env=False) as client:
         history = checked(await client.get(prefix+jid))
         job = history.get(jid)
         if not job:

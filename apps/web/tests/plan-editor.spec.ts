@@ -489,9 +489,55 @@ test('local generation consent avoids cloud billing and shows local recovery ins
  await page.getByLabel("Render area").selectOption("wardrobe-1");
  await expect(consent).toBeVisible();await consent.check();
  await page.getByRole('button',{name:'Generate preview',exact:true}).click();
- await expect(page.getByText('Start local ComfyUI and check', {exact:false})).toBeVisible();
+ await expect(page.getByText('Local ComfyUI unavailable', {exact:false})).toBeVisible();
+ await expect(page.getByText('See the local ComfyUI setup guide', {exact:false})).toBeVisible();
  expect(count).toBe(1);
  await expect(page.getByRole('link',{name:'Open Comfy account and credits'})).toHaveCount(0);
+});
+
+test('walkthrough responds to mouse and touch and returns to the saved framing', async ({page})=>{
+ test.setTimeout(60000);
+ await setup(page,{model:setReference(fixture(),{x:100,y:100},{x:500,y:100},4)});
+ const view={id:'walk',name:'Interior',position:{x:300,y:250},yaw:0,pitch:0,horizontalFov:90,eyeHeight:1.6};
+ const bed={id:'bed',kind:'bed',position:{x:425,y:295},rotation:0,width:1.2,depth:.7,height:.55};
+ await page.route('**/blueprints/p/scene',r=>r.fulfill({json:{revision:1,planRevision:1,config:{views:[view],objects:[bed],style:''}}}));
+ await page.route('**/blueprints/p/scene/renders',r=>r.fulfill({json:[]}));
+ await page.route('**/blueprints/p/scene/render-settings',r=>r.fulfill({json:{width:1024,height:768,configured:false,model:'',provider:'fal'}}));
+ await page.locator('.fe-segment button').nth(2).click();
+ const canvas=page.locator('.scene-frame canvas');
+ const walk=page.getByRole('button',{name:'Walkthrough'});
+ await walk.click();
+ const saved=await canvas.screenshot();
+ const box=(await canvas.boundingBox())!;
+ const x=Math.round(box.x+box.width/2), y=Math.round(box.y+box.height/2);
+ await page.mouse.move(x,y);
+ await page.mouse.down();
+ await page.mouse.move(x+40,y-25,{steps:4});
+ await page.mouse.up();
+ const dragged=await canvas.screenshot();
+ expect(dragged.equals(saved)).toBe(false);
+ await page.mouse.wheel(0,-170);
+ expect((await canvas.screenshot()).equals(dragged)).toBe(false);
+ await page.getByRole('button',{name:'Preview view'}).click();
+ expect((await canvas.screenshot()).equals(saved)).toBe(true);
+ await expect(page.getByRole('button',{name:'Save scene'})).toBeDisabled();
+
+ await page.setViewportSize({width:390,height:844});
+ const cdp=await page.context().newCDPSession(page);
+ await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:2});
+ await walk.click();
+ const mobileStart=await canvas.screenshot();
+ const mobile=(await canvas.boundingBox())!;
+ const cx=Math.round(mobile.x+mobile.width/2), cy=Math.round(mobile.y+mobile.height/2);
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:cx,y:cy,id:1}]});
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:cx,y:cy-50,id:1}]});
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ const mobileDragged=await canvas.screenshot();
+ expect(mobileDragged.equals(mobileStart)).toBe(false);
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:cx-55,y:cy,id:1},{x:cx+55,y:cy,id:2}]});
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:cx-32,y:cy,id:1},{x:cx+32,y:cy,id:2}]});
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ expect((await canvas.screenshot()).equals(mobileDragged)).toBe(false);
 });
 
 test('walker crosses a confirmed interior door and stops at a closed one',async({page})=>{
@@ -518,4 +564,29 @@ test('walker crosses a confirmed interior door and stops at a closed one',async(
   for(let i=0;i<10;i++)await walk.press('s');
   await page.getByRole('button',{name:'Save scene',exact:true}).click();
   await expect.poll(()=>savedX).toBeCloseTo(540);
+});
+
+test('phone walkthrough captures its current pose for design and saves it',async({page})=>{
+  const model=setReference(fixture(),{x:100,y:100},{x:500,y:100},4);
+  await setup(page,{model});
+  const view={id:'phone',name:'Phone view',position:{x:300,y:250},yaw:0,pitch:0,horizontalFov:90,eyeHeight:1.6};
+  let savedYaw=0;
+  await page.route('**/blueprints/p/scene',route=>{
+    const config=route.request().method()==='PUT'?route.request().postDataJSON().config:{views:[view],objects:[],style:''};
+    savedYaw=config.views[0].yaw;
+    return route.fulfill({json:{revision:1,planRevision:model.revision,config}});
+  });
+  await page.route('**/blueprints/p/scene/render-settings',r=>r.fulfill({json:{width:1024,height:768,configured:false,model:'',provider:'fal'}}));
+  await page.route('**/blueprints/p/scene/renders',r=>r.fulfill({json:[]}));
+  await page.setViewportSize({width:390,height:844});
+  await page.goto('/phone/p');
+  const canvas=page.locator('[data-mode=walk] canvas');
+  await canvas.scrollIntoViewIfNeeded();
+  const box=(await canvas.boundingBox())!;
+  const x=box.x+box.width/2,y=box.y+box.height/2;
+  await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+35,y,{steps:3});await page.mouse.up();
+  await page.getByRole('button',{name:'Design this view'}).click();
+  await expect(page.getByAltText('Captured walkthrough view')).toBeVisible();
+  await page.getByRole('button',{name:'Save scene',exact:true}).click();
+  await expect.poll(()=>savedYaw).toBeGreaterThan(1);
 });

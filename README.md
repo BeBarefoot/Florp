@@ -2,7 +2,7 @@
 
 Turn a floor plan into an editable 2D drawing, walk through it in 3D, and try design ideas from a saved camera view.
 
-Florp is a single-user app that runs on your computer. macOS is the target for local use, and CI runs on Linux. Import, editing, walkthroughs, furniture and floor finishes work without an API key. The installable phone app is planned. [Phone app plan](docs/PHONE_APP_PLAN.md)
+Florp is a single-user app that runs on your computer. macOS is the target for local use, and CI runs on Linux. Import, editing, walkthroughs, furniture and floor finishes work without an API key. The installable phone app uses the same projects and local API. [Phone app plan](docs/PHONE_APP_PLAN.md)
 
 ## Run on your Mac
 
@@ -17,6 +17,83 @@ Install Node.js 22 and [uv](https://docs.astral.sh/uv/getting-started/installati
 Wait for the build and startup to finish, then open [Florp at localhost:3000](http://localhost:3000). Keep the terminal open while using Florp. Press Ctrl+C to stop both servers. If Chrome reports **Connection refused**, run the launcher on the Mac where you’re using Chrome, check the terminal output, and make sure ports 3000 and 8000 are free.
 
 To update, stop Florp, run `git pull --ff-only` from a clean local `main` checkout, then rerun the commands above. Optional settings belong in `apps/api/.env`. Keep your existing settings and use the [example configuration](.env.example) as a reference.
+
+## Run and install the smartphone app
+
+Florp’s smartphone app is a progressive web app (PWA) served by the same
+production launcher as the desktop editor. From the repository root, after the
+dependency installation above, run:
+
+```bash
+./scripts/start.sh
+```
+
+- **On the computer:** open `http://localhost:3000` in Chrome. Use the install
+  icon in the address bar or **Install page as app** in the browser menu. Launch
+  Florp from the installed shortcut to open your projects in a standalone window.
+- **Android over USB:** enable USB debugging, connect the phone, accept its
+  debugging prompt and run the following on the computer with Android Platform
+  Tools installed. Open `http://localhost:3000` in Android Chrome and choose
+  **Install app** or **Add to Home screen** from the menu.
+
+  ```bash
+  adb reverse tcp:3000 tcp:3000
+  adb reverse tcp:8000 tcp:8000
+  ```
+
+- **iPhone simulator on Mac:** start an iPhone in Xcode Simulator, open
+  `http://localhost:3000` in Safari, and choose **Share → Add to Home Screen**.
+  For installation on a physical iPhone, use a trusted HTTPS origin for Florp
+  with an HTTPS-accessible API. See the private Wi-Fi installation steps below. Service workers require HTTPS or localhost.
+
+Open `/phone` (the installed app starts here). Create a project, open it, and choose a plan file or **Take a plan photo**.
+Review the extracted geometry and calibrate one known measurement before
+opening **Open phone walkthrough**. Tap a starting position on the map and then a direction. Drag vertically to walk, horizontally to turn, and pinch to zoom. Tap a reachable point on the map to move there. **Design this view** captures that pose. Choose a floor finish or enter a prompt and approve generation. Use **Save scene** to retain edits. The app reads and saves projects on the computer running Florp.
+Offline launches show a reconnect screen. Editing, uploads and generation
+require connectivity. The app does not queue offline render requests.
+
+#### Install on a physical iPhone over private Wi-Fi
+
+On your Mac, install Caddy and mkcert (`brew install caddy mkcert`). Replace
+`192.168.1.23` below with the Mac’s Wi-Fi IP. Keep the Mac and iPhone on a
+private network. The HTTPS gateway below requires an owner password for the app and API.
+
+1. Stop the existing launcher and, from the Florp root, run
+   `NEXT_PUBLIC_API_URL=/florp-api ./scripts/start.sh`. Keep it running.
+2. Use `caddy hash-password` to generate a password hash and replace
+   `REPLACE_WITH_CADDY_PASSWORD_HASH` below. Sign in as `owner` on the phone.
+   In another terminal, create a certificate and start a single HTTPS endpoint
+   for the app and API:
+
+   ```bash
+   mkdir -p ~/florp-local-tls && cd ~/florp-local-tls
+   mkcert -install
+   mkcert -cert-file florp.pem -key-file florp-key.pem 192.168.1.23
+   cat > Caddyfile <<'EOF'
+   {
+       auto_https disable_redirects
+   }
+   https://192.168.1.23:8443 {
+       tls florp.pem florp-key.pem
+       basic_auth {
+           owner REPLACE_WITH_CADDY_PASSWORD_HASH
+       }
+       handle_path /florp-api/* {
+           reverse_proxy 127.0.0.1:8000
+       }
+       handle {
+           reverse_proxy 127.0.0.1:3000
+       }
+   }
+   EOF
+   caddy run --config Caddyfile --adapter caddyfile
+   ```
+
+3. Run `mkcert -CAROOT` to locate the CA folder. Transfer **only**
+   `rootCA.pem` to the iPhone. Install the downloaded profile in Settings,
+   then enable its trust under **General → About → Certificate Trust Settings**.
+4. Open `https://192.168.1.23:8443` in Safari and use **Share → Add to Home
+   Screen**. Enable **Open as Web App** if offered. Keep both Mac terminals open.
 
 ## Upload, walk and design
 

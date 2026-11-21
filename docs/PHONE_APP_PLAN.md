@@ -4,6 +4,15 @@
 
 Build an installable web app with three screens: **Upload → Walk → Design**. The phone handles touch, local 3D display and camera capture. Florp on the user's M5 Mac runs plan extraction, saves projects and optionally runs local ComfyUI. Reuse the existing Next.js app and FastAPI engine so the phone and desktop editors work on the same project and revisions.
 
+## Implementation status
+
+The first PWA build includes a project picker, camera and multi-file upload,
+a calibrated phone walkthrough, collision-checked map movement, and capture of
+the current walkthrough pose for design. Installation and owner-only HTTPS
+setup are in the [root README](../README.md#run-and-install-the-smartphone-app).
+Use the shared editor for extraction review and calibration. The physical-device
+pilot, held-out extraction accuracy, and hardware performance budgets remain open.
+
 ## The phone experience
 
 | Screen | What the user does | What Florp does |

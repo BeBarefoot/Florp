@@ -16,8 +16,7 @@ export default function ProjectPage() {
       .then(setPlans)
       .catch((e) => setError(String(e)));
   }, [id]);
-  async function upload() {
-    const files = Array.from(file.current?.files??[]);
+  async function upload(files = Array.from(file.current?.files??[])) {
     if (!files.length || busy) return;
     setBusy(true);
     setError("");
@@ -41,7 +40,7 @@ export default function ProjectPage() {
         lastId=bp.id;
       }
       if (file.current) file.current.value = "";
-      if(lastId && files.length===1 && !plans.length)window.location.href = "/plan/" + lastId;
+      if(lastId && files.length===1 && !plans.length)window.location.href = (matchMedia("(pointer:coarse)").matches?"/phone/":"/plan/") + lastId;
     } catch (e) {
       setError(String(e));
     } finally {
@@ -84,8 +83,16 @@ export default function ProjectPage() {
             type="file" multiple
             accept="application/pdf,image/png,image/jpeg,image/webp"
           />
+          <label className="plan-photo">Take a plan photo
+            <input type="file" accept="image/jpeg,image/png" capture="environment" disabled={busy}
+              onChange={event=>{
+                const photo = event.currentTarget.files?.[0];
+                event.currentTarget.value = "";
+                if (photo) void upload([photo]);
+              }}/>
+          </label>
           <div>
-            <button disabled={busy} onClick={upload}>
+            <button disabled={busy} onClick={()=>void upload()}>
               {busy ? "Uploading…" : "Upload plan"}
             </button>
           </div>
@@ -97,7 +104,7 @@ export default function ProjectPage() {
         {plans.length>=2&&<FloorPairReview pid={id} plans={plans}/>}
         <div className="grid">
           {plans.map((p) => (
-            <Link className="panel" key={p.id} href={"/plan/" + p.id}>
+            <div className="panel" key={p.id}><Link href={"/plan/" + p.id}>
               <img
                 src={`${API}/blueprints/${p.id}/preview`}
                 alt="Blueprint preview"
@@ -112,7 +119,7 @@ export default function ProjectPage() {
               <p className="muted">
                 {p.width} × {p.height}px · Open editor →
               </p>
-            </Link>
+            </Link><Link className="phone-open" href={"/phone/"+p.id}>Open phone walkthrough →</Link></div>
           ))}
         </div>
       </main>

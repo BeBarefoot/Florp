@@ -10,7 +10,10 @@ licenses still apply; open weights do not mean unrestricted commercial rights.
 
 1. Install a current Apple Silicon build of [ComfyUI](https://www.comfy.org/download).
    Choose its models directory and configure its local server to listen on
-   `127.0.0.1:8188`. Florp's own API uses port 8000; avoid using that port for ComfyUI.
+   `127.0.0.1:8188`. Check ComfyUI's startup log for its actual address. If your
+   ComfyUI installation defaults to port 8000, set it to 8188 before starting Florp,
+   whose API uses 8000. A manual ComfyUI installation can use
+   `python main.py --listen 127.0.0.1 --port 8188` from its own environment.
 2. Download [SDXL base 1.0](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)
    from the model publisher, review its license and place `sd_xl_base_1.0.safetensors`
    in ComfyUI's `models/checkpoints` directory.
@@ -42,6 +45,14 @@ The same frame dimensions are required on output; local downloads are bounded.
 
 ## Behavior and troubleshooting
 
+- For a connection failure, run `curl --fail --show-error http://127.0.0.1:8188/system_stats`
+  on the computer running the Florp API. This should return ComfyUI system JSON.
+  If it fails, start ComfyUI, check the address in its startup log and update
+  `LOCAL_COMFY_URL` to match. Restart Florp after changing the setting. A cloud
+  checkout has its own `127.0.0.1`, so run both services on your Mac for Mac inference.
+- If the error mentions a missing render receipt, check the ComfyUI queue before
+  generating again. A connection or upload failure before submission can be
+  retried after restoring the connection.
 - Florp checks `/object_info` for the configured models before uploading depth or
   submitting `/prompt`. A configured provider in settings does not establish that
   ComfyUI is running, models are installed or GPU execution works.

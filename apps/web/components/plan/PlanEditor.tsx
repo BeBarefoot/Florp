@@ -464,6 +464,7 @@ export default function PlanEditor({ id }: { id: string }) {
         onReextract={() => void extract(revision.current, true)}
       />
       <main className="fe-stage">
+        {mpp&&<a className="phone-return" href={"/phone/"+id}>Open phone walkthrough</a>}
         {error && (
           <div className="fe-error" role="alert">
             <span>{error}</span>
