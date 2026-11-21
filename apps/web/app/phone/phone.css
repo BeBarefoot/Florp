@@ -33,3 +33,21 @@
 .tour-shell [data-phone-step=walk] .phone-steps{order:2;position:static}
 .tour-shell [data-phone-step=walk] .scene-layout{order:1;width:100%}
 .tour-shell [data-phone-step=walk] .scene-controls>label{order:3}
+.show-launch{min-height:44px;padding:10px 16px;border-radius:12px;font-weight:650}.tour-cover .show-new{margin-left:8px;background:#26382de6}
+.tour-shell:has(.showcase-player) .tour-mast{display:none}
+.tour-shell .showcase-player{position:relative;display:grid;grid-template-rows:minmax(0,1fr) auto;width:100%;height:100dvh;max-width:none;margin:0;padding:0;background:#d8d9cb}
+.showcase-player canvas{touch-action:none}.show-top{position:absolute;top:max(16px,env(safe-area-inset-top));left:16px;right:16px;display:flex;justify-content:space-between;pointer-events:none;z-index:4}
+.show-top a,.show-top button{display:inline-flex;align-items:center;gap:8px;padding:10px 15px;background:#21342bf0;color:white;border-radius:30px;pointer-events:auto;min-height:44px}
+.show-panel{position:relative;z-index:3;padding:16px max(18px,calc((100vw - 800px)/2)) max(14px,env(safe-area-inset-bottom));background:#f7f6ef;border-radius:22px 22px 0 0;box-shadow:0 -6px 24px #28352812;max-height:48dvh;overflow:auto}
+.show-panel small{color:#576854}.show-panel h1{font:normal clamp(26px,4vw,44px)/1.05 Georgia,serif;margin:3px 0}.show-panel p{margin:5px 0 10px;overflow-wrap:anywhere}
+.show-stops,.show-transport{display:flex;align-items:center;gap:7px}.show-stops{overflow-x:auto;padding:4px 0}
+.show-stops button,.show-transport button{display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+.show-stops button{background:#e6e9db;color:#293e32}.show-stops button[aria-pressed=true]{background:#324b3d;color:white}
+.show-transport{margin-top:6px}.show-transport button:first-child{margin-right:auto}.showcase-player .show-pin{border:2px solid white;border-radius:50%;min-width:44px;padding:6px;box-shadow:0 2px 8px #26382d55}
+@media(orientation:landscape) and (max-height:520px){.tour-shell .showcase-player{grid-template-columns:1fr 220px;grid-template-rows:100%}.show-panel{max-height:none;border-radius:0;padding:12px}.show-top{right:232px}.show-stops{flex-wrap:wrap}}
+.show-render{position:absolute;inset:0;grid-area:1/1;background:#1f3028;z-index:2}
+.show-render img{width:100%;height:100%;object-fit:contain}
+
+.show-tools{display:flex;gap:6px}.showcase-player[data-immersive=true] .show-panel{display:none}
+.tour-shell .showcase-player[data-immersive=true]{grid-template:100%/100%}
+.showcase-player[data-immersive=true] .show-top{right:16px}

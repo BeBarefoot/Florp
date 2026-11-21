@@ -148,3 +148,17 @@ The integration suite runs a real API and production frontend with temporary sto
 - [Optional fixture detection weights](docs/FIXTURE_WEIGHTS.md) and [engine validation](docs/ENGINE_VALIDATION.md)
 - [Production roadmap](docs/PRODUCTION_POC_PLAN.md), [whole-home capability roadmap](docs/ENVIZ_CAPABILITY_ROADMAP.md), and [issue #1](https://github.com/BeBarefoot/Florp/issues/1)
 - [Project history](HISTORY.md)
+
+### Present a floor on a phone
+
+Open **Explore sample tour** in the phone library to try a furnished two-room apartment.
+For your own calibrated floor, save named cameras in the scene and choose **Present floor**.
+Drag to look around a room. Choose **Overview** to orbit the model and tap a numbered
+camera marker. **Play tour** advances through the saved views. **Share this tour**
+creates a link to the current stop on your Florp host. Recipients need the same host
+access as the presenter. A floor with no saved cameras opens in overview.
+Use **Hide tour controls** for an uninterrupted view. When a completed design
+render matches the camera and the saved scene and plan revisions, **Show saved
+design** displays that image. **Return to 3D** restores the interactive view.
+
+[Room presentation](docs/images/phone-showcase.png) · [Dollhouse with camera stops](docs/images/phone-dollhouse.png)

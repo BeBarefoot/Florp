@@ -22,6 +22,7 @@ export default function PhonePlan(){
   },[id]);
   return <main className="phone-studio">
     <nav><Link href={info?"/phone/spaces/"+info.project_id:"/phone"}>← Floors</Link>
+      {plan?.model&&metersPerPixel(plan.model)&&<Link className="show-launch" href={"/phone/showcase/"+id}>Present floor ↗</Link>}
       <Link href={"/plan/"+id}>Review plan</Link></nav>
     <h1>{info?.filename||"Walkthrough"}</h1>
     {error?<p role="alert">{error} <button onClick={()=>location.reload()}>Retry</button></p>:
