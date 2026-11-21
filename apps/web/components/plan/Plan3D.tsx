@@ -48,6 +48,8 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
   const [showBlueprint,setShowBlueprint]=useState(false);
   const walkPose=useRef<View|null>(null);
   const [design,setDesign]=useState(false);
+  const [mapOpen,setMapOpen]=useState(false);
+  const showMap=phone&&!design&&(mapOpen||mode==="camera"||mode==="aim"||!viewId);
   const captureFn=useRef<CaptureFn|null>(null);
   const submitRetry=useRef<{key:string; signature:string}|null>(null);
   const bind=useCallback((f:CaptureFn|null)=>{captureFn.current=f;setReady(!!f);},[]);
@@ -219,7 +221,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
           setMessage("The direct path is blocked. Tap a clear spot on this side or move through an open door.");return;
         }
       }
-      updateView({...start,position:p});setMessage("");return;
+      updateView({...start,position:p});setMapOpen(false);setMessage("");return;
     }
     if(mode==="camera"){
       if(!validCamera(p)){setMessage("Place the camera inside a room or room zone, at least 30 cm from the wall and outside furniture.");return;}
@@ -350,12 +352,14 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
   const viewJobs=jobs.filter(j=>j.viewId===view?.id);
   const job=viewJobs.find(j=>j.id===selectedJob)??viewJobs[0];
   const asset=(name:string)=>`${API}${path}/scene/renders/${job?.id}/${name}`;
-  return <div className="plan3d scene-studio" data-phone-step={phone?(design?"design":"walk"):undefined} data-testid="plan-3d" data-wall-lengths={meshSignature(pieces)} data-stair-count={m.stairs?.length??0}>
+  return <div className="plan3d scene-studio" data-phone-map={phone?showMap:undefined} data-phone-step={phone?(design?"design":"walk"):undefined} data-testid="plan-3d" data-wall-lengths={meshSignature(pieces)} data-stair-count={m.stairs?.length??0}>
     <fieldset disabled={busy||!saved} className="scene-controls">
       {saved&&saved.planRevision!==null&&saved.planRevision!==m.revision&&<p>Saved scene uses plan revision {saved.planRevision}. Review camera and object placement, then save the scene for this plan.</p>}
       {phone&&<div className="phone-steps">
-        <button disabled={!view} aria-pressed={!design} onClick={()=>{setDesign(false);setCameraMode("walk");}}>Walk</button>
-        <button disabled={!view||!ready} aria-pressed={design} onClick={()=>{
+        <button disabled={!view} aria-pressed={!design&&!showMap&&cameraMode==="walk"} onClick={()=>{setDesign(false);setMapOpen(false);setCameraMode("walk");}}>Walk</button>
+        <button disabled={!view||!!mode} aria-pressed={showMap} onClick={()=>{setDesign(false);setCameraMode("walk");setMapOpen(!showMap);}}>Floor map</button>
+        <button disabled={!!mode} aria-pressed={!showMap&&!design&&cameraMode==="orbit"} onClick={()=>{setMapOpen(false);setDesign(false);setCameraMode("orbit");}}>3D overview</button>
+        <button disabled={!view||!ready||cameraMode==="orbit"||!!mode} aria-pressed={design} onClick={()=>{
           if(!view)return;
           const current=cameraMode==="walk"&&walkPose.current?.id===view.id?walkPose.current:view;
           if(!validCamera(current.position)){setMessage("Move into a clear space to capture this view.");return;}
