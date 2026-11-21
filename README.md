@@ -20,6 +20,8 @@ To update, stop Florp, run `git pull --ff-only` from a clean local `main` checko
 
 ## Run and install the smartphone app
 
+[Preview the phone walkthrough library](docs/images/phone-library.png). The cover uses an illustrative interior photograph. [Photo source](https://images.unsplash.com/photo-1600210492486-724fe5c67fb0)
+
 Florp’s smartphone app is a progressive web app (PWA) served by the same
 production launcher as the desktop editor. From the repository root, after the
 dependency installation above, run:
@@ -46,9 +48,9 @@ dependency installation above, run:
   For installation on a physical iPhone, use a trusted HTTPS origin for Florp
   with an HTTPS-accessible API. See the private Wi-Fi installation steps below. Service workers require HTTPS or localhost.
 
-Open `/phone` (the installed app starts here). Create a project, open it, and choose a plan file or **Take a plan photo**.
+Open `/phone` to see **Your walkthroughs**. Select **New space**, enter a name, then choose **Upload plans** or **Take photo**. Tap a drawing to open its walkthrough.
 Review the extracted geometry and calibrate one known measurement before
-opening **Open phone walkthrough**. Tap a starting position on the map and then a direction. Drag vertically to walk, horizontally to turn, and pinch to zoom. Tap a reachable point on the map to move there. **Design this view** captures that pose. Choose a floor finish or enter a prompt and approve generation. Use **Save scene** to retain edits. The app reads and saves projects on the computer running Florp.
+opening the drawing in the phone library. Tap a starting position on the map and then a direction. Drag vertically to walk, horizontally to turn, and pinch to zoom. Choose **Floor map** and tap a reachable point to move there. Use **3D overview** to orbit the whole floor. **Design this view** captures that pose. Choose a floor finish or enter a prompt and approve generation. Use **Save scene** to retain edits. The app reads and saves projects on the computer running Florp.
 Offline launches show a reconnect screen. Editing, uploads and generation
 require connectivity. The app does not queue offline render requests.
 
@@ -146,3 +148,17 @@ The integration suite runs a real API and production frontend with temporary sto
 - [Optional fixture detection weights](docs/FIXTURE_WEIGHTS.md) and [engine validation](docs/ENGINE_VALIDATION.md)
 - [Production roadmap](docs/PRODUCTION_POC_PLAN.md), [whole-home capability roadmap](docs/ENVIZ_CAPABILITY_ROADMAP.md), and [issue #1](https://github.com/BeBarefoot/Florp/issues/1)
 - [Project history](HISTORY.md)
+
+### Present a floor on a phone
+
+Open **Explore sample tour** in the phone library to try a furnished two-room apartment.
+For your own calibrated floor, save named cameras in the scene and choose **Present floor**.
+Drag to look around a room. Choose **Overview** to orbit the model and tap a numbered
+camera marker. **Play tour** advances through the saved views. **Share this tour**
+creates a link to the current stop on your Florp host. Recipients need the same host
+access as the presenter. A floor with no saved cameras opens in overview.
+Use **Hide tour controls** for an uninterrupted view. When a completed design
+render matches the camera and the saved scene and plan revisions, **Show saved
+design** displays that image. **Return to 3D** restores the interactive view.
+
+[Room presentation](docs/images/phone-showcase.png) · [Dollhouse with camera stops](docs/images/phone-dollhouse.png)

@@ -64,3 +64,9 @@ Walk through a confirmed open doorway between rooms when the opening fits the ca
 Open the project, upload both floor pictures together and choose **Identify floors, garden and stairs**. The workspace suggests floor order from filenames or garden shading. Select the garden level as **First floor** and review the outlines on each drawing. Green outlines show possible planted areas and orange outlines show turning stairs. Remove a mistaken outline or trace a missing area, then **Save floor pair**. Both levels open in their own calibrated plan editors. Site-review outlines are annotations. Stair tread geometry in each editor comes from its architectural extraction. Alignment and walkable connections between levels remain future work.
 
 Each paired floor editor shows its saved garden and stair outlines. Calibrate each image using a known distance to see the estimated garden area in square metres. Open the other floor in a new tab to compare the stair locations.
+
+### Mobile showcase investigation · 21 November 2026
+
+In a 390 × 844 Chromium viewport, the public IBEN example opened into a furnished kitchen. Its room name stayed over the scene. The first-use overlay explained clicking to move and dragging to look. View controls sat at the edges, leaving the interior as the main content. These observations are from the browser experience. [Enviz public viewer](https://app.enviz.co/?intent=view%2FIBEN)
+
+Florp applies those presentation choices through a separate viewer. A direct link opens a saved camera stop. Visitors can look around, switch to the dollhouse and select numbered stops, or play the stops in sequence. The sample apartment opens from the library with no upload or account. Presenting a saved floor uses the current calibrated geometry, floor finish, furniture and camera names. Camera and edit tools stay in the studio. Shared links require access to the same Florp host.
