@@ -580,6 +580,12 @@ test('phone walkthrough captures its current pose for design and saves it',async
   await page.route('**/blueprints/p/scene/renders',r=>r.fulfill({json:[]}));
   await page.setViewportSize({width:390,height:844});
   await page.goto('/phone/p');
+  await page.getByRole('button',{name:'Floor map',exact:true}).click();
+  await expect(page.getByLabel('Camera and furniture placement plan')).toBeVisible();
+  await page.getByRole('button',{name:'3D overview'}).click();
+  await expect(page.locator('[data-mode=orbit] canvas')).toBeVisible();
+  await expect(page.getByLabel('Camera and furniture placement plan')).toBeHidden();
+  await page.getByRole('button',{name:'Walk',exact:true}).click();
   const canvas=page.locator('[data-mode=walk] canvas');
   await canvas.scrollIntoViewIfNeeded();
   const box=(await canvas.boundingBox())!;

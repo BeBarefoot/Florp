@@ -1,0 +1,35 @@
+.tour-shell{--ink:#21342b;--paper:#f6f5ef;--line:#cecec1;min-height:100dvh;color:var(--ink);background:var(--paper);font:16px/1.45 system-ui,sans-serif}
+.tour-mast,.tour-library,.tour-shell .phone-studio{width:min(1120px,100%);margin:auto;padding:22px clamp(16px,4vw,52px);box-sizing:border-box}
+.tour-mast{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
+.tour-mast a{display:flex;align-items:center;gap:8px;font:600 29px Georgia,serif;letter-spacing:-1.5px}
+.tour-mast span{font-size:13px}.tour-library h1,.tour-shell .phone-studio h1{font:normal clamp(36px,5vw,64px)/1 Georgia,serif;letter-spacing:-.045em;margin:20px 0}
+.tour-library h2{font:normal 28px Georgia,serif;letter-spacing:-.04em;margin:32px 0 14px}
+.tour-cover{min-height:clamp(290px,42vh,450px);background:linear-gradient(0deg,#152519de,transparent 85%),url('/walkthrough-interior.webp') center 55%/cover;border-radius:20px;display:flex;align-items:flex-end;padding:clamp(20px,4vw,42px);color:white}
+.tour-cover h1{font-size:clamp(41px,7vw,80px);margin:0 0 19px}
+.tour-shell button,.tour-upload label{min-height:44px;border-radius:12px;background:var(--ink);color:white;font-weight:600;padding:10px 16px}
+.tour-shell .tour-primary{display:inline-flex;align-items:center;gap:8px;background:#dfefac;color:#233423}
+.tour-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(250px,100%),1fr));gap:12px}
+.tour-card,.tour-floor{border:1px solid var(--line);background:#fffef9;border-radius:16px;overflow:hidden}
+.tour-card,.tour-floor span{display:flex;align-items:center;padding:16px;gap:14px}
+.tour-card strong,.tour-floor strong{flex:1;overflow-wrap:anywhere}
+.tour-glyph{display:grid;place-items:center;background:#e9ecdc;width:46px;height:46px;border-radius:12px}
+.tour-floor img{display:block;width:100%;height:170px;object-fit:contain;background:#eeeee6;padding:10px}
+.tour-back,.tour-upload,.tour-upload label,.tour-create{display:flex;align-items:center;gap:8px}.tour-back{width:fit-content;min-height:44px}
+.tour-upload,.tour-create{flex-wrap:wrap;margin:16px 0}.tour-upload label{position:relative;overflow:hidden;cursor:pointer}.tour-upload input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}.tour-upload label:focus-within{outline:3px solid #778747}
+.tour-create{padding:16px;background:white;border-radius:16px;align-items:flex-end}.tour-create label{display:grid;gap:4px;flex:1}.tour-create input{width:100%}
+.tour-shell .scene-studio{background:transparent;padding:0}.tour-shell .scene-frame{border-radius:18px;overflow:hidden}
+.tour-shell .phone-steps{justify-content:flex-start;flex-wrap:wrap;position:sticky;top:0;z-index:4;padding:8px 0;background:var(--paper)}
+.tour-shell .phone-steps button{background:#e7e8df;color:var(--ink)}.tour-shell .phone-steps button[aria-pressed=true]{background:var(--ink);color:white}
+.tour-shell [data-phone-map=false] .scene-layout>div:first-child{display:none}
+.tour-shell [data-phone-map=true] .scene-layout .scene-viewport{visibility:hidden;height:0;overflow:hidden}
+.tour-shell .scene-layout{max-width:920px;margin:auto}.tour-shell .scene-map{max-height:65dvh}
+@media(max-width:600px){.tour-mast{padding-block:14px}.tour-library,.tour-shell .phone-studio{padding-top:14px}.tour-cover{min-height:34dvh}.tour-shell .phone-steps button{padding:8px 10px}.tour-shell .phone-steps{gap:5px}}
+.tour-review{border-radius:18px;overflow:hidden;border:1px solid var(--line);background:#fffef9}
+.tour-review img{width:100%;height:38dvh;object-fit:contain;padding:16px;background:#e9e9df}
+.tour-review>div{padding:20px}.tour-review h2{font:32px Georgia,serif;margin:0}
+.tour-review .tour-primary{min-height:44px;border-radius:12px;padding:10px 16px;font-weight:600}
+.tour-shell [data-phone-step=design] .scene-layout{height:0;overflow:hidden;visibility:hidden}
+.tour-shell [data-phone-step=walk] .scene-controls{display:flex;flex-direction:column}
+.tour-shell [data-phone-step=walk] .phone-steps{order:2;position:static}
+.tour-shell [data-phone-step=walk] .scene-layout{order:1;width:100%}
+.tour-shell [data-phone-step=walk] .scene-controls>label{order:3}

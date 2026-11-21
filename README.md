@@ -20,6 +20,8 @@ To update, stop Florp, run `git pull --ff-only` from a clean local `main` checko
 
 ## Run and install the smartphone app
 
+[Preview the phone walkthrough library](docs/images/phone-library.png). The cover uses an illustrative interior photograph. [Photo source](https://images.unsplash.com/photo-1600210492486-724fe5c67fb0)
+
 Florp’s smartphone app is a progressive web app (PWA) served by the same
 production launcher as the desktop editor. From the repository root, after the
 dependency installation above, run:
@@ -46,9 +48,9 @@ dependency installation above, run:
   For installation on a physical iPhone, use a trusted HTTPS origin for Florp
   with an HTTPS-accessible API. See the private Wi-Fi installation steps below. Service workers require HTTPS or localhost.
 
-Open `/phone` (the installed app starts here). Create a project, open it, and choose a plan file or **Take a plan photo**.
+Open `/phone` to see **Your walkthroughs**. Select **New space**, enter a name, then choose **Upload plans** or **Take photo**. Tap a drawing to open its walkthrough.
 Review the extracted geometry and calibrate one known measurement before
-opening **Open phone walkthrough**. Tap a starting position on the map and then a direction. Drag vertically to walk, horizontally to turn, and pinch to zoom. Tap a reachable point on the map to move there. **Design this view** captures that pose. Choose a floor finish or enter a prompt and approve generation. Use **Save scene** to retain edits. The app reads and saves projects on the computer running Florp.
+opening the drawing in the phone library. Tap a starting position on the map and then a direction. Drag vertically to walk, horizontally to turn, and pinch to zoom. Choose **Floor map** and tap a reachable point to move there. Use **3D overview** to orbit the whole floor. **Design this view** captures that pose. Choose a floor finish or enter a prompt and approve generation. Use **Save scene** to retain edits. The app reads and saves projects on the computer running Florp.
 Offline launches show a reconnect screen. Editing, uploads and generation
 require connectivity. The app does not queue offline render requests.
 
