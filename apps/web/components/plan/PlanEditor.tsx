@@ -153,6 +153,19 @@ export default function PlanEditor({ id }: { id: string }) {
       setBusy(false);
     }
   }
+  async function detectYard() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const gardens=await request<NonNullable<PlanModel["gardens"]>>(`/blueprints/${id}/plan/yard`);
+      if (!live.current || live.current.id!==id) return;
+      if (!gardens.length) { setStatus("No shaded yard found on the source drawing"); return; }
+      edit({...live.current,gardens});
+      setShowSite(true);
+      setStatus("Yard detected");
+    } catch (e) { setError(String(e)); }
+    finally { setBusy(false); }
+  }
   async function detectStairs() {
     if (busy) return;
     setBusy(true);
@@ -380,7 +393,7 @@ export default function PlanEditor({ id }: { id: string }) {
   const canvas = (
     <PlanCanvas
       model={m}
-      siteRegions={showSite?info?.floor?.regions:undefined}
+      siteRegions={showSite?[...(m.gardens??[]),...(info?.floor?.regions??[]).filter(r=>r.kind!=="garden"||!m.gardens?.length)]:undefined}
       imageUrl={`${API}/blueprints/${id}/preview`}
       view={view}
       tool={tool}
@@ -488,7 +501,7 @@ export default function PlanEditor({ id }: { id: string }) {
           savePlan={async () => live.current && await persist(live.current) ? live.current : null} />}
       </main>
       <Inspector
-        reviewPanel={<>{info?.floor&&<section className="fe-section">
+        reviewPanel={<><button disabled={busy} onClick={()=>void detectYard()}>Detect yard</button>{info?.floor&&<section className="fe-section">
           <h3>{info.floor.level===1?"First floor":"Second floor"}</h3>
           <label><input type="checkbox" checked={showSite} onChange={e=>setShowSite(e.target.checked)}/> Garden and stair outlines</label>
           {info.floor.regions.filter(r=>r.kind==="garden").map((r,i)=><p key={i}>Garden {i+1} · {mpp?

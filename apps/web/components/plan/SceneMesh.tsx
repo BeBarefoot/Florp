@@ -6,6 +6,7 @@ import type { PlanModel } from "../../lib/plan/model";
 import { metersPerPixel, openingEnds } from "../../lib/plan/derive";
 import { wallPieces } from "../../lib/plan/mesh";
 import { roomsOf } from "../../lib/plan/walkSpace";
+import {yardShapes} from "../../lib/plan/yard";
 import { stairPieces } from "../../lib/plan/stairs";
 import { savedPose } from "../../lib/plan/camera";
 import { floorFinishes, type FloorFinish, blocks, type Capture, type Frame, type Item, type View } from "../../lib/plan/scene";
@@ -65,6 +66,7 @@ export function SceneMesh({m, objects, closedDoorIds, floorFinish="default", pre
   const sunTarget=useMemo(()=>{const target=new T.Object3D();target.position.set(width/2,0,depth/2);return target;},[width,depth]);
   const shadowSize=Math.max(4,width,depth)*.8;
   const walls = useMemo(()=>wallPieces(m),[m]);
+  const yards=useMemo(()=>yardShapes(m),[m]);
   const stairs = useMemo(()=>stairPieces(m),[m]);
   const rooms = useMemo(()=>roomsOf(m).map(r=>{
     const shape = new T.Shape(r.polygon.map(p=>new T.Vector2(p.x*scale,-p.y*scale)));
@@ -78,6 +80,9 @@ export function SceneMesh({m, objects, closedDoorIds, floorFinish="default", pre
         shadow-camera-left={-shadowSize} shadow-camera-right={shadowSize} shadow-camera-top={shadowSize}
         shadow-camera-bottom={-shadowSize} shadow-camera-far={shadowSize*4} shadow-normalBias={.035}/>
     </>:<><ambientLight intensity={1.25}/><directionalLight position={[5,10,3]} intensity={2}/></>}
+    {yards.map((shape,i)=><mesh key={"yard"+i} rotation={[-Math.PI/2,0,0]} position={[0,-.01,0]} receiveShadow userData={{maskId:1}}>
+      <shapeGeometry args={[shape]}/><meshStandardMaterial color="#839768" side={T.DoubleSide}/>
+    </mesh>)}
     {rooms.map(({room,shape}, i)=><group key={room.id}>
       <mesh receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,i*0.00002,0]} userData={{maskId:i+2}}>
         <shapeGeometry args={[shape]}/><meshStandardMaterial map={floorMap} color={floorFinishes[floorFinish].color} roughness={floorFinishes[floorFinish].roughness} side={T.DoubleSide}/>

@@ -59,6 +59,7 @@ export type Finding = {
 };
 export type Reference = { p1: Pt; p2: Pt; lengthMeters: number };
 export type PlanModel = {
+  gardens?: import("../api").SiteRegion[];
   schemaVersion: 2;
   id: string;
   revision: number;
