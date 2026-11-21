@@ -476,16 +476,17 @@ test('architecture review requires explicit checks and becomes draft after calib
 test('local generation consent avoids cloud billing and shows local recovery instructions',async({page})=>{
  await setup(page,{model:setReference(fixture(),{x:100,y:100},{x:500,y:100},4)});
  const view={id:'local',name:'Local bedroom',position:{x:300,y:250},yaw:0,pitch:0,horizontalFov:90,eyeHeight:1.6};
- await page.route('**/blueprints/p/scene',r=>r.fulfill({json:{revision:1,planRevision:1,config:{views:[view],objects:[],style:'Warm oak'}}}));
+ await page.route('**/blueprints/p/scene',r=>r.fulfill({json:{revision:1,planRevision:1,config:{views:[view],objects:[{id:'wardrobe-1',kind:'wardrobe',position:{x:430,y:250},width:.5,height:1.8,depth:.4,rotation:0}],style:'Warm oak'}}}));
  await page.route('**/blueprints/p/scene/render-settings',r=>r.fulfill({json:{width:1024,height:768,configured:true,model:'local-comfy:sdxl-depth',provider:'local-comfy'}}));
  await page.route('**/blueprints/p/scene/renders',r=>r.fulfill({json:[]}));
  let count=0;
  await page.route('**/blueprints/p/renders',r=>{
-   expect(r.request().postDataJSON().confirmed).toBe(true);count++;
+   expect(r.request().postDataJSON()).toMatchObject({confirmed:true,targetObjectId:'wardrobe-1'});count++;
    return r.fulfill({json:{id:'local-job',viewId:'local',name:'Local bedroom',prompt:'Warm oak',model:'local-comfy:sdxl-depth',sceneRevision:1,planRevision:1,status:'failed',error:'Local ComfyUI unavailable'}});
  });
  await page.locator('.fe-segment button').nth(2).click();
  const consent=page.getByLabel('Generate on this computer using local ComfyUI — no cloud API charge');
+ await page.getByLabel("Render area").selectOption("wardrobe-1");
  await expect(consent).toBeVisible();await consent.check();
  await page.getByRole('button',{name:'Generate preview',exact:true}).click();
  await expect(page.getByText('Local ComfyUI unavailable', {exact:false})).toBeVisible();
@@ -537,4 +538,55 @@ test('walkthrough responds to mouse and touch and returns to the saved framing',
  await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:cx-32,y:cy,id:1},{x:cx+32,y:cy,id:2}]});
  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
  expect((await canvas.screenshot()).equals(mobileDragged)).toBe(false);
+});
+
+test('walker crosses a confirmed interior door and stops at a closed one',async({page})=>{
+  const door={id:'passage',kind:'door' as const,hostWallId:'w6',offsetPx:150,widthPx:100,
+    span:null,heightM:2.1,sillM:0,swing:null,hinge:'start' as const,confidence:1,status:'confirmed' as const};
+  const model=setReference(fixture({openings:[door]}),{x:100,y:100},{x:500,y:100},4);
+  await setup(page,{model});
+  const view={id:'walker',name:'Walker',position:{x:450,y:300},yaw:0,pitch:0,horizontalFov:90,eyeHeight:1.6};
+  let savedX=view.position.x;
+  await page.route('**/blueprints/p/scene',r=>{
+    const config=r.request().method()==='PUT'?r.request().postDataJSON().config:{views:[view],objects:[],style:''};
+    savedX=config.views[0].position.x;
+    return r.fulfill({json:{revision:1,planRevision:model.revision,config}});
+  });
+  await page.locator('.fe-segment button').nth(2).click();
+  const walk=page.getByRole('group',{name:'Walkthrough'});
+  await walk.focus();
+  for(let i=0;i<10;i++)await walk.press('w');
+  await page.getByRole('button',{name:'Save scene',exact:true}).click();
+  await expect.poll(()=>savedX).toBeCloseTo(550);
+  await page.getByText('Door positions',{exact:true}).click();
+  await page.getByLabel('Door 1 closed').check();
+  await walk.focus();
+  for(let i=0;i<10;i++)await walk.press('s');
+  await page.getByRole('button',{name:'Save scene',exact:true}).click();
+  await expect.poll(()=>savedX).toBeCloseTo(540);
+});
+
+test('phone walkthrough captures its current pose for design and saves it',async({page})=>{
+  const model=setReference(fixture(),{x:100,y:100},{x:500,y:100},4);
+  await setup(page,{model});
+  const view={id:'phone',name:'Phone view',position:{x:300,y:250},yaw:0,pitch:0,horizontalFov:90,eyeHeight:1.6};
+  let savedYaw=0;
+  await page.route('**/blueprints/p/scene',route=>{
+    const config=route.request().method()==='PUT'?route.request().postDataJSON().config:{views:[view],objects:[],style:''};
+    savedYaw=config.views[0].yaw;
+    return route.fulfill({json:{revision:1,planRevision:model.revision,config}});
+  });
+  await page.route('**/blueprints/p/scene/render-settings',r=>r.fulfill({json:{width:1024,height:768,configured:false,model:'',provider:'fal'}}));
+  await page.route('**/blueprints/p/scene/renders',r=>r.fulfill({json:[]}));
+  await page.setViewportSize({width:390,height:844});
+  await page.goto('/phone/p');
+  const canvas=page.locator('[data-mode=walk] canvas');
+  await canvas.scrollIntoViewIfNeeded();
+  const box=(await canvas.boundingBox())!;
+  const x=box.x+box.width/2,y=box.y+box.height/2;
+  await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+35,y,{steps:3});await page.mouse.up();
+  await page.getByRole('button',{name:'Design this view'}).click();
+  await expect(page.getByAltText('Captured walkthrough view')).toBeVisible();
+  await page.getByRole('button',{name:'Save scene',exact:true}).click();
+  await expect.poll(()=>savedYaw).toBeGreaterThan(1);
 });

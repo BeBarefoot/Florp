@@ -8,7 +8,7 @@ import { metersPerPixel, openingEnds } from "../../lib/plan/derive";
 import { meshSignature, wallPieces } from "../../lib/plan/mesh";
 import { API, request } from "../../lib/api";
 import { newUuid } from "../../lib/uuid";
-import { catalog, contains, footprint, intersects, newItem, promptFor, type Capture, type Frame, type Item,
+import { floorFinishes, type FloorFinish, catalog, contains, footprint, intersects, newItem, promptFor, type Capture, type Frame, type Item,
   type Job, type ObjectKind, type Saved, type Scene, type View } from "../../lib/plan/scene";
 import { CaptureBridge, EyeCamera, roomsOf, SceneMesh } from "./SceneMesh";
 import { WalkCamera } from "./WalkCamera";
@@ -25,8 +25,8 @@ const sleepPollMs=3000;
 const fixtureName = (o: Item) => ({bed:"Bed", wardrobe:"Closet", toilet:"Toilet", shower:"Shower",
   bathtub:"Bathtub", vanity:"Vanity"})[o.kind];
 
-export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
-  model:PlanModel;dirty?:boolean;onPlanEdit?:(m:PlanModel)=>void;savePlan?:()=>Promise<PlanModel|null>;
+export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, savePlan}:{
+  model:PlanModel;phone?:boolean;dirty?:boolean;onPlanEdit?:(m:PlanModel)=>void;savePlan?:()=>Promise<PlanModel|null>;
 }) {
   const scale=metersPerPixel(m)!;
   const path=`/blueprints/${m.id}`;
@@ -39,12 +39,15 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
   const [capture,setCapture]=useState<Capture|null>(null);
   const [sight,setSight]=useState(""), [message,setMessage]=useState(""), [busy,setBusy]=useState(false);
   const [authorized,setAuthorized]=useState(false), [variant,setVariant]=useState("");
+  const [editObject,setEditObject]=useState("");
   const [selectedJob,setSelectedJob]=useState(""), [overlay,setOverlay]=useState(false);
   const [undo,setUndo]=useState<Scene[]>([]);
   const [ready,setReady]=useState(false);
   const [fixtureScan,setFixtureScan]=useState<{planRevision:number;suggestions:Item[]}|null>(null);
   const [fixtureId,setFixtureId]=useState("");
   const [showBlueprint,setShowBlueprint]=useState(false);
+  const walkPose=useRef<View|null>(null);
+  const [design,setDesign]=useState(false);
   const captureFn=useRef<CaptureFn|null>(null);
   const submitRetry=useRef<{key:string; signature:string}|null>(null);
   const bind=useCallback((f:CaptureFn|null)=>{captureFn.current=f;setReady(!!f);},[]);
@@ -56,7 +59,8 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
   const nodeMap=useMemo(()=>new Map(m.nodes.map(n=>[n.id,n])),[m.nodes]);
   const w=m.imageTransform.width*scale, h=m.imageTransform.height*scale;
   const cameraTarget:[number,number,number]=[w/2,0,h/2];
-  const fingerprint=JSON.stringify([m,view,scene.objects,scene.closedDoorIds,frame.width,frame.height]);
+  const fingerprintFor=(v:View|undefined)=>JSON.stringify([m,v,scene.objects,scene.closedDoorIds,scene.floorFinish,frame.width,frame.height]);
+  const fingerprint=fingerprintFor(view);
   const shot=capture?.fingerprint===fingerprint?capture:null;
   const fixtureSuggestions=fixtureScan?.planRevision===m.revision&&!dirty?
     fixtureScan.suggestions.filter(o=>!scene.dismissedFixtureIds?.includes(o.id)&&
@@ -67,12 +71,12 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
 
   useEffect(()=>{
     let cancelled=false;
-    request<Saved>(path+"/scene").then(r=>{if(!cancelled){setSaved(r);setScene(r.config);setViewId(r.config.views[0]?.id??"");setCameraMode(r.config.views.length?"preview":"orbit");}})
+    request<Saved>(path+"/scene").then(r=>{if(!cancelled){setSaved(r);setScene(r.config);setViewId(r.config.views[0]?.id??"");setCameraMode(r.config.views.length?(phone?"walk":"preview"):"orbit");if(phone&&!r.config.views.length)setMode("camera");}})
       .catch(e=>{if(!cancelled)setMessage(String(e));});
     request<Frame>(path+"/scene/render-settings").then(r=>{if(!cancelled)setFrame(r);}).catch(e=>setMessage(`Image generation settings could not be loaded: ${String(e)}`));
     request<Job[]>(path+"/scene/renders").then(r=>{if(!cancelled)setJobs(r);}).catch(e=>{if(!cancelled)setMessage(String(e));});
     return ()=>{cancelled=true;};
-  },[path]);
+  },[path,phone]);
   const pending=jobs.filter(active).map(j=>j.id).join(",");
   useEffect(()=>{
     if(!pending)return;
@@ -128,20 +132,21 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     change({...scene,objects:scene.objects.map(o=>o.id===item.id?next:o)},checkpoint);
     setMessage("");
   }
-  function clearance(p:Pt) {
+  function clearance(p:Pt, walking=false) {
+    const eye=view?.eyeHeight??1.6;
     let nearest=Infinity;
     for(const wall of pieces) {
       const x=p.x*scale-wall.centre[0], z=p.y*scale-wall.centre[1], a=-wall.angle;
       const u=x*Math.cos(a)+z*Math.sin(a)+wall.lengthM/2;
       const v=-x*Math.sin(a)+z*Math.cos(a);
       for(const c of wall.chunks) {
-        if(c.low>(view?.eyeHeight??1.6)||c.high<(view?.eyeHeight??1.6))continue;
+        if(c.low>(walking?eye+.12:eye)||c.high<(walking ? .02 : eye))continue;
         nearest=Math.min(nearest,Math.hypot(Math.max(0,c.start-u,u-c.end),Math.max(0,Math.abs(v)-wall.thicknessM/2)));
       }
     }
     for(const o of m.openings) {
       if(o.kind!=="door"||o.status!=="confirmed"||!scene.closedDoorIds?.includes(o.id)||
-         o.heightM<(view?.eyeHeight??1.6))continue;
+         (!walking && o.heightM<eye))continue;
       const ends=openingEnds(m,o,nodeMap);if(!ends)continue;
       const [a,b]=ends, dx=b.x-a.x, dy=b.y-a.y, len2=dx*dx+dy*dy;
       if(len2<1e-8)continue;
@@ -150,13 +155,25 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     }
     return nearest;
   }
-  function validCamera(p:Pt){
-    return rooms.some(r=>contains(p,r.polygon)) && clearance(p)>=.3 &&
-      !scene.objects.some(o=>contains(p,footprint(o,scale)));
+  // Room floor polygons can end at the inside wall face on each side of a door.
+  // Include the threshold of an open, hosted door in the walkable footprint.
+  function inDoorway(p:Pt){
+    return m.openings.some(o=>{
+      if(o.kind!=="door" || o.status!=="confirmed" || scene.closedDoorIds?.includes(o.id))return false;
+      const wall=m.walls.find(w=>w.id===o.hostWallId);
+      const ends=openingEnds(m,o,nodeMap);
+      if(!wall || !ends || o.sillM>.02 || o.heightM<(view?.eyeHeight??1.6)+.12)return false;
+      const [a,b]=ends, dx=b.x-a.x, dy=b.y-a.y;
+      const length=Math.hypot(dx,dy);
+      if(length<=0)return false;
+      const along=((p.x-a.x)*dx+(p.y-a.y)*dy)/length;
+      const across=Math.abs((p.x-a.x)*dy-(p.y-a.y)*dx)/length;
+      return along*scale>=.3 && (length-along)*scale>=.3 && across<=wall.thicknessPx/2+.5;
+    });
   }
-  function canWalk(p:Pt){
-    return p.x>=0 && p.x<=m.imageTransform.width && p.y>=0 && p.y<=m.imageTransform.height &&
-      clearance(p)>=.16 && !scene.objects.some(o=>contains(p,footprint(o,scale)));
+  function validCamera(p:Pt, walking=false){
+    return (rooms.some(r=>contains(p,r.polygon)) || inDoorway(p)) && clearance(p,walking)>=.3 &&
+      !scene.objects.some(o=>contains(p,footprint(o,scale)));
   }
   function snap(p:Pt, o:Item){
     const a=o.rotation*Math.PI/180;
@@ -193,6 +210,17 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     const p=mapPoint(e.currentTarget,e.clientX,e.clientY);
     if(!p)return;
     const {x,y}=p;
+    if(phone && !mode && cameraMode==="walk" && view){
+      const start=walkPose.current?.id===view.id?walkPose.current:view;
+      const dx=x-start.position.x, dy=y-start.position.y;
+      const steps=Math.max(1,Math.ceil(Math.hypot(dx,dy)*scale/.05));
+      for(let i=1;i<=steps;i++){
+        if(!validCamera({x:start.position.x+dx*i/steps,y:start.position.y+dy*i/steps},true)){
+          setMessage("The direct path is blocked. Tap a clear spot on this side or move through an open door.");return;
+        }
+      }
+      updateView({...start,position:p});setMessage("");return;
+    }
     if(mode==="camera"){
       if(!validCamera(p)){setMessage("Place the camera inside a room or room zone, at least 30 cm from the wall and outside furniture.");return;}
       if(scene.views.length>=30){setMessage("Delete a saved view before adding another.");return;}
@@ -201,7 +229,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     }else if(mode==="aim"&&view){
       if(Math.hypot(x-view.position.x,y-view.position.y)*scale<.1)return;
       updateView({yaw:Math.round(Math.atan2(y-view.position.y,x-view.position.x)*180/Math.PI)});
-      setMode(null);setCameraMode("preview");setMessage("");
+      setMode(null);setCameraMode(phone?"walk":"preview");setMessage("");
     }else if(mode==="sight"&&view){
       // Sample solid wall chunks along a horizontal eye-level line, respecting cut door openings.
       const a=view.position;
@@ -233,7 +261,12 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     const a=view.yaw*Math.PI/180;
     const p={x:view.position.x+(forward*Math.cos(a)-side*Math.sin(a))/scale,
       y:view.position.y+(forward*Math.sin(a)+side*Math.cos(a))/scale};
-    if(validCamera(p)){updateView({position:p});setMessage("");}
+    const steps=Math.ceil(Math.hypot(forward,side)/.025);
+    const clear=Array.from({length:steps},(_,i)=>(i+1)/steps).every(t=>validCamera({
+      x:view.position.x+(p.x-view.position.x)*t,
+      y:view.position.y+(p.y-view.position.y)*t,
+    },true));
+    if(clear){updateView({position:p});setMessage("");}
     else setMessage("That move would put the camera too close to a wall or inside furniture.");
   }
   function editRoom(patch:{label?:string;roomType?:RoomType|null;ceilingHeightM?:number|null}){
@@ -244,6 +277,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
   const visibleIn=(capture:Capture|null,id:number)=>!!capture&&(capture.coverage[id]||0)>=Math.max(24,frame.width*frame.height*.00015);
   const visible=(id:number)=>visibleIn(shot,id);
   function factsFor(capture:Capture|null){return [
+    ...(scene.floorFinish && scene.floorFinish!=="default" ? [`Floor finish: ${floorFinishes[scene.floorFinish].name}.`] : []),
     ...rooms.filter((r,i)=>visibleIn(capture,i+2)||(view&&contains(view.position,r.polygon))).flatMap(r=>r.roomType?
       [`Space type: ${r.roomType}.`]:[]),
     ...scene.objects.flatMap((o,i)=>visibleIn(capture,1000+i)?
@@ -257,6 +291,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
     if(saved.planRevision===planRevision&&JSON.stringify(saved.config)===JSON.stringify(scene))return saved;
     const r=await request<Saved>(path+"/scene",json("PUT",{expectedRevision:saved.revision,planRevision,config:scene}));
     setSaved(r);
+    setScene(current=>current===scene?r.config:current);
     return r;
   }
   async function save(){
@@ -283,10 +318,12 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
       setCapture(currentShot);setCameraMode("preview");
       const renderPrompt=promptFor(view,[...new Set(factsFor(currentShot))],scene.style);
       const r=await persistScene(m.revision);
-      const signature=JSON.stringify([currentShot.fingerprint,renderPrompt,variant,r.revision]);
+      const target=frame.provider==="local-comfy" && scene.objects.some(o=>o.id===editObject) ? editObject : "";
+      if(target && !scene.objects.some((o,i)=>o.id===target && visibleIn(currentShot,1000+i)))throw new Error("Choose an object visible in this view.");
+      const signature=JSON.stringify([target,currentShot.fingerprint,renderPrompt,variant,r.revision]);
       if(submitRetry.current?.signature!==signature)submitRetry.current={signature,key:newUuid()};
       const job=await request<Job>(path+"/renders",json("POST",{requestKey:submitRetry.current.key,
-        sceneRevision:r.revision,viewId:view.id,name:variant.trim()||view.name,prompt:renderPrompt,confirmed:true,
+        ...(target?{targetObjectId:target}:{}),sceneRevision:r.revision,viewId:view.id,name:variant.trim()||view.name,prompt:renderPrompt,confirmed:true,
         depth:currentShot.depth.split(",")[1],mask:currentShot.mask.split(",")[1],preview:currentShot.preview.split(",")[1]}));
       submitRetry.current=null;setAuthorized(false);
       setJobs(all=>[job,...all.filter(j=>j.id!==job.id)]);setSelectedJob(job.id);
@@ -305,7 +342,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
       maskIds:{1:"Structure",...Object.fromEntries(rooms.map((r,i)=>[i+2,r.roomType??"room"])),
         ...Object.fromEntries(scene.objects.map((o,i)=>[1000+i,o.id])),
         ...Object.fromEntries(pieces.map((p,i)=>[2000+i,p.id]))},
-      prompt,depth:shot.depth,mask:shot.mask,preview:shot.preview};
+      floorFinish:scene.floorFinish??"default",prompt,depth:shot.depth,mask:shot.mask,preview:shot.preview};
     const url=URL.createObjectURL(new Blob([JSON.stringify(content)],{type:"application/json"}));
     const a=document.createElement("a");a.href=url;a.download="florp-render-inputs.json";a.click();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -313,9 +350,23 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
   const viewJobs=jobs.filter(j=>j.viewId===view?.id);
   const job=viewJobs.find(j=>j.id===selectedJob)??viewJobs[0];
   const asset=(name:string)=>`${API}${path}/scene/renders/${job?.id}/${name}`;
-  return <div className="plan3d scene-studio" data-testid="plan-3d" data-wall-lengths={meshSignature(pieces)} data-stair-count={m.stairs?.length??0}>
+  return <div className="plan3d scene-studio" data-phone-step={phone?(design?"design":"walk"):undefined} data-testid="plan-3d" data-wall-lengths={meshSignature(pieces)} data-stair-count={m.stairs?.length??0}>
     <fieldset disabled={busy||!saved} className="scene-controls">
       {saved&&saved.planRevision!==null&&saved.planRevision!==m.revision&&<p>Saved scene uses plan revision {saved.planRevision}. Review camera and object placement, then save the scene for this plan.</p>}
+      {phone&&<div className="phone-steps">
+        <button disabled={!view} aria-pressed={!design} onClick={()=>{setDesign(false);setCameraMode("walk");}}>Walk</button>
+        <button disabled={!view||!ready} aria-pressed={design} onClick={()=>{
+          if(!view)return;
+          const current=cameraMode==="walk"&&walkPose.current?.id===view.id?walkPose.current:view;
+          if(!validCamera(current.position)){setMessage("Move into a clear space to capture this view.");return;}
+          try{
+            if(!captureFn.current)return;
+            setCapture(captureFn.current(current,scale,frame,fingerprintFor(current)));
+            updateView(current);setCameraMode("preview");setDesign(true);setMessage("");
+          }catch(e){setMessage(String(e));}
+        }}>Design this view</button>
+        <button disabled={!edited} onClick={()=>void save()}>Save scene</button>
+      </div>}
       <div className="scene-actions">
         <button onClick={()=>{setMode("camera");setCameraMode("orbit");}}>Place camera</button>
         <button disabled={!view} onClick={()=>setCameraMode(cameraMode==="preview"?"orbit":"preview")}>{cameraMode==="preview"?"Back to orbit":"Preview view"}</button>
@@ -323,6 +374,10 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
         <button disabled={!edited&&!dirty} onClick={()=>void save()}>Save scene</button>
         <button disabled={!undo.length} onClick={()=>{setScene(undo[undo.length-1]);setUndo(undo.slice(0,-1));}}>Undo scene edit</button>
       </div>
+      <label>Floor finish <select value={scene.floorFinish??"default"}
+        onChange={e=>change({...scene,floorFinish:e.target.value as FloorFinish})}>
+        {Object.entries(floorFinishes).map(([key,finish])=><option key={key} value={key}>{finish.name}</option>)}
+      </select></label>
       {message&&<p role="status">{message}</p>}
       {saved?.planRevision&&saved.planRevision!==m.revision&&<p>Plan updated. Review camera and furniture clearances, then save the scene against this revision.</p>}
       <div className="scene-layout">
@@ -359,15 +414,29 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
           </svg>
           <p aria-live="polite">{mode==="camera"?"Click the camera position inside a room.":mode==="aim"?"Click the direction to face.":
             mode==="sight"?"Click a target to check the eye-level sightline.":mode==="zone"?"Click two opposite corners of the room zone.":
-            mode?"Click where the object should go.":"Click a room or object to edit it."}</p>
+            mode?"Click where the object should go.":phone?"Tap a reachable spot on the map to move.":"Click a room or object to edit it."}</p>
         </div>
         <div className="scene-viewport">
-          <div className="scene-frame" data-mode={view?cameraMode:"orbit"} style={{aspectRatio:`${frame.width}/${frame.height}`}}>
+          <div className="scene-frame" role="group" aria-label="Walkthrough" tabIndex={cameraMode==="preview"&&view?0:-1}
+          onKeyDown={e=>{
+            if(cameraMode!=="preview"||!view||busy||e.altKey||e.ctrlKey||e.metaKey)return;
+            switch(e.key.toLowerCase()){
+              case "w": case "arrowup": nudge(.1,0); break;
+              case "s": case "arrowdown": nudge(-.1,0); break;
+              case "a": nudge(0,-.1); break;
+              case "d": nudge(0,.1); break;
+              case "arrowleft": updateView({yaw:wrap(view.yaw-5)}); break;
+              case "arrowright": updateView({yaw:wrap(view.yaw+5)}); break;
+              default: return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+          }} data-mode={view?cameraMode:"orbit"} style={{aspectRatio:`${frame.width}/${frame.height}`}}>
             <Canvas dpr={[1,2]} camera={{position:[w/2+w*.6,Math.max(7,h*.9),h/2+Math.max(8,h)],fov:55}}>
               <color attach="background" args={["#e9eff2"]}/>
-              <SceneMesh m={m} objects={scene.objects} closedDoorIds={scene.closedDoorIds}/>
+              <SceneMesh floorFinish={scene.floorFinish} m={m} objects={scene.objects} closedDoorIds={scene.closedDoorIds}/>
               <CaptureBridge bind={bind}/>
-              {view&&cameraMode==="walk"?<WalkCamera view={view} scale={scale} frame={frame} canMove={canWalk}/>:
+              {view&&cameraMode==="walk"?<WalkCamera view={view} scale={scale} frame={frame} canMove={p=>validCamera(p,true)} pose={walkPose}/>:
                 view&&cameraMode==="preview"?<EyeCamera view={view} scale={scale} frame={frame}/>:
                 <><Grid infiniteGrid cellSize={1} sectionSize={5}/><OrbitControls makeDefault target={cameraTarget}/></>}
             </Canvas>
@@ -378,6 +447,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
       </div>
       <div className="scene-actions">
         {view&&<>
+          {cameraMode==="preview"&&<p>Focus the walkthrough to walk with WASD and turn with the arrow keys, or use the movement buttons below.</p>}
           <label>Saved view <select value={view.id} onChange={e=>{setViewId(e.target.value);setCameraMode("preview");setSight("");}}>{scene.views.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select></label>
           <label>Name <input maxLength={80} value={view.name} onChange={e=>updateView({name:e.target.value})}/></label>
           <button onClick={()=>setMode("aim")}>Aim</button>
@@ -462,6 +532,7 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
       </div>}
       <section className="scene-render" aria-label="Create a design image">
         <h3>Create a design image</h3>
+        {phone&&shot&&<img style={{width:"100%"}} src={shot.preview} alt="Captured walkthrough view"/>}
         {!view&&<p>Place a camera on the plan and click where it should look. Then enter your design below.</p>}
         <label className="scene-design-prompt">Design prompt <textarea rows={4} maxLength={1200} value={scene.style} onChange={e=>change({...scene,style:e.target.value},false)} placeholder="Create a warm brown bedroom, with black bathroom tiles and a gold toilet."/></label>
         <p>Describe materials, colours and lighting for this camera view. Only spaces and objects visible in the capture can be designed.</p>
@@ -474,6 +545,10 @@ export default function Plan3D({model:m, dirty=false, onPlanEdit, savePlan}:{
           <button onClick={exportInputs}>Export render inputs</button>
           <label>Variant name <input maxLength={80} value={variant} onChange={e=>setVariant(e.target.value)}/></label>
         </>}
+          {frame.provider==="local-comfy"&&<label>Render area <select value={editObject} onChange={e=>{setEditObject(e.target.value);setAuthorized(false);}}>
+            <option value="">Whole view</option>
+            {scene.objects.map((o,i)=><option key={o.id} value={o.id} disabled={!!shot&&!visible(1000+i)}>{fixtureName(o)} {i+1}</option>)}
+          </select></label>}
           {frame.configured?<label><input type="checkbox" checked={authorized} onChange={e=>setAuthorized(e.target.checked)}/>
             {frame.provider==="local-comfy"?"Generate on this computer using local ComfyUI — no cloud API charge":<>Send this view’s depth image and prompt to {frame.provider==="comfy"?"Comfy Cloud":"fal"} for a billable render</>}</label>:<p>{frame.provider==="comfy"?"Set COMFY_API_KEY":"Set COMFY_API_KEY for Comfy Cloud, or IMAGE_API_KEY for fal"} on the API server to enable generation. Capture and export work without a key.</p>}
           {dirty&&<p>Save the floor plan before generating.</p>}

@@ -138,3 +138,7 @@
   .plan-photo input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
   .plan-photo:focus-within{outline:2px solid #0b876d;outline-offset:2px}
 }
+.phone-studio{max-width:860px;margin:auto;padding:16px}.phone-studio nav,.phone-steps{display:flex;justify-content:space-between;gap:12px;margin-bottom:12px}.phone-studio nav a,.phone-open,.phone-return{display:inline-flex;align-items:center;min-height:44px;color:#145e50}.phone-return{display:none}.phone-studio h1{overflow-wrap:anywhere}
+[data-phone-step] .scene-controls>details,[data-phone-step] .scene-object-list,[data-phone-step] .scene-controls>.scene-actions,[data-phone-step=walk] .scene-render,[data-phone-step=design] .scene-layout>div:first-child{display:none}
+[data-phone-step] .scene-layout{grid-template-columns:minmax(0,1fr)}
+@media(pointer:coarse){.phone-return{display:inline-flex;position:absolute;z-index:3;bottom:0;left:0;background:white;padding:0 8px}}

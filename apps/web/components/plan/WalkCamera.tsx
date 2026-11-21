@@ -5,8 +5,8 @@ import type { Pt } from "../../lib/plan/model";
 import type { Frame, View } from "../../lib/plan/scene";
 import { makeCamera } from "./SceneMesh";
 
-export function WalkCamera({view, scale, frame, canMove}: {
-  view: View; scale: number; frame: Frame; canMove: (p: Pt) => boolean;
+export function WalkCamera({view, scale, frame, canMove, pose}: {
+  pose: {current: View|null}; view: View; scale: number; frame: Frame; canMove: (p: Pt) => boolean;
 }) {
   const camera = useMemo(() => makeCamera(view, scale, frame), [view, scale, frame]);
   const {gl, get, set, invalidate} = useThree();
@@ -22,9 +22,17 @@ export function WalkCamera({view, scale, frame, canMove}: {
     let yaw = MathUtils.degToRad(view.yaw);
     const pitch = MathUtils.degToRad(view.pitch);
 
+    const halfFov = Math.tan(MathUtils.degToRad(view.horizontalFov/2));
+    function remember() {
+      pose.current = {...view,position:{x:camera.position.x/scale,y:camera.position.z/scale},
+        yaw:((MathUtils.radToDeg(yaw)%360+540)%360)-180,
+        horizontalFov:MathUtils.clamp(2*MathUtils.radToDeg(Math.atan(halfFov/camera.zoom)),55,110)};
+    }
+    remember();
     function zoom(factor: number) {
-      camera.zoom = MathUtils.clamp(camera.zoom * factor, .65, 3);
+      camera.zoom = MathUtils.clamp(camera.zoom * factor, halfFov/Math.tan(MathUtils.degToRad(55)), halfFov/Math.tan(MathUtils.degToRad(27.5)));
       camera.updateProjectionMatrix();
+      remember();
       invalidate();
     }
 
@@ -60,6 +68,7 @@ export function WalkCamera({view, scale, frame, canMove}: {
       }
       target.set(headingX * Math.cos(pitch), Math.sin(pitch), headingZ * Math.cos(pitch));
       camera.lookAt(target.add(camera.position));
+      remember();
       invalidate();
     }
 
@@ -90,6 +99,6 @@ export function WalkCamera({view, scale, frame, canMove}: {
       pointers.forEach((_, id) => { if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id); });
       set({camera: previous});
     };
-  }, [camera, frame, get, gl, invalidate, scale, set, view]);
+  }, [camera, frame, get, gl, invalidate, pose, scale, set, view]);
   return null;
 }

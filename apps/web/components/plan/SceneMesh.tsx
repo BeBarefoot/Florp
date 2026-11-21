@@ -7,7 +7,7 @@ import { metersPerPixel, openingEnds } from "../../lib/plan/derive";
 import { wallPieces } from "../../lib/plan/mesh";
 import { stairPieces } from "../../lib/plan/stairs";
 import { savedPose } from "../../lib/plan/camera";
-import { blocks, type Capture, type Frame, type Item, type View } from "../../lib/plan/scene";
+import { floorFinishes, type FloorFinish, blocks, type Capture, type Frame, type Item, type View } from "../../lib/plan/scene";
 
 export function makeCamera(view: View, scale: number, frame: Frame) {
   const pose = savedPose(view, scale, frame.width/frame.height);
@@ -32,7 +32,7 @@ export function EyeCamera({view, scale, frame}: {view: View; scale: number; fram
 
 export const roomsOf = (m: PlanModel) => [...m.rooms, ...(m.roomZones || [])].slice(0, 990);
 
-export function SceneMesh({m, objects, closedDoorIds}: {m: PlanModel; objects: Item[]; closedDoorIds?: string[]}) {
+export function SceneMesh({m, objects, closedDoorIds, floorFinish="default"}: {m: PlanModel; objects: Item[]; closedDoorIds?: string[]; floorFinish?:FloorFinish}) {
   const scale = metersPerPixel(m)!;
   const walls = useMemo(()=>wallPieces(m),[m]);
   const stairs = useMemo(()=>stairPieces(m),[m]);
@@ -45,7 +45,7 @@ export function SceneMesh({m, objects, closedDoorIds}: {m: PlanModel; objects: I
     <directionalLight position={[5,10,3]} intensity={2}/>
     {rooms.map(({room,shape}, i)=><group key={room.id}>
       <mesh rotation={[-Math.PI/2,0,0]} position={[0,i*0.00002,0]} userData={{maskId:i+2}}>
-        <shapeGeometry args={[shape]}/><meshStandardMaterial color="#dbe2d8" side={T.DoubleSide}/>
+        <shapeGeometry args={[shape]}/><meshStandardMaterial color={floorFinishes[floorFinish].color} roughness={floorFinishes[floorFinish].roughness} side={T.DoubleSide}/>
       </mesh>
       <mesh rotation={[-Math.PI/2,0,0]} position={[0,room.ceilingHeightM ?? 2.8,0]} userData={{maskId:1}}>
         <shapeGeometry args={[shape]}/><meshStandardMaterial color="#f1efea" side={T.BackSide}/>

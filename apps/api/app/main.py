@@ -27,7 +27,8 @@ from .mask_topology import region_wall_lines
 from .wall_run_normalization import consolidate_wall_runs
 from .evidence_fusion import fuse_evidence
 
-from .models import SceneRevision, SceneRenderJob, PlanReview
+from .floor_pair import Pair, suggest
+from .models import FloorPair, SceneRevision, SceneRenderJob, PlanReview
 
 Path(settings.storage_path).mkdir(parents=True,exist_ok=True)
 if settings.database_url.startswith('sqlite:///'):
@@ -103,6 +104,8 @@ def delete_project(pid:str):
             for table in (PlanReview,SceneRenderJob,SceneRevision,PlanRevision,WorkspaceRevision,Render,ModelWallCorrection,WallAnnotation,FusionCandidateReview,ExtractionEvaluation,PlanGraphRevision,Layout):
                 for row in s.exec(select(table).where(table.blueprint_id==bid)).all():
                     s.delete(row)
+        pair=s.get(FloorPair,pid)
+        if pair:s.delete(pair)
         for bp in plans:s.delete(bp)
         s.delete(project)
         s.commit()
@@ -111,6 +114,40 @@ def delete_project(pid:str):
         folder=(root/bid).resolve()
         if folder.parent==root and folder.is_dir():shutil.rmtree(folder)
     return {'deleted':True,'blueprints_deleted':len(ids)}
+
+def pair_members(s, pid, first, second):
+    if first == second:
+        raise HTTPException(422, 'Choose two different floor drawings')
+    plans = [s.get(Blueprint, key) for key in (first, second)]
+    if any(bp is None or bp.project_id != pid for bp in plans):
+        raise HTTPException(404, 'Drawing missing from this project')
+    return plans
+
+
+@app.get('/projects/{pid}/floor-pair')
+def get_floor_pair(pid: str):
+    with Session(engine) as s:
+        return s.get(FloorPair,pid)
+
+
+@app.get('/projects/{pid}/floor-pair/suggestions')
+def floor_suggestions(pid: str, a: str, b: str):
+    with Session(engine) as s:
+        first, second = pair_members(s,pid,a,b)
+        return suggest(first, second)
+
+
+@app.put('/projects/{pid}/floor-pair')
+def save_floor_pair(pid: str, body: Pair):
+    with Session(engine) as s:
+        pair_members(s,pid,body.first,body.second)
+        row = s.get(FloorPair,pid) or FloorPair(project_id=pid)
+        row.first, row.second = body.first, body.second
+        row.regions = body.model_dump(mode='json')['regions']
+        s.add(row)
+        s.commit()
+        return body
+
 
 @app.get('/projects/{pid}/blueprints',response_model=list[Blueprint])
 def blueprints(pid:str):

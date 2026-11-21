@@ -243,10 +243,18 @@ def history(bid: str):
 def info(bid: str):
     with Session(get_engine()) as s:
         bp = blueprint(s, bid)
+        from .models import FloorPair
+        pair = s.get(FloorPair, bp.project_id)
+        floor = None
+        if pair and bid in (pair.first, pair.second):
+            first = bid == pair.first
+            floor = {"level": 1 if first else 2, "otherId": pair.second if first else pair.first,
+                     "regions": pair.regions.get(bid, [])}
         return {
             "id": bp.id,
             "project_id": bp.project_id,
             "filename": bp.filename,
+            "floor": floor,
             "width": bp.width,
             "height": bp.height,
         }

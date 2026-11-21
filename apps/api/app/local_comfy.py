@@ -32,10 +32,10 @@ def checked(response):
         raise ProviderConfigurationError('The server at LOCAL_COMFY_URL did not return ComfyUI data. Check its port and make sure it is different from Florp’s API port.') from exc
 
 
-def workflow(image, prompt, seed):
+def workflow(image, prompt, seed, preview=None):
     def node(kind, **inputs):
         return dict(class_type=kind, inputs=inputs)
-    return {
+    graph = {
         'model':node('CheckpointLoaderSimple', ckpt_name=settings.local_comfy_checkpoint),
         'depth':node('LoadImage', image=image),
         'control':node('ControlNetLoader', control_net_name=settings.local_comfy_controlnet),
@@ -48,8 +48,14 @@ def workflow(image, prompt, seed):
         'save':node('SaveImage',images=['decode',0],filename_prefix='Florp'),
     }
 
+    if preview:
+        graph['source'] = node('LoadImage', image=preview)
+        graph['latent'] = node('VAEEncode', pixels=['source', 0], vae=['model', 2])
+        graph['sample']['inputs']['denoise'] = .60
+    return graph
 
-async def generate(depth_png, prompt, *, request_key):
+
+async def generate(depth_png, prompt, *, request_key, preview_png=None):
     base = base_url()
     async with httpx.AsyncClient(timeout=45, follow_redirects=False, trust_env=False) as client:
         try:
@@ -60,18 +66,22 @@ async def generate(depth_png, prompt, *, request_key):
             choices = info.get(kind,{}).get('input',{}).get('required',{}).get(field,[[]])[0]
             if value not in choices:
                 raise ProviderConfigurationError('Local ComfyUI is missing the configured SDXL checkpoint or compatible SDXL depth ControlNet. Check LOCAL_COMFY_CHECKPOINT and LOCAL_COMFY_CONTROLNET.')
-        try:
+        async def upload(label, data):
             uploaded = checked(await client.post(base+'/upload/image', data={'type':'input','overwrite':'false'},
-                            files={'image':(f'florp-{request_key}.png',depth_png,'image/png')}))
+                            files={'image':(f'florp-{request_key}-{label}.png',data,'image/png')}))
+            name, folder = uploaded['name'], uploaded.get('subfolder','')
+            path = PurePosixPath(folder)/name
+            if path.is_absolute() or '..' in path.parts or '\\' in str(path):
+                raise ProviderOutputError('Invalid local ComfyUI upload path.')
+            return str(path)
+        try:
+            depth_path = await upload('depth', depth_png)
+            source_path = await upload('source', preview_png) if preview_png else None
         except httpx.TransportError as exc:
-            raise ProviderConfigurationError('The depth upload to local ComfyUI was interrupted before a render was submitted. Check that ComfyUI is running, then generate again.') from exc
-        name, folder = uploaded['name'], uploaded.get('subfolder','')
-        path = PurePosixPath(folder)/name
-        if path.is_absolute() or '..' in path.parts or '\\' in str(path):
-            raise ProviderOutputError('Invalid local ComfyUI upload path.')
+            raise ProviderConfigurationError('Upload to local ComfyUI was interrupted before a render was submitted. Check ComfyUI and try again.') from exc
         seed = int(hashlib.sha256(request_key.encode()).hexdigest()[:12],16)
         try:
-            response = await client.post(base+'/prompt',json={'prompt':workflow(str(path),prompt,seed),'client_id':request_key})
+            response = await client.post(base+'/prompt',json={'prompt':workflow(depth_path,prompt,seed,source_path),'client_id':request_key})
             receipt = checked(response)
             job_id = str(UUID(receipt['prompt_id']))
         except (httpx.TransportError, ProviderRetryableError, KeyError, TypeError, ValueError) as exc:
@@ -80,7 +90,7 @@ async def generate(depth_png, prompt, *, request_key):
     return job_id,url,url
 
 
-async def poll(status_url):
+async def poll(status_url, expected_size=(1024,768)):
     base = base_url()
     prefix = base+'/history/'
     if not status_url.startswith(prefix):
@@ -107,8 +117,8 @@ async def poll(status_url):
         async with client.stream('GET',base+'/view',params={'filename':name,'subfolder':folder,'type':'output'}) as response:
             data = await image_bytes(response)
     with Image.open(io.BytesIO(data),formats=['PNG','JPEG','WEBP']) as image:
-        if image.size != (1024,768):
-            raise ProviderOutputError('Local ComfyUI returned a different frame size; expected 1024 × 768.')
+        if image.size != expected_size:
+            raise ProviderOutputError('Local ComfyUI returned a different frame size; unexpected output dimensions.')
         out = io.BytesIO()
         image.convert('RGB').save(out,format='PNG')
     return 'complete',out.getvalue()

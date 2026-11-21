@@ -1,8 +1,10 @@
 # Production POC delivery plan
 
-Updated 12 November 2026. Canonical execution plan for
+Updated 20 November 2026. Canonical execution plan for
 [issue #1](https://github.com/BeBarefoot/Florp/issues/1). Read the
-[implementation audit](ARCHITECTURE.md) for what exists today.
+[implementation audit](ARCHITECTURE.md) for what exists today. The
+[Enviz capability roadmap](ENVIZ_CAPABILITY_ROADMAP.md) extends these gates with
+a fast editable walkthrough, model edits from prompts, and whole-home capabilities.
 
 ## Deliverable and boundary
 
@@ -126,6 +128,8 @@ API bypass tests fail safely; canonical coordinates/metric sizes agree within 1 
 resize preserve pose/FOV/frame and known depth within the established encoding tolerance.
 
 ### D — Mobile-first guided journey
+
+The [phone app plan](PHONE_APP_PLAN.md) describes the three-screen experience, private Mac connection and device acceptance checks.
 
 Owner role: product/frontend engineer + usability reviewer.
 
@@ -443,3 +447,21 @@ browser regression pass. Protocol/provider tests mock ComfyUI; no weights downlo
 or GPU run claimed.
 Next acceptance: install the documented models on the user's Mac, measure speed
 and compare wall/opening/camera drift on synthetic scenes before real-plan QA.
+
+The synthetic demo reports upload, extraction, upload-to-draft and calibration times in milliseconds for PNG, JPEG and PDF. Run `npm run test:integration` from `apps/web` for the production browser capture and export timing in `test-results/**/workspace.json`. Each format has one sample per run.
+
+With a calibrated plan, place and aim a camera, then focus the 3D view. WASD walks and arrow keys turn or move. Movement checks the path against wall chunks from floor to head height, closed doors and furniture. Save the scene to retain the viewpoint.
+
+Use **Floor finish** in the 3D scene for an immediate whole-floor color and roughness preview. Save the scene to keep the finish. Camera captures and the render-inputs export include it without invoking an image provider.
+
+With local ComfyUI, use **Render area** to target a visible piece of furniture. Florp runs image-to-image generation on the padded crop using its preview and depth, then replaces only pixels belonging to the selected object in the captured view. Evaluate seams, speed and appearance on the target Mac.
+
+The extraction regression suite includes a synthetic JPEG with pink and blue walls, dimension lines and furniture marks. The mixed-colour enclosure case recovers three rooms and avoids six spurious window proposals observed before the fix. Real-photo accuracy still requires independent annotations.
+
+Walk through a confirmed open doorway between rooms when the opening fits the camera clearance. Closing the door in the scene blocks passage.
+
+### Review a first and second floor
+
+Open the project, upload both floor pictures together and choose **Identify floors, garden and stairs**. The workspace suggests floor order from filenames or garden shading. Select the garden level as **First floor** and review the outlines on each drawing. Green outlines show possible planted areas and orange outlines show turning stairs. Remove a mistaken outline or trace a missing area, then **Save floor pair**. Both levels open in their own calibrated plan editors. Site-review outlines are annotations. Stair tread geometry in each editor comes from its architectural extraction. Alignment and walkable connections between levels remain future work.
+
+Each paired floor editor shows its saved garden and stair outlines. Calibrate each image using a known distance to see the estimated garden area in square metres. Open the other floor in a new tab to compare the stair locations.

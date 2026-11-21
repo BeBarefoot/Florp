@@ -56,6 +56,7 @@ class SceneObject(Data):
 
 
 class Scene(Data):
+    floor_finish: Literal["default", "oak", "slate", "limestone"] = "default"
     views: list[View] = Field(default_factory=list, max_length=30)
     objects: list[SceneObject] = Field(default_factory=list, max_length=100)
     style: str = Field(default="", max_length=1200)
@@ -169,6 +170,7 @@ def render_settings(bid: str):
 
 
 class Submit(Data):
+    target_object_id: str | None = Field(default=None, min_length=1, max_length=80)
     request_key: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,80}$")
     scene_revision: int = Field(gt=0)
     view_id: str
@@ -216,7 +218,7 @@ async def submit(bid: str, request: Request):
     except ValidationError as exc:
         raise HTTPException(422, "Invalid render request or missing consent") from exc
     # A JSON serialization change must not create a second billable request.
-    fingerprint = 'v2:' + hashlib.sha256(json.dumps(body.model_dump(mode='json'),
+    fingerprint = 'v2:' + hashlib.sha256(json.dumps(body.model_dump(mode='json', exclude_none=True),
         sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     legacy_fingerprint = hashlib.sha256(payload).hexdigest()
 
@@ -243,14 +245,30 @@ async def submit(bid: str, request: Request):
             key = 'COMFY_API_KEY' if config['provider'] == 'comfy' else 'IMAGE_API_KEY'
             raise HTTPException(503, f"Set {key} in the API environment to enable generation")
         raw_depth, rgb = png(body.depth)
-        mask, _ = png(body.mask)
-        preview, _ = png(body.preview)
+        mask, mask_rgb = png(body.mask)
+        preview, preview_rgb = png(body.preview)
         try:
             normalized, (near, far) = control_depth(rgb)
         except ValueError as exc:
             raise HTTPException(422, "No valid scene depth was captured") from exc
         control = io.BytesIO()
         Image.fromarray(normalized).save(control, format="PNG")
+        edit = None
+        source_png = None
+        if body.target_object_id:
+            if config['provider'] != 'local-comfy':
+                raise HTTPException(422, "Selected-object edits require local ComfyUI")
+            objects = scene.config['objects']
+            index = next((i for i, obj in enumerate(objects) if obj['id'] == body.target_object_id), None)
+            if index is None:
+                raise HTTPException(422, "Select an object from the saved scene")
+            from .masked_render import prepare_edit
+            try:
+                edit, cropped_depth, source_png = prepare_edit(mask_rgb, preview_rgb, normalized, 1000 + index)
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            control = io.BytesIO(cropped_depth)
+            edit['objectId'] = body.target_object_id
         job = SceneRenderJob(blueprint_id=bid, request_key=body.request_key, input_hash=fingerprint,
                              scene_revision=scene.revision, plan_revision=scene.plan_revision,
                              view_id=body.view_id, name=body.name, prompt=body.prompt,
@@ -258,7 +276,7 @@ async def submit(bid: str, request: Request):
         from .plan_review import review_info
         plan_row = s.exec(select(PlanRevision).where(PlanRevision.blueprint_id == bid,
                          PlanRevision.revision == scene.plan_revision)).first()
-        manifest = {"architectureReview": review_info(s, plan_row), "planSnapshot": plan_row.model if plan_row else None, "scene": scene.config, "depthEncoding": "RGB24 view-space millimetres; zero is background",
+        manifest = {"selectedObjectEdit": edit, "architectureReview": review_info(s, plan_row), "planSnapshot": plan_row.model if plan_row else None, "scene": scene.config, "depthEncoding": "RGB24 view-space millimetres; zero is background",
                     "maskEncoding": "RGB24 IDs; 1 structural details, 2.. room floors, 1000.. scene objects, 2000.. walls",
                     "depthRangeMm": [near, far], "frame": [providers.FRAME_WIDTH, providers.FRAME_HEIGHT],
                     "provider": config['provider'], "localModelSettings": {k: config[k] for k in ("checkpoint", "controlnet") if k in config}, "inputHash": fingerprint,
@@ -284,7 +302,8 @@ async def submit(bid: str, request: Request):
             (folder / name).write_bytes(data)
         (folder / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         if manifest['provider'] == 'local-comfy':
-            result = await local_comfy.generate(control.getvalue(), body.prompt, request_key=job_id)
+            result = await local_comfy.generate(control.getvalue(), body.prompt, request_key=job_id,
+                                                **({"preview_png": source_png} if edit else {}))
         elif manifest['provider'] == 'comfy':
             result = await comfy.generate(control.getvalue(), body.prompt, request_key=job_id)
         else:
@@ -333,8 +352,16 @@ async def poll(bid: str, job_id: str):
             j.status, j.error = "failed", timeout_error
         elif j.status in ("queued", "running"):
             try:
-                if local:
-                    status, image = await local_comfy.poll(j.status_url)
+                if j.provider_model.startswith('local-comfy:'):
+                    folder = directory(bid, job_id)
+                    edit = json.loads((folder / 'manifest.json').read_text()).get('selectedObjectEdit')
+                    if edit:
+                        from .masked_render import composite_edit
+                        status, image = await local_comfy.poll(j.status_url, tuple(edit['size']))
+                        if image is not None:
+                            image = composite_edit(folder, edit, image)
+                    else:
+                        status, image = await local_comfy.poll(j.status_url)
                 elif j.provider_model.startswith('comfy:'):
                     status, image = await comfy.poll(j.status_url)
                 else:

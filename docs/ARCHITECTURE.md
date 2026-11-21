@@ -19,7 +19,7 @@ flowchart LR
   S --> M
   M --> C[Fixed camera: RGB preview / RGB24 depth / ID mask]
   C --> J[SceneRenderJob + captured inputs]
-  J --> G[Comfy Cloud or fal]
+  J --> G[Local ComfyUI, Comfy Cloud or fal]
   G --> R[Design image / compare with capture]
 ```
 
@@ -40,12 +40,14 @@ not a deployed multi-tenant service. Never expose its current API publicly as-is
 | Geometry persistence | `PlanRevision` is append-only, unique per blueprint/revision; expected-revision conflicts return 409. `plan_api.py` validates, derives and stores models. |
 | Extraction | `/blueprints/{bid}/plan/extract` invokes `workspace_worker.py` in an isolated subprocess with a 20-second budget. Default is local image evidence, structural runs, openings and reconstruction. Optional semantic configuration selects another path. YOLO/Yytsi comparison endpoints are separate research flows, not the default universal engine. |
 | Optional fixtures | `fixture_detection.py` is the default local matcher; `FIXTURE_YOLO_WEIGHTS` selects `fixture_weights.py` with trusted local weights. Results require individual review; axis-aligned boxes do not establish orientation. |
-| Scene persistence | `SceneRevision` references a plan revision and stores cameras, objects, style and dismissals separately from architectural geometry. Scene saves require calibration. |
+| Scene persistence | `SceneRevision` references a plan revision and stores cameras, objects, style and dismissals separately from architectural geometry. Scene saves require calibration. Floor finish presets persist with SceneRevision. The preview and RGB capture use the selected floor color and roughness. |
 | 3D | `lib/plan/mesh.ts`, `derive.ts` and `SceneMesh.tsx` derive wall chunks, joins, opening cuts and floors from the same PlanModel. Client edits, Python exports and derived geometry have separate implementations and require parity tests. |
 | Capture | `SceneMesh.tsx` uses the saved camera at a fixed 1024×768 frame. Outputs include RGB preview, packed RGB24 view-space millimetres and object/structural IDs. `depth.py` converts depth into provider control. Normals are not part of this capture contract. |
 | Render jobs | `/blueprints/{bid}/renders` saves scene/plan references, prompt and captured inputs; request keys prevent duplicate requests for identical inputs. Provider submission happens during the HTTP request; a bounded local API background task resumes receipt polling after restart, with browser GET polling also supported. Conditional status updates prevent stale polls from downgrading completed jobs. Initial submission still happens in the HTTP request; this is not a durable submission queue. |
 | Providers | `local_comfy.py` implements loopback ComfyUI SDXL/depth submission/history/results without cloud credentials. `comfy.py` implements Comfy Cloud v2 submission/polling; `providers.py` supplies fal. Server credentials, account credits and available models are required. Tests mock external services. Depth conditions images; it does not guarantee pixel-exact geometry. |
 | Other models | Legacy `Layout`, `PlanGraphRevision`, `WorkspaceRevision`, training and deterministic-blueprint services coexist. They must not independently overwrite the homeowner PlanModel. Consolidation/migration is planned, not complete. |
+
+For a local selected-object edit, the API resolves the object ID in the submitted scene revision, crops depth and RGB using the ID mask, and supplies both crops to ComfyUI. The poller composites the returned patch onto the original preview only where that object is visible.
 
 ## Verified evidence and limits
 
