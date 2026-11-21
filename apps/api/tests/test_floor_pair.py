@@ -23,8 +23,18 @@ def test_unordered_pair_site_and_stair_review(client, monkeypatch, tmp_path):
         regions = result['regions'][lower]
         assert {r['kind'] for r in regions} == {'garden','stairs'}
         assert next(r for r in regions if r['kind']=='garden')['holes']
+    # Both floors have a stair in this second pair, but their depictions differ.
+    ok, upper_bytes = cv2.imencode('.png', drawing(double=True))
+    assert ok
+    upstairs = c.post(f'/projects/{pid}/blueprints', files={'file': ('scan.png', upper_bytes.tobytes(), 'image/png')}).json()['id']
+    both = c.get(path+'/suggestions',params={'a':upstairs,'b':lower}).json()
+    assert both['first'] == lower
+    assert [r['kind'] for r in both['regions'][upstairs]] == ['stairs']
+    assert {r['kind'] for r in both['regions'][lower]} == {'stairs','garden'}
     pair = {'first':lower,'second':upper,'regions':result['regions']}
     assert c.put(path,json=pair).status_code == 200
+    crossed = {'kind':'garden','points':[[0,0],[1,1],[0,1],[1,0]]}
+    assert c.put(path,json={**pair,'regions':{upper:[],lower:[crossed]}}).status_code == 422
     assert c.get(path).json()['first'] == lower
     assert c.put(path,json={**pair,'second':lower}).status_code == 422
     other = c.post('/projects',json={'title':'Other'}).json()['id']
