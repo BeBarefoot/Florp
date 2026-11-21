@@ -88,7 +88,7 @@ test('two floor photos can be reviewed, swapped and reopened',async({page,reques
  const api=String(testInfo.config.metadata.api);
  const project=await (await request.post(api+'/projects',{data:{title:'Floor pair'}})).json();
  const png=execFileSync('uv',['run','--locked','python','-c',
-   "from PIL import Image; import sys; Image.new('RGB',(360,240),'white').save(sys.stdout.buffer,format='PNG')"],
+   "from scripts.demo_project import fixtures; import sys; sys.stdout.buffer.write(next(fixtures())[2])"],
    {cwd:resolve(__dirname,'../../api')});
  await page.goto('/project/'+project.id);
  await page.getByLabel('Floor plan file').setInputFiles(['second-floor.png','ground-floor.png'].map(name=>({name,mimeType:'image/png',buffer:png})));
@@ -108,5 +108,6 @@ test('two floor photos can be reviewed, swapped and reopened',async({page,reques
  await expect(first.locator('option:checked')).toHaveText('second-floor.png');
  await expect(floor.getByRole('button',{name:'Remove garden 1'})).toBeVisible();
  await floor.getByRole('link',{name:'Open first floor editor'}).click();
+ await expect(page).toHaveURL(/\/plan\/[^/]+$/);
  await expect(page.getByText('second-floor.png',{exact:true})).toBeVisible();
 });
