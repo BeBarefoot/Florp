@@ -83,3 +83,30 @@ test('real local PNG/JPEG/PDF extraction, scene persistence and capture',async({
  await page.screenshot({path:testInfo.outputPath('local-scene.png'),fullPage:true});
  writeFileSync(testInfo.outputPath('workspace.json'),JSON.stringify({workspace:testInfo.config.metadata.workspace,captureAndExportMs,...demo},null,2));
 });
+
+test('two floor photos can be reviewed, swapped and reopened',async({page,request},testInfo)=>{
+ const api=String(testInfo.config.metadata.api);
+ const project=await (await request.post(api+'/projects',{data:{title:'Floor pair'}})).json();
+ const png=execFileSync('uv',['run','--locked','python','-c',
+   "from PIL import Image; import sys; Image.new('RGB',(360,240),'white').save(sys.stdout.buffer,format='PNG')"],
+   {cwd:resolve(__dirname,'../../api')});
+ await page.goto('/project/'+project.id);
+ await page.getByLabel('Floor plan file').setInputFiles(['second-floor.png','ground-floor.png'].map(name=>({name,mimeType:'image/png',buffer:png})));
+ await page.getByRole('button',{name:'Upload plan',exact:true}).click();
+ await page.getByRole('button',{name:'Identify floors, garden and stairs'}).click();
+ const first=page.getByLabel('First floor (garden level)');
+ await expect(first.locator('option:checked')).toHaveText('ground-floor.png');
+ await first.selectOption({label:'second-floor.png'});
+ const floor=page.locator('section').filter({has:page.getByRole('heading',{name:'First floor · second-floor.png'})});
+ await floor.getByRole('button',{name:'Outline garden'}).click();
+ const map=floor.getByLabel('First floor region map');
+ for(const position of [{x:10,y:10},{x:60,y:10},{x:60,y:60}])await map.click({position});
+ await floor.getByRole('button',{name:'Finish outline'}).click();
+ await page.getByRole('button',{name:'Save floor pair'}).click();
+ await expect(page.getByRole('status')).toHaveText('Floor pair saved.');
+ await page.reload();
+ await expect(first.locator('option:checked')).toHaveText('second-floor.png');
+ await expect(floor.getByRole('button',{name:'Remove garden 1'})).toBeVisible();
+ await floor.getByRole('link',{name:'Open first floor editor'}).click();
+ await expect(page.getByText('second-floor.png',{exact:true})).toBeVisible();
+});

@@ -152,3 +152,10 @@ class PlanReview(SQLModel, table=True):
     accepted: bool
     elevations: str = 'assumed'
     created_at: datetime = Field(default_factory=now)
+
+
+class FloorPair(SQLModel, table=True):
+    project_id: str = Field(primary_key=True, foreign_key='project.id')
+    first: str
+    second: str
+    regions: dict = Field(default_factory=dict, sa_type=JSON)
