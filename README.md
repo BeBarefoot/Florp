@@ -1,156 +1,60 @@
-# Florp — floor plan to editable space
+# Florp
 
-Florp turns a floor plan into editable 2D geometry, a matching calibrated 3D scene,
-and optional AI design images from saved camera views.
+Turn a floor plan into an editable 2D drawing, walk through it in 3D, and try design ideas from a saved camera view.
 
-**Status:** functional local single-user POC. Not yet ready for a public hosted pilot.
-The immediate release target is a single-user app on your own computer. Hosted
-accounts and multi-user storage are a later release. The [production plan](docs/PRODUCTION_POC_PLAN.md) tracks release gates through
-[issue #1](https://github.com/BeBarefoot/Florp/issues/1); the
-[architecture audit](docs/ARCHITECTURE.md) describes the implementation.
+Florp is a single-user app that runs on your computer. macOS is the target for local use, and CI runs on Linux. Import, editing, walkthroughs, furniture and floor finishes work without an API key. The installable phone app is planned. [Phone app plan](docs/PHONE_APP_PLAN.md)
 
-## Run on your computer
+## Run on your Mac
 
-The first local release targets **macOS**; automated CI runs on Linux.
-Use Node.js 22 (`nvm use`) and Python 3.12, with [uv](https://docs.astral.sh/uv/).
-Install the committed dependency versions once, from the repository root:
+Install Node.js 22 and [uv](https://docs.astral.sh/uv/getting-started/installation/). The API uses Python 3.12, which uv can install when syncing. From the root of your Florp checkout, run:
 
 ```bash
 (cd apps/api && uv sync --locked)
 (cd apps/web && npm ci)
-```
-
-Optional configuration goes in `apps/api/.env`; use `.env.example` as a reference.
-Keep any existing `.env`. No API key is needed for local extraction, editing, 3D,
-or capture/export. Then start both servers:
-
-```bash
 ./scripts/start.sh
 ```
 
-The launcher builds the production UI first; wait for startup to finish. For
-development with hot reload, use `./scripts/dev.sh` instead.
+Wait for the build and startup to finish, then open [Florp at localhost:3000](http://localhost:3000). Keep the terminal open while using Florp. Press Ctrl+C to stop both servers. If Chrome reports **Connection refused**, run the launcher on the Mac where you’re using Chrome, check the terminal output, and make sure ports 3000 and 8000 are free.
 
-Keep the terminal open and visit **http://localhost:3000**. API documentation is at
-http://localhost:8000/docs. Ctrl+C stops the servers. This starts the app on the
-computer where the command runs: a cloud workspace's localhost is not your computer.
-After pulling a new release, reinstall locked dependencies and restart the servers.
+To update, stop Florp, run `git pull --ff-only` from a clean local `main` checkout, then rerun the commands above. Optional settings belong in `apps/api/.env`. Keep your existing settings and use the [example configuration](.env.example) as a reference.
 
-To run the servers separately:
+## Upload, walk and design
 
-```bash
-# Terminal 1
-cd apps/api
-uv run --locked uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
+1. **Upload a plan.** Create a project and add a PNG, JPEG, WebP or PDF. Florp imports the first page of each PDF. Export additional pages as separate files. The default limit is 20 MB per upload and 45 megapixels after decoding.
+2. **Review and calibrate.** Check the proposed walls, doors and windows against the drawing. Set one known distance and save the plan. Use **Architecture review** to record your checks for that saved revision. Review any detected furniture or bathroom fixtures individually before inserting them.
+3. **Walk and furnish.** Open 3D, place and aim a camera, then focus the 3D view. Use WASD to move and the left/right arrows to turn. Confirmed open doors allow passage when there’s enough clearance. Add, move or remove furniture, try a **Floor finish**, and save the scene to keep your view and edits.
+4. **Design from a view.** Use **Capture view** and **Export render inputs** to save the camera-aligned preview, depth and object mask locally. With an image provider configured, enter a **Design prompt**, approve generation and click **Generate preview**. Compare the result with the scene, since generated images can change visual details.
 
-```bash
-# Terminal 2
-cd apps/web
-npm run dev -- --hostname 127.0.0.1 --port 3000
-```
+**Working with two floors?** Upload both drawings to the same project and choose **Identify floors, garden and stairs**. Confirm the order, correct any suggested outlines, and select **Save floor pair**. Open either floor in its own editor. Calibrate the drawing to see an estimated garden area. Moving between floors uses the editor links. A continuous 3D stair connection is planned.
 
-If Chrome reports connection refused, check that both commands are still running
-and resolve the error in their terminals. Ports 3000 and 8000 must be available.
+## Image generation
 
-## Try a synthetic demo
+[Set up local ComfyUI](docs/LOCAL_COMFY.md) to generate on your Mac without cloud credits. Install the SDXL checkpoint and depth ControlNet described in the guide, set `IMAGE_PROVIDER=local-comfy` in `apps/api/.env`, and keep ComfyUI running. **Render area** lets you target a visible object and preserves the surrounding pixels in the captured view.
 
-With the API running, use a second terminal:
+Comfy Cloud and fal are optional paid providers. Set `IMAGE_PROVIDER=comfy` with `COMFY_API_KEY`, or `IMAGE_PROVIDER=fal` with `IMAGE_API_KEY`, then restart Florp. Keep keys in the API environment. For a cloud credit error, check the account linked to your key. For an unclear submission timeout, check the provider queue before retrying.
+
+## Try a demo or back up your projects
+
+With Florp running, create a synthetic project from a second terminal at the repository root:
 
 ```bash
-cd apps/api
-uv run --locked python scripts/demo_project.py
+(cd apps/api && uv run --locked python scripts/demo_project.py)
 ```
 
-This creates PNG, JPEG and PDF versions of a generated two-room plan, runs local
-extraction, and sets its known synthetic 6 m reference. It prints the project URL.
-Review is left draft and no paid provider is called. You can place a camera, add or
-remove objects, save, reload and export a capture without using your own plans.
-Each run creates a separate demo project that you can delete from the home page.
+Open the URL it prints to try a calibrated two-room plan without uploading your own drawing or using an image provider.
 
-## Use the app
-
-1. Create a project and upload one floor plan. Supported inputs: single-frame PNG,
-   JPEG, WebP, or the first page of an unlocked PDF. Export other PDF pages separately.
-   The default upload limit is 20 MB; decoded images are limited to 45 megapixels
-   before conversion/rasterization. New uploads preserve originals, preview hashes,
-   EXIF orientation and PDF raster metadata in `source-manifest.json`.
-2. Review the extracted walls and door/window proposals against the source. Edit,
-   add or remove geometry, and confirm one known distance to calibrate measurements.
-   Save the plan. Extraction is a proposal; calibration alone does not verify accuracy.
-   Open **Architecture review** in the inspector, resolve its blockers, check the
-   source/reference, and record your review with confirmed or assumed elevations.
-   Any saved edit starts a new draft revision; **Reopen review** retracts acceptance.
-   Plan bundles, GLB files and render inputs record the relevant review status.
-   Review is your confirmation, not independent architectural certification.
-3. Open 3D, place and aim cameras, and add/edit/remove furniture. The object list
-   supports obscured objects and undo. Save the scene to preserve views and objects.
-4. Enter a **Design prompt**, capture the view, and export inputs locally or select
-   provider consent and **Generate preview**. Generation captures automatically if
-   necessary. Compare the result with the measured scene; AI images can alter structure.
-
-Fixture discovery is optional and each suggestion requires individual acceptance.
-The default local symbol matcher requires no downloaded weights. See
-[optional weights and license constraints](docs/FIXTURE_WEIGHTS.md) before evaluating
-trusted YOLO checkpoints. The plan graph remains the source of truth.
-
-## Image generation and credits
-
-Configure one provider on the **API server**, then restart it:
-
-```dotenv
-IMAGE_PROVIDER=comfy
-COMFY_API_KEY=your-key
-```
-
-Alternatively set `IMAGE_PROVIDER=fal` and `IMAGE_API_KEY`. `auto` prefers Comfy when
-its key exists. Keys stay server-side; never commit them or put them in a public
-frontend environment variable. Exported terminal variables override `.env` values.
-Use the key alone, without a `Bearer ` prefix.
-
-Comfy Cloud requires account access and sufficient credits. **Out of credits** is
-resolved in the provider account associated with your key; code cannot supply credits.
-After resolving the issue, explicitly generate a new preview. A saved failed job does
-not retry automatically. The running API checks saved provider receipts without
-an open browser and resumes polling after restart. Temporary provider outages keep
-receipts pending; a lost submission response is never automatically resubmitted.
-For an ambiguous timeout, check the provider dashboard before
-submitting again. No fallback to a different paid provider occurs automatically.
-
-For generation without cloud credits, use [local ComfyUI setup](docs/LOCAL_COMFY.md).
-`IMAGE_PROVIDER=local-comfy` connects the in-app Generate button to a loopback
-ComfyUI server using SDXL with depth ControlNet. The user's M5 / 48 GB Mac is the
-target; real hardware speed/quality remains to be measured. No cloud key is sent,
-and no paid fallback occurs. Model weights and ComfyUI must be installed separately.
-Local render-input export remains available without an inference server.
-
-## Back up and restore your local work
-
-Stop Florp with Ctrl+C first. From `apps/api`, create a backup outside the data folder:
+Stop Florp before backing up or restoring. Run these commands from `apps/api`:
 
 ```bash
 uv run --locked python -m app.local_backup create ~/Desktop/florp-backup.zip
-```
-
-This copies the SQLite database and storage: projects, plan/scene revisions, original
-plans, previews, captures, generated images and annotation data. A workspace lock
-rejects backups while the API is running. The normal API `.env` and provider keys
-are outside this backup; keep your configuration separately. Archives are limited
-to 10 GiB / 50,000 files and contain your private project data.
-
-Restore into a **new** directory, leaving the current workspace intact:
-
-```bash
 uv run --locked python -m app.local_backup restore ~/Desktop/florp-backup.zip ~/florp-restored
 ```
 
-The command verifies checksums and database integrity, rebases file references, and
-prints the `DATABASE_URL` and `STORAGE_PATH` values to put in `apps/api/.env`. Keep
-your provider settings. Restart, open the restored projects and check their scenes
-before choosing whether to remove old data. Existing backups/directories are never
-overwritten. Missing source files fail visibly instead of creating a partial backup.
+Backups include the local database and project files. Keep `apps/api/.env` separately. Restore into a new directory, copy the printed `DATABASE_URL` and `STORAGE_PATH` into your existing settings, and restart Florp.
 
-## Validate changes
+## Develop and test
+
+Use `./scripts/dev.sh` for frontend hot reload. The local API docs are at [localhost:8000/docs](http://localhost:8000/docs). Keep the current app and API on localhost.
 
 ```bash
 (cd apps/api && uv run --locked pytest -q)
@@ -159,58 +63,9 @@ overwritten. Missing source files fail visibly instead of creating a partial bac
 (cd apps/web && npm run test:integration)
 ```
 
-The integration test starts a real API and production frontend in a browser in a temporary workspace on
-ports 8008/3108, disables provider keys, and checks the synthetic import → extraction
-→ calibration → scene/camera → capture → reload journey. It does not touch your
-configured database. The standard UI suite separately mocks provider jobs/errors.
+The integration suite runs a real API and production frontend with temporary storage and provider keys disabled.
 
-CI uses Python 3.12, Node 22, uv 0.13.5 and committed lockfiles. Update lockfiles
-explicitly when changing dependencies. Tests use synthetic/approved fixtures and
-mock paid providers. See [engine validation](docs/ENGINE_VALIDATION.md) for measured
-regressions and their limits.
-
-## Architecture and next gates
-
-- [Current architecture](docs/ARCHITECTURE.md): revisioned PlanModel, scenes, captures and providers.
-- [Phone app plan](docs/PHONE_APP_PLAN.md): upload, walk and design using the existing Florp engine.
-- [Production POC plan](docs/PRODUCTION_POC_PLAN.md): ordered implementation and release evidence.
-- [Enviz capability roadmap](docs/ENVIZ_CAPABILITY_ROADMAP.md): technical findings and the path from a fast local walkthrough to whole-home design.
-- [Contributor handoff](docs/codex-handoff.md): detailed workflows and configuration.
-- [Deterministic color-plan service](services/deterministic-blueprint/README.md): separate CPU service.
-- [Historical milestones](HISTORY.md): earlier experiments, not current setup instructions.
-
-The dependency hardening step upgrades Next.js to 15.5.29, pins its PostCSS
-resolution to 8.5.32 and upgrades Pillow to 13.0.0. React 19, Fiber 9 and Drei 10
-keep the 3D renderer compatible with the App Router runtime. Production npm audit and the
-installed base Python environment audit reported zero known vulnerabilities on
-11 November 2026. Audits do not establish complete application security.
-
-For the macOS local release, remaining acceptance evidence is an actual Mac
-install/run/backup check, representative real-plan accuracy, and authorized live
-image drift/cost evaluation after provider credits are available. The tested local
-features are ready for that evaluation; this is not a claim of final production
-quality. Hosted authentication/storage and the mobile/PWA journey remain later
-roadmap work toward issue #1. Keep this unauthenticated development server on trusted localhost until
-the hosting gates pass. Default extraction is local; external image generation sends
-derived depth and the prompt only after consent. Optional legacy vision extraction
-sends the source image when explicitly invoked.
-
-## Local walkthrough, finishes and timing
-
-The synthetic demo reports upload, extraction, upload-to-draft and calibration times in milliseconds for PNG, JPEG and PDF. Run `npm run test:integration` from `apps/web` for the production browser capture and export timing in `test-results/**/workspace.json`. Each format has one sample per run.
-
-With a calibrated plan, place and aim a camera, then focus the 3D view. WASD walks and arrow keys turn or move. Movement checks the path against wall chunks from floor to head height, closed doors and furniture. Save the scene to retain the viewpoint.
-
-Use **Floor finish** in the 3D scene for an immediate whole-floor color and roughness preview. Save the scene to keep the finish. Camera captures and the render-inputs export include it without invoking an image provider.
-
-With local ComfyUI, use **Render area** to target a visible piece of furniture. Florp runs image-to-image generation on the padded crop using its preview and depth, then replaces only pixels belonging to the selected object in the captured view. Evaluate seams, speed and appearance on the target Mac.
-
-The extraction regression suite includes a synthetic JPEG with pink and blue walls, dimension lines and furniture marks. The mixed-colour enclosure case recovers three rooms and avoids six spurious window proposals observed before the fix. Real-photo accuracy still requires independent annotations.
-
-Walk through a confirmed open doorway between rooms when the opening fits the camera clearance. Closing the door in the scene blocks passage.
-
-### Review a first and second floor
-
-Open the project, upload both floor pictures together and choose **Identify floors, garden and stairs**. The workspace suggests floor order from filenames or garden shading. Select the garden level as **First floor** and review the outlines on each drawing. Green outlines show possible planted areas and orange outlines show turning stairs. Remove a mistaken outline or trace a missing area, then **Save floor pair**. Both levels open in their own calibrated plan editors. Site-review outlines are annotations. Stair tread geometry in each editor comes from its architectural extraction. Alignment and walkable connections between levels remain future work.
-
-Each paired floor editor shows its saved garden and stair outlines. Calibrate each image using a known distance to see the estimated garden area in square metres. Open the other floor in a new tab to compare the stair locations.
+- [Architecture](docs/ARCHITECTURE.md) and [contributor handoff](docs/codex-handoff.md)
+- [Optional fixture detection weights](docs/FIXTURE_WEIGHTS.md) and [engine validation](docs/ENGINE_VALIDATION.md)
+- [Production roadmap](docs/PRODUCTION_POC_PLAN.md), [whole-home capability roadmap](docs/ENVIZ_CAPABILITY_ROADMAP.md), and [issue #1](https://github.com/BeBarefoot/Florp/issues/1)
+- [Project history](HISTORY.md)
