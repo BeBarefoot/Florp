@@ -10,6 +10,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
+from .gardens import Garden
+
 FindingCategory = Literal[
     "opening_needs_approval",
     "open_wall_end",
@@ -123,6 +125,7 @@ class Finding(Base):
 
 
 class PlanModel(Base):
+    gardens: list[Garden] = Field(default_factory=list, max_length=12)
     schema_version: Literal[2] = 2
     id: str
     revision: int = Field(default=0, ge=0)

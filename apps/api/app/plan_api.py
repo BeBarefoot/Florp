@@ -163,6 +163,16 @@ def align_plan_walls(bid: str, body: Save, recover_missing: bool = False):
     return derive(repaired).dump()
 
 
+@router.get("/blueprints/{bid}/plan/yard")
+def detect_plan_yard(bid: str):
+    from .deterministic_blueprint.preprocess import decode
+    from .gardens import detect_gardens
+
+    with Session(get_engine()) as s:
+        path = blueprint(s, bid).preview_path
+    return detect_gardens(decode(Path(path).read_bytes()))
+
+
 @router.post("/blueprints/{bid}/plan/detect-stairs")
 def detect_plan_stairs(bid: str, body: Save):
     """Detect stairs on the existing sheet without re-extracting or saving walls."""

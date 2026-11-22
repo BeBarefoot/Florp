@@ -1,30 +1,15 @@
 """Review two plan images in their own normalized coordinate systems."""
 import re
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated
 
 import cv2
 import numpy as np
 from PIL import Image
-from shapely.geometry import Polygon
 from pydantic import BaseModel, Field, model_validator
 
+from .gardens import Region, detect_gardens
 from .stair_detection import detect_stairs
-
-Unit = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
-
-
-class Region(BaseModel):
-    holes: list[Annotated[list[tuple[Unit, Unit]], Field(min_length=3, max_length=256)]] = Field(default_factory=list, max_length=128)
-    kind: Literal['garden', 'stairs']
-    points: list[tuple[Unit, Unit]] = Field(min_length=3, max_length=256)
-
-    @model_validator(mode='after')
-    def measurable(self):
-        polygon = Polygon(self.points, self.holes)
-        if not polygon.is_valid or polygon.area <= 0:
-            raise ValueError('Trace a closed area without crossing its edges. Remove or redraw the marked outline.')
-        return self
 
 
 class Pair(BaseModel):
@@ -51,31 +36,7 @@ def inspect_floor(bp):
         src.thumbnail((1400, 1400))
         image = cv2.cvtColor(np.asarray(src.convert('RGB')), cv2.COLOR_RGB2BGR)
     h, w = image.shape[:2]
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    green = cv2.inRange(hsv, (31, 18, 45), (90, 255, 255))
-    contours, hierarchy = cv2.findContours(green, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
-    regions = []
-    outer = [i for i in range(len(contours)) if hierarchy[0,i,3] < 0]
-    for i in sorted(outer, key=lambda i:cv2.contourArea(contours[i]), reverse=True)[:12]:
-        contour = contours[i]
-        x, y, cw, ch = cv2.boundingRect(contour)
-        margin = min(x/w, y/h, (w-x-cw)/w, (h-y-ch)/h)
-        if margin > .2 or cv2.contourArea(contour) < .008*w*h:
-            continue
-        poly = cv2.approxPolyDP(contour, max(1., cv2.arcLength(contour, True)*.004), True)
-        if 3 <= len(poly) <= 256:
-            holes = []
-            child = hierarchy[0,i,2]
-            while child >= 0:
-                inside = contours[child]
-                if cv2.contourArea(inside) >= .0005*w*h:
-                    ring = cv2.approxPolyDP(inside, max(1., cv2.arcLength(inside, True)*.004), True)
-                    if 3 <= len(ring) <= 256:
-                        holes.append([(float(a)/w,float(b)/h) for a,b in ring[:,0]])
-                child = hierarchy[0,child,0]
-            if len(holes) > 128:
-                continue
-            regions.append({'kind':'garden','holes':holes,'points':[(float(a)/w,float(b)/h) for a,b in poly[:,0]]})
+    regions = detect_gardens(image)
     for stair in detect_stairs(image):
         mask = np.zeros((h,w), np.uint8)
         for tread in stair.treads:

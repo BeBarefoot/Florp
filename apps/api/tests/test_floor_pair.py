@@ -16,6 +16,10 @@ def test_unordered_pair_site_and_stair_review(client, monkeypatch, tmp_path):
     ok, data = cv2.imencode('.jpg', image)
     assert ok
     lower = c.post(f'/projects/{pid}/blueprints', files={'file': ('photo.jpg', data.tobytes(), 'image/jpeg')}).json()['id']
+    yard = c.get(f'/blueprints/{lower}/plan/yard')
+    assert yard.status_code == 200
+    assert len(yard.json()) == 1 and yard.json()[0]['holes']
+    assert c.get(f'/blueprints/{upper}/plan/yard').json() == []
     for a,b in [(upper,lower),(lower,upper)]:
         result = c.get(path+'/suggestions', params={'a':a,'b':b}).json()
         assert result['first'] == lower

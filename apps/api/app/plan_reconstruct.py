@@ -580,7 +580,9 @@ def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = Non
         for i, (u, v, r) in enumerate(edges)
     ]
     openings = _host_openings(nodes, walls, raw_openings, gaps, cfg)
+    from .gardens import detect_gardens
     model = PlanModel(
+        gardens=detect_gardens(image) if image is not None else [],
         id=plan_id,
         image_transform=ImageTransform(width=w, height=h),
         scale=Scale(),

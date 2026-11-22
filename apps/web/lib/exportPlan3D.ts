@@ -3,6 +3,7 @@ import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import type { PlanModel } from "./plan/model";
 import { metersPerPixel } from "./plan/derive";
 import { floorOutlines, wallPieces } from "./plan/mesh";
+import {yardShapes} from "./plan/yard";
 import { stairPieces } from "./plan/stairs";
 
 /** Metric glTF (meters) with stable wall/room/opening IDs in node extras. */
@@ -34,6 +35,14 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
       group.add(mesh);
     }
     scene.add(group);
+  }
+  for (const [i,shape] of yardShapes(m).entries()) {
+    const yard=new THREE.Mesh(new THREE.ShapeGeometry(shape),new THREE.MeshStandardMaterial({color:"#839768",side:THREE.DoubleSide}));
+    yard.name=`Yard ${i+1}`;
+    yard.userData={kind:"garden"};
+    yard.position.y=-.01;
+    yard.rotation.x=-Math.PI/2;
+    scene.add(yard);
   }
   for (const r of floorOutlines(m)) {
     const shape = new THREE.Shape();
