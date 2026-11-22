@@ -236,6 +236,40 @@ def _pale_bands(outlines, colour, delta, classes, period):
     return result > 0
 
 
+def _printed_dimension_dashes(image):
+    """Find repeated saturated red dashes, including skewed site dimensions."""
+    b, g, r = cv2.split(image.astype(np.float32))
+    ink = ((r - g > np.maximum(20, 0.32 * g)) & (g - b < 0.7 * (r - g))).astype(
+        np.uint8
+    )
+    reject = np.zeros_like(ink)
+    for vertical in (True, False):
+        raster = ink if vertical else ink.T
+        output = reject if vertical else reject.T
+        # Pool neighbouring columns to tolerate mild scan skew.
+        lanes = cv2.dilate(raster, np.ones((1, 9), np.uint8))
+        for x in range(0, lanes.shape[1], 4):
+            changes = np.diff(np.r_[0, lanes[:, x], 0].astype(int))
+            spans = [
+                (a, b)
+                for a, b in zip(
+                    np.flatnonzero(changes == 1), np.flatnonzero(changes == -1)
+                )
+                if b - a >= 20
+            ]
+            for (a, b), (c, d), (e, f) in zip(spans, spans[1:], spans[2:]):
+                if (
+                    min(c - b, e - d) < 5
+                    or abs((c - b) - (e - d)) > 0.25 * max(c - b, e - d)
+                    or max(b - a, d - c, f - e) > 2.5 * min(b - a, d - c, f - e)
+                ):
+                    continue
+                # Continue the lane only where strongly coloured ink exists.
+                lo, hi = max(0, x - 5), min(x + 6, lanes.shape[1])
+                output[:, lo:hi] |= raster[:, lo:hi]
+    return cv2.dilate(reject, np.ones((7, 7), np.uint8)) > 0
+
+
 def _glyph_components(mask, min_holes=2):
     """Find compact glyph-like loops using local stroke width.
 
@@ -469,6 +503,12 @@ def wall_strips(image: np.ndarray) -> Strips:
         # Boundary-supported pixels are local source evidence, not the broad
         # morphological closing that can bridge actual openings.
         opening_material = ((pale_colour & ~raw_digits & ~annotation_bars) | bounded | blue_cand)
+        dashes = _printed_dimension_dashes(image)
+        rejected["dimension_dashes"] = dashes
+        bounded &= ~dashes
+        red &= ~dashes
+        opening_material &= ~dashes
+        annotation_bars |= dashes
         stats["paired_boundary_px"] = int(bounded.sum())
         # Bar rejection has its own local evidence. It must not depend on
         # recovering an unrelated positive wall pair elsewhere in the image.
@@ -505,6 +545,28 @@ def wall_strips(image: np.ndarray) -> Strips:
             cv2.morphologyEx(blue_u8, cv2.MORPH_CLOSE, np.ones((1, 5), np.uint8))
             | cv2.morphologyEx(blue_u8, cv2.MORPH_CLOSE, np.ones((5, 1), np.uint8))
         )
+        # At a cropped sheet edge the local paper estimate may itself be
+        # blue. Extend existing blue masonry into connected saturated bands.
+        strong_blue = (
+            (hsv[:, :, 0] > 90)
+            & (hsv[:, :, 0] < 145)
+            & (hsv[:, :, 1] > 38)
+            & (lab[:, :, 2] < 122)
+        ).astype(np.uint8)
+        strong_blue = cv2.morphologyEx(
+            strong_blue, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)
+        )
+        _, ids = cv2.connectedComponents(
+            cv2.morphologyEx(
+                strong_blue | blue_u8, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)
+            )
+        )
+        border = np.unique(np.r_[ids[0], ids[-1], ids[:, 0], ids[:, -1]])
+        attached = np.intersect1d(border, np.unique(ids[blue]))
+        edge_blue = (strong_blue > 0) & np.isin(ids, attached[attached != 0])
+        blue |= edge_blue
+        opening_material |= edge_blue
+        source_tint |= edge_blue
         blue_seams = (closed > 0) & (hsv[:, :, 0] > 90) & (hsv[:, :, 0] < 145) & (lab[:, :, 2] <= 129)
         # Ignore tiny bridges near a corner: they change topology without
         # evidence of a faded seam running along the concrete.

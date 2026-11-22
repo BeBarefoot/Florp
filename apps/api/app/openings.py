@@ -696,7 +696,75 @@ def _segment(gap: Gap, kind, confidence, index, door=None, source_supported=Fals
     return [host, opening]
 
 
-def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
+def _cropped_material_band(image, gap):
+    """Check the surviving wall tint when a crop cuts off the outer wall face."""
+    raster = image if gap.horizontal else image.transpose(1, 0, 2)
+    if min(gap.cross, raster.shape[0] - 1 - gap.cross) > max(8, gap.t):
+        return False
+    radius = max(2, round(gap.t * 0.5))
+    band = raster[
+        max(0, round(gap.cross) - radius) : round(gap.cross) + radius + 1,
+        max(0, math.ceil(gap.lo)) : math.floor(gap.hi) + 1,
+    ]
+    if not band.size:
+        return False
+    b, g, r = cv2.split(band.astype(np.int16))
+    tint = ((r - g > 6) & (abs(g - b) < 0.8 * (r - g) + 3)) | ((b - r > 15) & (b > g))
+    return np.mean(tint.mean(axis=0) > 0.3) > 0.75
+
+
+def _long_glazing(image, pieces, colour):
+    """Track pairs of narrow frame edges between masonry piers on photographed facades."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    edges = cv2.Canny(gray, 35, 90)
+    proposals = []
+    for horizontal, cross, intervals in pieces:
+        raster = edges if horizontal else edges.T
+        saturation = hsv[:, :, 1] if horizontal else hsv[:, :, 1].T
+        for (_, lo, t1), (hi, _, t2) in zip(intervals, intervals[1:]):
+            t = max(t1, t2)
+            length = hi - lo
+            if length < max(48, 6 * t) or length > 0.45 * raster.shape[1]:
+                continue
+            gap = Gap(horizontal, cross, lo, hi, t)
+            if not _material_jambs(colour, gap):
+                continue
+            start, end = math.ceil(lo), math.floor(hi)
+            top, bottom = (
+                max(0, round(cross - t)),
+                min(raster.shape[0], round(cross + t) + 1),
+            )
+            band = raster[top:bottom, start:end]
+            if band.size == 0:
+                continue
+            # A small perpendicular tolerance follows the skew of the scanner.
+            band = cv2.dilate(band, np.ones((3, 1), np.uint8))
+            support = cv2.blur(band.astype(np.float32) / 255, (17, 1)) > 0.77
+            pair = np.zeros(end - start, bool)
+            for distance in range(5, min(10, support.shape[0])):
+                pair |= (support[:-distance] & support[distance:]).any(axis=0)
+            # Bright annotation ink obscures the frame; do not draw glazing through it.
+            pair &= np.median(saturation[top:bottom, start:end], axis=0) < 48
+            transitions = np.diff(np.r_[False, pair, False].astype(np.int8))
+            spans = [
+                (start + a, start + b)
+                for a, b in zip(
+                    np.flatnonzero(transitions == 1), np.flatnonzero(transitions == -1)
+                )
+                if b - a >= max(25, 2.5 * t)
+            ]
+            if not spans or sum(b - a for a, b in spans) < 0.60 * length:
+                continue
+            if spans[0][0] - lo > max(t, 12) or hi - spans[-1][1] > max(t, 12):
+                continue
+            spans[0] = (lo, spans[0][1])
+            spans[-1] = (spans[-1][0], hi)
+            proposals.extend(Gap(horizontal, cross, a, b, t) for a, b in spans)
+    return proposals
+
+
+def detect(image, walls, strips, boxes=(), exterior=None, *, framed_site=False) -> Result:
     """Classify every wall gap; ``walls`` are axis-aligned wall Segments."""
     result = Result()
     h, w = image.shape[:2]
@@ -749,6 +817,8 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
         if photographic and _overlaps_opening(gap, accepted):
             continue
         width = gap.hi - gap.lo
+        if photographic and _cropped_material_band(image, gap):
+            continue
         colour = strips.structural_colour
         if colour is not None:
             # A break in a faint wall mask is not a doorway. If the original
@@ -820,6 +890,12 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
                     0.1 if 0.03 <= _dashes(line, gap) <= 0.8 else 0
                 )
         box = _yolo(gap, boxes)
+        if (
+            photographic
+            and kind in ("door", "window")
+            and width < 1.65 * strips.stats.get("w_wall", 0)
+        ):
+            continue
         if kind:
             if box:
                 conf += YOLO_AGREE if box.category == kind else -YOLO_DISAGREE
@@ -839,4 +915,80 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
         result.objects.extend(_segment(gap, kind, conf, index, door, source_supported=photographic))
         accepted.append(gap)
         index += 1
+    if photographic:
+        for gap in _long_glazing(image, photo_pieces, strips.structural_colour):
+            if (
+                _cropped_material_band(image, gap)
+                or _overlaps_opening(gap, accepted)
+                or not _photo_window_clear(strips.structural_colour, gap)
+            ):
+                continue
+            result.gaps.append((gap, "window", 0.74))
+            result.objects.extend(
+                _segment(gap, "window", 0.74, index, source_supported=True)
+            )
+            accepted.append(gap)
+            index += 1
+        if framed_site:
+            for g in _photo_end_gaps(walls, (h, w)):
+                # A wide opening between exposed ends of two concrete walls.
+                # Require structural ink beside both ends and a dashed edge.
+                if g.hi - g.lo < 10 * g.t or _overlaps_opening(g, accepted):
+                    continue
+                blue = strips.blue if g.horizontal else strips.blue.T
+                c = round(g.cross)
+                radius = max(4, round(2 * g.t))
+
+                def concrete_end(at):
+                    a = round(at)
+                    return (
+                        blue[
+                            max(0, c - radius) : c + radius + 1,
+                            max(0, a - radius) : a + radius + 1,
+                        ].sum()
+                        >= g.t * g.t
+                    )
+
+                if not (
+                    concrete_end(g.lo) and concrete_end(g.hi) and _dashes(line, g) > 0
+                ):
+                    continue
+                # An interior span has material on both sides in its middle third.
+                third = (g.hi - g.lo) / 3
+                middle = blue[:, round(g.lo + third) : round(g.hi - third)]
+                if middle[: max(0, c - radius)].any() and middle[c + radius :].any():
+                    continue
+                result.objects.extend(
+                    _segment(g, "garage", 0.5, index, source_supported=True)
+                )
+                result.gaps.append((g, "garage", 0.5))
+                accepted.append(g)
+                index += 1
+        windows = [g for g, kind, _ in result.gaps if kind == "window"]
+        for g in gaps:
+            width = g.hi - g.lo
+            if (
+                g.door_only
+                or not 3 * g.t <= width <= 11 * g.t
+                or _overlaps_opening(g, accepted)
+                or not _material_jambs(strips.structural_colour, g)
+            ):
+                continue
+            # A clear break between two glazed runs may be an entrance whose
+            # leaf is obscured. Keep it proposed until the owner confirms it.
+            aligned = [
+                w
+                for w in windows
+                if w.horizontal == g.horizontal and abs(w.cross - g.cross) <= g.t
+            ]
+            if (
+                any(0 <= g.lo - w.hi <= 2 * width for w in aligned)
+                and any(0 <= w.lo - g.hi <= 2 * width for w in aligned)
+                and _photo_window_clear(strips.structural_colour, g)
+            ):
+                result.objects.extend(
+                    _segment(g, "door", 0.45, index, source_supported=True)
+                )
+                accepted.append(g)
+                index+=1
     return result

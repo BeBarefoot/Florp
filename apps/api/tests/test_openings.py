@@ -281,3 +281,31 @@ def test_photo_window_rejects_masonry_core_offset_from_centreline():
     material[15:66, 25:27] = False
     material[15:20, 25:27] = True
     assert _photo_window_clear(material, gap)
+
+
+def test_long_glazing_separated_by_an_opaque_mark():
+    from app.openings import _long_glazing
+
+    image = np.full((150, 600, 3), 230, np.uint8)
+    colour = np.zeros((150, 600), bool)
+    for a, b in [(20, 50), (280, 305)]:
+        colour[52:63, a : b + 1] = True
+    for y in (55, 62):
+        cv2.line(image, (50, y), (280, y + 1), (50, 50, 50), 1)
+    image[49:65, 145:172] = (55, 180, 190)
+    gaps = _long_glazing(image, [(True, 58, [(20, 50, 10), (280, 305, 10)])], colour)
+    assert len(gaps) == 2
+    assert gaps[0].lo == 50 and gaps[0].hi <= 146
+    assert gaps[1].lo >= 170 and gaps[1].hi == 280
+
+
+def test_photo_crop_does_not_treat_hatched_edge_as_glazing():
+    from app.openings import _cropped_material_band
+
+    image = np.full((100, 160, 3), 220, np.uint8)
+    gap = Gap(True, 97, 20, 110, 12)
+    image[94:100, 15:115] = (120, 123, 151)
+    image[:, ::5] = 100
+    assert _cropped_material_band(image, gap)
+    image[94:100, 15:115] = 210
+    assert not _cropped_material_band(image,gap)
