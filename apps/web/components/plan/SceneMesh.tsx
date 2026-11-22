@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useLayoutEffect, useMemo } from "react";
+import { Suspense, useLayoutEffect, useMemo } from "react";
 import { useThree } from "@react-three/fiber";
+import {TourFloorMaterial,TourFixture} from "./TourMaterials";
 import * as T from "three";
 import type { PlanModel } from "../../lib/plan/model";
 import { metersPerPixel, openingEnds } from "../../lib/plan/derive";
@@ -34,34 +35,8 @@ export function EyeCamera({view, scale, frame}: {view: View; scale: number; fram
 
 
 
-function oakTexture() {
-  const canvas=document.createElement("canvas");
-  canvas.width=canvas.height=256;
-  const context=canvas.getContext("2d")!;
-  const image=context.createImageData(256,256);
-  for(let y=0;y<256;y++){
-    const plank=Math.floor(y/16), joint=(plank*73)%256;
-    for(let x=0;x<256;x++){
-      const grain=Math.sin(y*2.1+Math.sin(x*.072+plank)*1.3)*7+Math.sin(y*.71+x*.04)*4;
-      const seam=y%16===0||x===joint;
-      const tone=seam?130:216+grain+(plank*19%29)-14+(x>joint?0:7);
-      const i=(y*256+x)*4;
-      image.data.set([tone,tone,tone,255],i);
-    }
-  }
-  context.putImageData(image,0,0);
-  const texture=new T.CanvasTexture(canvas);
-  texture.wrapS=texture.wrapT=T.RepeatWrapping;
-  texture.repeat.set(.28,.55);
-  texture.colorSpace=T.SRGBColorSpace;
-  texture.anisotropy=4;
-  return texture;
-}
-
 export function SceneMesh({m, objects, closedDoorIds, floorFinish="default", presentation=false, cutaway=false}: {m: PlanModel; objects: Item[]; closedDoorIds?: string[]; floorFinish?:FloorFinish; presentation?:boolean; cutaway?:boolean}) {
   const scale = metersPerPixel(m)!;
-  const floorMap=useMemo(()=>presentation&&floorFinish==="oak"?oakTexture():null,[presentation,floorFinish]);
-  useEffect(()=>()=>floorMap?.dispose(),[floorMap]);
   const width=m.imageTransform.width*scale, depth=m.imageTransform.height*scale;
   const sunTarget=useMemo(()=>{const target=new T.Object3D();target.position.set(width/2,0,depth/2);return target;},[width,depth]);
   const shadowSize=Math.max(4,width,depth)*.8;
@@ -85,7 +60,9 @@ export function SceneMesh({m, objects, closedDoorIds, floorFinish="default", pre
     </mesh>)}
     {rooms.map(({room,shape}, i)=><group key={room.id}>
       <mesh receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,i*0.00002,0]} userData={{maskId:i+2,walkFloor:true}}>
-        <shapeGeometry args={[shape]}/><meshStandardMaterial map={floorMap} color={floorFinishes[floorFinish].color} roughness={floorFinishes[floorFinish].roughness} side={T.DoubleSide}/>
+        <shapeGeometry args={[shape]}/>{presentation?<Suspense fallback={<meshStandardMaterial color={floorFinishes[floorFinish].color} side={T.DoubleSide}/>}>
+          <TourFloorMaterial finish={floorFinish}/>
+        </Suspense>:<meshStandardMaterial color={floorFinishes[floorFinish].color} roughness={floorFinishes[floorFinish].roughness} side={T.DoubleSide}/>}
       </mesh>
       {!cutaway&&<mesh receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,room.ceilingHeightM ?? 2.8,0]} userData={{maskId:1}}>
         <shapeGeometry args={[shape]}/><meshStandardMaterial color="#f1efea" side={T.BackSide}/>
@@ -102,10 +79,22 @@ export function SceneMesh({m, objects, closedDoorIds, floorFinish="default", pre
       if(!endpoints) return null;
       const [a,b]=endpoints, length=Math.hypot(b.x-a.x,b.y-a.y)*scale;
       const angle=Math.atan2(b.y-a.y,b.x-a.x);
-      if(o.kind==="window") return <mesh key={o.id} userData={{maskId:1,glass:true}}
-        position={[(a.x+b.x)*scale/2,o.sillM+o.heightM/2,(a.y+b.y)*scale/2]} rotation={[0,-angle,0]}>
-        <boxGeometry args={[length,o.heightM,.018]}/><meshStandardMaterial transparent opacity={.21} color="#aacbd5" depthWrite={false}/>
-      </mesh>;
+      if(o.kind==="window"){
+        const rail=Math.min(.035,length/5,o.heightM/5);
+        return <group key={o.id} position={[(a.x+b.x)*scale/2,o.sillM+o.heightM/2,(a.y+b.y)*scale/2]} rotation={[0,-angle,0]}>
+          <mesh userData={{maskId:1,glass:true}}>
+            <boxGeometry args={[length,o.heightM,.018]}/><meshStandardMaterial transparent opacity={.16} color="#aacbd5" depthWrite={false}/>
+          </mesh>
+          {presentation&&[-1,1].map(sign=><group key={sign}>
+            <mesh castShadow receiveShadow position={[0,sign*(o.heightM-rail)/2,0]} userData={{maskId:1}}>
+              <boxGeometry args={[length,rail,.06]}/><meshStandardMaterial color="#b9b5a7" metalness={.28} roughness={.42}/>
+            </mesh>
+            <mesh castShadow receiveShadow position={[sign*(length-rail)/2,0,0]} userData={{maskId:1}}>
+              <boxGeometry args={[rail,o.heightM-2*rail,.06]}/><meshStandardMaterial color="#b9b5a7" metalness={.28} roughness={.42}/>
+            </mesh>
+          </group>)}
+        </group>;
+      }
       // The cut remains open; draw a leaf swung 90 degrees when swing evidence exists.
       const closed=closedDoorIds?.includes(o.id);
       if(!o.swing&&!closed) return null;
@@ -121,7 +110,7 @@ export function SceneMesh({m, objects, closedDoorIds, floorFinish="default", pre
       <extrudeGeometry args={[step.shape,{depth:step.height,bevelEnabled:false}]}/><meshStandardMaterial color="#a9b9b2"/>
     </mesh>)}</group>)}
     {objects.map((o,i)=><group key={o.id} position={[o.position.x*scale,0,o.position.y*scale]} rotation={[0,-o.rotation*Math.PI/180,0]}>
-      {blocks(o).map((b,j)=><mesh key={j} castShadow={presentation} receiveShadow={presentation} position={b.position} userData={{maskId:1000+i}}>
+      {presentation?<TourFixture item={o} maskId={1000+i}/>:blocks(o).map((b,j)=><mesh key={j} castShadow={presentation} receiveShadow={presentation} position={b.position} userData={{maskId:1000+i}}>
         <boxGeometry args={b.size}/><meshStandardMaterial color={b.color}/>
       </mesh>)}
     </group>)}
