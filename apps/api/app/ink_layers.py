@@ -303,6 +303,25 @@ def _glyph_components(mask, min_holes=2):
     return rejected
 
 
+def _neutral_wall_bands(gray, paper, saturation):
+    """Recover solid gray infill while excluding thin drafting strokes."""
+    # Contrast is relative to nearby paper, so the same test works on a
+    # white scan and a slightly shaded photo. Do not sharpen the wall mask:
+    # halos around furniture and lettering can create false thick strokes.
+    fill = ((gray >= 105) & (gray <= 0.89 * paper) & (saturation < 22)).astype(np.uint8)
+    thickness = max(3, min(9, (round(min(gray.shape) / 190) | 1)))
+    length = max(25, 7 * thickness)
+    horizontal = cv2.morphologyEx(fill, cv2.MORPH_OPEN, np.ones((thickness, length), np.uint8))
+    vertical = cv2.morphologyEx(fill, cv2.MORPH_OPEN, np.ones((length, thickness), np.uint8))
+    # Require an orthogonal junction before recovering infill. Long gray
+    # cabinet panels and grid rules alone are insufficient structural evidence.
+    joined = horizontal | vertical
+    _, components = cv2.connectedComponents(joined, connectivity=8)
+    near_horizontal = cv2.dilate(horizontal, np.ones((5, 5), np.uint8))
+    junctions = np.unique(components[(near_horizontal & vertical) > 0])
+    return np.isin(components, junctions[junctions > 0])
+
+
 def wall_strips(image: np.ndarray) -> Strips:
     h, w = image.shape[:2]
     boundary_mask = None
@@ -465,6 +484,13 @@ def wall_strips(image: np.ndarray) -> Strips:
     dark = strips_from(dark_cand, False, recover_thin=True)
     red = strips_from(red_cand, True) | recovered
     blue = strips_from(blue_cand, False)
+    if red.sum() + blue.sum() < max(100, 0.003 * h * w) and dark.sum() < 0.015 * h * w:
+        neutral = _neutral_wall_bands(gray, paper, hsv[:, :, 1])
+        if neutral.sum() >= max(100, 0.002 * h * w):
+            dark |= neutral
+            ink |= neutral
+            stats.update(estimate_widths(dark))
+            stats["neutral_wall_bands"] = True
     opening_material = red_cand | blue_cand
     source_tint = None
     # Coloured fills (window glass, door leaves, rugs) inside a plan whose walls are drawn dark

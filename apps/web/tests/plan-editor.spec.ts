@@ -609,3 +609,41 @@ test('phone walkthrough captures its current pose for design and saves it',async
   await page.getByRole('button',{name:'Save scene',exact:true}).click();
   await expect.poll(()=>savedYaw).toBeGreaterThan(1);
 });
+
+test("an open plan can get a floor and a camera through the guided setup",async({page})=>{
+  test.setTimeout(60000);
+  const model=fixture();
+  model.walls=model.walls.filter(w=>w.id!=="w0"&&w.id!=="w1");
+  const {puts}=await setup(page,{model:setReference(model,{x:100,y:100},{x:500,y:100},4)});
+  let savedView=false;
+  await page.route("**/blueprints/p/scene",r=>{
+    if(r.request().method()==="PUT"){
+      const {planRevision,config}=r.request().postDataJSON();
+      savedView=planRevision===2&&config.views.length===1;
+      return r.fulfill({json:{revision:1,planRevision,config}});
+    }
+    return r.fulfill({json:{revision:0,planRevision:null,config:{views:[],objects:[],style:""}}});
+  });
+  await page.route("**/blueprints/p/scene/renders",r=>r.fulfill({json:[]}));
+  await page.route("**/blueprints/p/scene/render-settings",r=>r.fulfill({json:{width:1024,height:768,configured:false,model:"",provider:"fal"}}));
+  await page.goto("/plan/p?setup=floor");
+  await page.getByRole("button",{name:"Mark walkable floor"}).click();
+  const map=page.locator("svg.scene-map");
+  async function tap(x:number,y:number){
+    const p=await map.evaluate((svg,[x,y])=>{
+      const point=new DOMPoint(x,y).matrixTransform((svg as SVGSVGElement).getScreenCTM()!);
+      return {x:point.x,y:point.y};
+    },[x,y]);
+    await page.mouse.click(p.x,p.y);
+  }
+  await tap(180,170);
+  await tap(420,500);
+  await expect(page.getByText("Click the camera position inside a room.")).toBeVisible();
+  await tap(300,250);
+  await expect(page.getByText("Click the direction to face.")).toBeVisible();
+  await tap(350,250);
+  await expect(page.getByRole("button",{name:"Walkthrough",exact:true})).toBeEnabled();
+  await page.getByRole("button",{name:"Save scene",exact:true}).click();
+  await expect.poll(()=>savedView).toBe(true);
+  expect(puts.at(-1)?.roomZones).toHaveLength(1);
+});

@@ -9,7 +9,7 @@ import {downloadPrompt,renderPrompt} from "../../lib/plan/renderPrompt";
 import {SceneMesh} from "./SceneMesh";
 import {metersPerPixel} from "../../lib/plan/derive";
 import {WalkCamera,type WalkInput} from "./WalkCamera";
-import {findWalkStart,walkSpace} from "../../lib/plan/walkSpace";
+import {findWalkStart,roomsOf,walkSpace} from "../../lib/plan/walkSpace";
 import {FloorPicker} from "./FloorPicker";
 import {newUuid} from "../../lib/uuid";
 import type {PlanModel,Pt} from "../../lib/plan/model";
@@ -105,6 +105,7 @@ export default function Showcase({plan,scene,title,back,edit,sample=false,approx
   const [saving,setSaving]=useState(false);
   const savingRef=useRef(false);
   const [selectedId,setSelectedId]=useState<string|null>(null);
+  const hasFloor=roomsOf(plan).length>0;
   const views=useMemo(()=>{
     if(scene.views.length||localViews.length)return [...scene.views,...localViews];
     const start=findWalkStart(plan,walkSpace(plan,metersPerPixel(plan)!,scene).validCamera);
@@ -163,6 +164,7 @@ export default function Showcase({plan,scene,title,back,edit,sample=false,approx
       return;
     }
     setPlaying(false);setRendered(false);setNotice("");setSelectedId("overview");
+    const start=findWalkStart(plan,walkSpace(plan,metersPerPixel(plan)!,scene).validCamera);
     const entry:View={id:"free-walk",name:"Walkthrough",position:point,yaw,pitch:-5,eyeHeight:1.6,horizontalFov:90};
     if(adding)void addView(entry);
     else setFreeView(entry);
@@ -211,13 +213,14 @@ export default function Showcase({plan,scene,title,back,edit,sample=false,approx
         <button aria-label="Previous stop" disabled={stop<0} onClick={()=>select(stop-1)}><ChevronLeft/></button>
         <button aria-label="Next stop" disabled={stop>=views.length-1} onClick={()=>select(stop+1)}><ChevronRight/></button>
       </div>}
-      {!view&&<button aria-pressed={adding} disabled={saving} onClick={()=>{setPlaying(false);setNotice("");setAdding(!adding);}}>
+      {!view&&hasFloor&&<button aria-pressed={adding} disabled={saving} onClick={()=>{setPlaying(false);setNotice("");setAdding(!adding);}}>
         {adding?"Cancel adding view":"Add view"}
       </button>}
       {view&&!rendered&&<button disabled={saving} onClick={()=>{
         setPlaying(false);
         if(pose.current?.id===view.id)void addView(pose.current);
       }}>Save this view</button>}
+      {!hasFloor&&edit&&<p>No walkable floor was found. <Link href={edit+"?setup=floor"}>Mark a walkable floor in the editor</Link>.</p>}
       {notice&&<p role="status">{notice}</p>}
     {view&&!rendered&&viewport?.viewId===view.id&&<><button onClick={()=>{
       setPlaying(false);

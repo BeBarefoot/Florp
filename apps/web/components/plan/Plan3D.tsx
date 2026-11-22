@@ -212,7 +212,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
       if(Math.abs(x-zoneStart.x)*scale<.2||Math.abs(y-zoneStart.y)*scale<.2)return;
       const id=newUuid();
       onPlanEdit?.({...m,roomZones:[...(m.roomZones||[]),{id,label:null,polygon:[zoneStart,{x,y:zoneStart.y},p,{x:zoneStart.x,y}]}]});
-      setZoneStart(null);setMode(null);setRoomId(id);
+      setZoneStart(null);setMode(view?null:"camera");setRoomId(id);
     }else{
       const o=[...scene.objects].reverse().find(o=>contains(p,footprint(o,scale)));
       setItemId(o?.id??"");setRoomId(rooms.find(r=>contains(p,r.polygon))?.id??"");
@@ -335,8 +335,12 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
         }}>Design this view</button>
         <button disabled={!edited} onClick={()=>void save()}>Save scene</button>
       </div>}
+      {!rooms.length&&onPlanEdit&&<div className="scene-actions">
+        <p>No closed rooms were found. Mark two opposite corners of a clear walking area on the original plan to add a floor and place a camera.</p>
+        <button onClick={()=>{setShowBlueprint(true);setZoneStart(null);setMode("zone");setMapOpen(true);}}>Mark walkable floor</button>
+      </div>}
       <div className="scene-actions">
-        <button onClick={()=>{setMode("camera");setCameraMode("orbit");}}>Place camera</button>
+        <button disabled={!rooms.length} onClick={()=>{setMode("camera");setCameraMode("orbit");}}>Place camera</button>
         <button disabled={!view} onClick={()=>setCameraMode(cameraMode==="preview"?"orbit":"preview")}>{cameraMode==="preview"?"Back to orbit":"Preview view"}</button>
         <button disabled={!view} aria-pressed={cameraMode==="walk"} onClick={()=>setCameraMode(cameraMode==="walk"?"orbit":"walk")}>Walkthrough</button>
         <button disabled={!edited&&!dirty} onClick={()=>void save()}>Save scene</button>

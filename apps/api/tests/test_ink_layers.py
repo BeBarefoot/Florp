@@ -133,3 +133,26 @@ def test_detached_repeated_dimension_strokes_are_not_wall_strips():
     removed = detached_annotation_runs(red, supported, red)
     assert removed[:, 260:266].sum() == 3 * 45 * 6
     assert not removed[:, 20:26].any()
+
+
+def test_pale_gray_rooms_recover_solid_walls_without_grid_strokes(tmp_path):
+    from app.workspace_worker import build
+
+    gray = np.full((540, 690), 248, np.uint8)
+    # A pale wall loop with a break for two narrow, low contrast rails.
+    cv2.rectangle(gray, (95, 95), (590, 455), 201, 13)
+    gray[87:104, 255:355] = 248
+    gray[92, 255:355] = 224
+    gray[98, 255:355] = 224
+    for x in range(132, 550, 12):
+        cv2.line(gray, (x, 130), (x, 400), 210, 1)
+    strips = wall_strips(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR))
+    assert strips.stats["neutral_wall_bands"]
+    assert strips.dark[95, 160] and strips.dark[300, 590]
+    assert not strips.dark[92, 305] and not strips.dark[260, 132]
+    path = tmp_path / "pale-plan.png"
+    assert cv2.imwrite(str(path), gray)
+    model = build(path, plan_id="pale-plan")
+    assert len(model.walls) == 4
+    assert len(model.rooms) == 1
+    assert [opening.kind for opening in model.openings] == ["window"]

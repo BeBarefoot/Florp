@@ -53,6 +53,16 @@ export default function PlanEditor({ id }: { id: string }) {
     setCorners([]);
     if (t !== "select" && t !== "attach") setDisplay((d) => (d === "3d" ? "2d" : d));
   }, []);
+  const calibrated = !!model && !!metersPerPixel(model);
+  const loaded = !!model;
+  useEffect(() => {
+    if (!loaded || new URLSearchParams(window.location.search).get("setup") !== "floor") return;
+    if (calibrated) setDisplay("3d");
+    else {
+      setView("original");
+      setTool("measure");
+    }
+  }, [loaded, calibrated, setTool]);
   function adopt(r: PlanResponse) {
     revision.current = r.revision;
     saved.current = JSON.stringify(r.model);
