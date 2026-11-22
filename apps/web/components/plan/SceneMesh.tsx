@@ -84,7 +84,7 @@ export function SceneMesh({m, objects, closedDoorIds, floorFinish="default", pre
       <shapeGeometry args={[shape]}/><meshStandardMaterial color="#839768" side={T.DoubleSide}/>
     </mesh>)}
     {rooms.map(({room,shape}, i)=><group key={room.id}>
-      <mesh receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,i*0.00002,0]} userData={{maskId:i+2}}>
+      <mesh receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,i*0.00002,0]} userData={{maskId:i+2,walkFloor:true}}>
         <shapeGeometry args={[shape]}/><meshStandardMaterial map={floorMap} color={floorFinishes[floorFinish].color} roughness={floorFinishes[floorFinish].roughness} side={T.DoubleSide}/>
       </mesh>
       {!cutaway&&<mesh receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,room.ceilingHeightM ?? 2.8,0]} userData={{maskId:1}}>

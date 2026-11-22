@@ -5,7 +5,18 @@ import type { Pt } from "../../lib/plan/model";
 import type { Frame, View } from "../../lib/plan/scene";
 import { makeCamera } from "./SceneMesh";
 
-export function WalkCamera({view, scale, frame, canMove, pose}: {
+export type WalkInput = {
+  direction: {current: {forward:number;side:number}};
+  wake: {current: (()=>void)|null};
+};
+
+const movementKeys = new Map([
+  ["w",[1,0]], ["arrowup",[1,0]], ["s",[-1,0]], ["arrowdown",[-1,0]],
+  ["a",[0,-1]], ["arrowleft",[0,-1]], ["d",[0,1]], ["arrowright",[0,1]],
+]);
+
+export function WalkCamera({view, scale, frame, canMove, pose, input}: {
+  input?: WalkInput;
   pose: {current: View|null}; view: View; scale: number; frame: Frame; canMove: (p: Pt) => boolean;
 }) {
   const camera = useMemo(() => makeCamera(view, scale, frame), [view, scale, frame]);
@@ -20,12 +31,12 @@ export function WalkCamera({view, scale, frame, canMove, pose}: {
     const pointers = new Map<number, Pt>();
     const target = new Vector3();
     let yaw = MathUtils.degToRad(view.yaw);
-    const pitch = MathUtils.degToRad(view.pitch);
+    let pitch = MathUtils.degToRad(view.pitch);
 
     const halfFov = Math.tan(MathUtils.degToRad(view.horizontalFov/2));
     function remember() {
       pose.current = {...view,position:{x:camera.position.x/scale,y:camera.position.z/scale},
-        yaw:((MathUtils.radToDeg(yaw)%360+540)%360)-180,
+        yaw:((MathUtils.radToDeg(yaw)%360+540)%360)-180, pitch:MathUtils.radToDeg(pitch),
         horizontalFov:MathUtils.clamp(2*MathUtils.radToDeg(Math.atan(halfFov/camera.zoom)),55,110)};
     }
     remember();
@@ -34,6 +45,60 @@ export function WalkCamera({view, scale, frame, canMove, pose}: {
       camera.updateProjectionMatrix();
       remember();
       invalidate();
+    }
+
+    function step(forward:number, side:number) {
+      // Short collision steps also catch thin walls during fast drags.
+      const steps = Math.ceil(Math.hypot(forward,side) / .05);
+      if (!steps) return;
+      const dx = (Math.cos(yaw)*forward - Math.sin(yaw)*side) / steps;
+      const dz = (Math.sin(yaw)*forward + Math.cos(yaw)*side) / steps;
+      for (let i=0;i<steps;i++) {
+        const x=camera.position.x+dx, z=camera.position.z+dz;
+        if (!walkable.current({x:x/scale,y:z/scale})) break;
+        camera.position.x=x;
+        camera.position.z=z;
+      }
+    }
+
+    const keys=new Set<string>();
+    let animation=0, last=0;
+    function tick(now:number){
+      animation=0;
+      if(!input)return;
+      let {forward,side}=input.direction.current;
+      for(const key of keys){
+        const [f,s]=movementKeys.get(key)!;
+        forward+=f;side+=s;
+      }
+      const magnitude=Math.hypot(forward,side);
+      if(!magnitude){last=0;return;}
+      const distance=Math.min((now-(last||now))/1000,.05)*1.8/magnitude;
+      last=now;
+      step(forward*distance,side*distance);
+      remember();
+      invalidate();
+      animation=requestAnimationFrame(tick);
+    }
+    function wake(){if(!animation)animation=requestAnimationFrame(tick);}
+    function keyDown(event:KeyboardEvent){
+      if(event.defaultPrevented||event.altKey||event.ctrlKey||event.metaKey||
+        (event.target instanceof HTMLElement&&event.target.closest("input,textarea,select,[contenteditable]")))return;
+      const key=event.key.toLowerCase();
+      if(!movementKeys.has(key))return;
+      event.preventDefault();
+      keys.add(key);wake();
+    }
+    function keyUp(event:KeyboardEvent){keys.delete(event.key.toLowerCase());wake();}
+    function release(){
+      keys.clear();
+      if(input)input.direction.current={forward:0,side:0};
+    }
+    if(input){
+      input.wake.current=wake;
+      window.addEventListener("keydown",keyDown);
+      window.addEventListener("keyup",keyUp);
+      window.addEventListener("blur",release);
     }
 
     function down(event: PointerEvent) {
@@ -55,17 +120,11 @@ export function WalkCamera({view, scale, frame, canMove, pose}: {
         return;
       }
       yaw += (after.x - before.x) * .007;
-      const distance = MathUtils.clamp((before.y - after.y) * .012, -.6, .6);
-      // Check the path in short steps so fast drags cannot skip through walls.
-      const steps = Math.ceil(Math.abs(distance) / .05);
+      const vertical = before.y - after.y;
+      const looking = input && (event.shiftKey || input.direction.current.forward || input.direction.current.side);
+      if (looking) pitch = MathUtils.clamp(pitch + vertical * .006, MathUtils.degToRad(-45), MathUtils.degToRad(30));
+      else step(MathUtils.clamp(vertical * .012, -.6, .6),0);
       const headingX = Math.cos(yaw), headingZ = Math.sin(yaw);
-      for (let i = 0; i < steps; i++) {
-        const x = camera.position.x + headingX * distance / steps;
-        const z = camera.position.z + headingZ * distance / steps;
-        if (!walkable.current({x: x / scale, y: z / scale})) break;
-        camera.position.x = x;
-        camera.position.z = z;
-      }
       target.set(headingX * Math.cos(pitch), Math.sin(pitch), headingZ * Math.cos(pitch));
       camera.lookAt(target.add(camera.position));
       remember();
@@ -90,6 +149,12 @@ export function WalkCamera({view, scale, frame, canMove, pose}: {
     canvas.addEventListener("lostpointercapture", end);
     canvas.addEventListener("wheel", wheel, {passive: false});
     return () => {
+      cancelAnimationFrame(animation);
+      release();
+      if(input)input.wake.current=null;
+      window.removeEventListener("keydown",keyDown);
+      window.removeEventListener("keyup",keyUp);
+      window.removeEventListener("blur",release);
       canvas.removeEventListener("pointerdown", down);
       canvas.removeEventListener("pointermove", move);
       canvas.removeEventListener("pointerup", end);
@@ -99,6 +164,6 @@ export function WalkCamera({view, scale, frame, canMove, pose}: {
       pointers.forEach((_, id) => { if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id); });
       set({camera: previous});
     };
-  }, [camera, frame, get, gl, invalidate, pose, scale, set, view]);
+  }, [camera, get, gl, input, invalidate, pose, scale, set, view]);
   return null;
 }

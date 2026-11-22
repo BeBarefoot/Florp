@@ -518,7 +518,7 @@ test('walkthrough responds to mouse and touch and returns to the saved framing',
  await page.route('**/blueprints/p/scene/render-settings',r=>r.fulfill({json:{width:1024,height:768,configured:false,model:'',provider:'fal'}}));
  await page.locator('.fe-segment button').nth(2).click();
  const canvas=page.locator('.scene-frame canvas');
- const walk=page.getByRole('button',{name:'Walkthrough'});
+ const walk=page.getByRole('button',{name:'Walkthrough',exact:true});
  await walk.click();
  const saved=await canvas.screenshot();
  const box=(await canvas.boundingBox())!;

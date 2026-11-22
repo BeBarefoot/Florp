@@ -117,6 +117,14 @@ def test_scene_render_is_revisioned_and_does_not_resubmit(client, monkeypatch, t
     import hashlib
     assert manifest['captureHashes']['depth.png'] == hashlib.sha256(buf.getvalue()).hexdigest()
 
+    additional = {**config["views"][0], "id": "new-view"}
+    revised = {**config, "views": [*config["views"], additional]}
+    assert c.put(path + "/scene", json={"expectedRevision": 1, "planRevision": 1, "config": revised}).status_code == 200
+    assert c.get(path + "/scene/renders").json()[0]["compatibleSceneRevision"] == 2
+    revised["views"][0]["yaw"] += 10
+    assert c.put(path + "/scene", json={"expectedRevision": 2, "planRevision": 1, "config": revised}).status_code == 200
+    assert "compatibleSceneRevision" not in c.get(path + "/scene/renders").json()[0]
+
 
 def test_room_context_survives_reextraction(client, monkeypatch):
     from app import plan_api

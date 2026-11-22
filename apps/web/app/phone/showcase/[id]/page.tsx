@@ -37,27 +37,34 @@ const Player=dynamic(()=>import("../../../../components/plan/Showcase"),{ssr:fal
 export default function ShowcasePage(){
   const {id}=useParams<{id:string}>();
   const [data,setData]=useState<[PlanResponse,Saved,Blueprint]|null>(null),[error,setError]=useState("");
+  const [fromEditor,setFromEditor]=useState(false);
   const [renders,setRenders]=useState<Record<string,string>>({});
   useEffect(()=>{
+    setFromEditor(new URLSearchParams(location.search).get("from")==="editor");
     setError("");setData(null);setRenders({});
     if(id==="sample")return;
     let live=true;
     const base="/blueprints/"+encodeURIComponent(id);
     Promise.all([openPlan(base),request<Saved>(base+"/scene"),request<Blueprint>(base+"/info")])
-      .then(async value=>{
-        if(!live)return;
-        setData(value);
-        const jobs=await request<Job[]>(base+"/scene/renders").catch(()=>[]);
-        const images:Record<string,string>={};
-        for(const j of jobs){
-          if(j.status==="complete"&&j.sceneRevision===value[1].revision&&j.planRevision===value[0].revision&&!images[j.viewId]){
-            images[j.viewId]=API+base+"/scene/renders/"+encodeURIComponent(j.id)+"/result.png";
-          }
-        }
-        if(live)setRenders(images);
-      }).catch(e=>{if(live)setError(String(e));});
+      .then(value=>{if(live)setData(value);}).catch(e=>{if(live)setError(String(e));});
     return ()=>{live=false;};
   },[id]);
+  useEffect(()=>{
+    if(!data||data[2].id!==id)return;
+    let live=true;
+    const path="/blueprints/"+encodeURIComponent(id)+"/scene/renders";
+    request<Job[]>(path).then(jobs=>{
+      const images:Record<string,string>={};
+      for(const j of jobs){
+        if(j.status==="complete"&&j.planRevision===data[0].revision&&!images[j.viewId]&&
+          (j.sceneRevision===data[1].revision||j.compatibleSceneRevision===data[1].revision)){
+          images[j.viewId]=API+path+"/"+encodeURIComponent(j.id)+"/result.png";
+        }
+      }
+      if(live)setRenders(images);
+    }).catch(()=>{});
+    return ()=>{live=false;};
+  },[data,id]);
   const original=data?.[0].model;
   const plan=useMemo(()=>original?previewScale(original):null,[original]);
   if(id==="sample")return <Player plan={samplePlan} scene={sampleScene} title="Courtyard apartment" back="/phone" sample/>;
@@ -67,7 +74,21 @@ export default function ShowcasePage(){
     const currentScene=!approximate&&data[1].planRevision===plan.revision;
     return <Player key={id} plan={plan} scene={currentScene?data[1].config:emptyScene}
       approximate={approximate} renders={currentScene?renders:undefined} title={data[2].filename}
-      back={back} edit={"/phone/"+id}/>;
+      back={fromEditor?"/plan/"+id:back} edit={"/plan/"+id}
+      saveView={!approximate&&(!data[1].revision||currentScene)?async view=>{
+        const path="/blueprints/"+encodeURIComponent(id)+"/scene";
+        const latest=await request<Saved>(path);
+        if(latest.revision && latest.planRevision!==plan.revision)
+          throw Error("The floor has changed. Reload the tour before saving.");
+        if(latest.config.views.length>=30)throw Error("The tour already has 30 saved views.");
+        const saved=await request<Saved>(path,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+          expectedRevision:latest.revision,planRevision:plan.revision,
+          config:{...latest.config,views:[...latest.config.views,{...view,name:"View "+(latest.config.views.length+1)}]},
+        })});
+        setRenders({});
+        setData(current=>current?.[2].id===id?[current[0],saved,current[2]]:current);
+        return saved.config.views.find(v=>v.id===view.id)!;
+      }:undefined}/>;
   }
   return <main className="tour-library"><Link href={back}>← Back to floors</Link>
     <p role="status">{error||(!data?"Preparing your 3D walkthrough…":"Florp could not find enough walls for this floor.")}</p>

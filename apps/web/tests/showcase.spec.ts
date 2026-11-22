@@ -57,8 +57,66 @@ test("downloaded showcase prompt follows the live position, heading and zoom",as
   expect(after.eyeXYZ).not.toEqual(before.eyeXYZ);
   expect(after.forwardUnitXYZ).not.toEqual(before.forwardUnitXYZ);
   expect(after.horizontalFovDegrees).toBeLessThan(before.horizontalFovDegrees);
+  await page.keyboard.down("d");
+  await page.waitForTimeout(700);
+  await page.keyboard.up("d");
+  const strafed=await camera();
+  expect(strafed.eyeXYZ).not.toEqual(after.eyeXYZ);
+  expect(strafed.forwardUnitXYZ).toEqual(after.forwardUnitXYZ);
   const pending=page.waitForEvent("download");
   await page.getByRole("button",{name:"Download view image"}).click();
   const png=await readFile((await (await pending).path())!);
   expect([png.readUInt32BE(16),png.readUInt32BE(20)]).toEqual(after.framePixels);
+});
+
+test("dollhouse lands on the floor and saves a new view from one tap",async({page})=>{
+  test.setTimeout(75000);
+  const {PerspectiveCamera,Vector3}=await import("three");
+  let config=sampleScene;
+  let revision=1;
+  await page.setViewportSize({width:1100,height:850});
+  await page.route("**/blueprints/f/*",async r=>{
+    const endpoint=new URL(r.request().url()).pathname.split("/").pop();
+    if(endpoint==="scene"&&r.request().method()==="PUT"){
+      const body=r.request().postDataJSON();
+      expect(body.expectedRevision).toBe(revision);
+      expect(body.planRevision).toBe(1);
+      config=body.config;
+      revision++;
+    }
+    return r.fulfill({json:endpoint==="plan"?{revision:1,model:{...samplePlan,id:"f"}}:
+      endpoint==="scene"?{revision,planRevision:1,config}:endpoint==="renders"||endpoint==="history"?[]:
+      endpoint==="review"?{revision:1,status:"draft",blockers:[],elevations:null}:
+      {id:"f",filename:"Owner floor",project_id:"p",width:1000,height:680}});
+  });
+  await page.goto("/plan/f");
+  await page.getByRole("button",{name:"Phone walkthrough",exact:true}).click();
+  await expect(page).toHaveURL(/\/phone\/showcase\/f\?from=editor$/);
+  await page.getByRole("button",{name:"Overview",exact:true}).click();
+  const overview=page.getByRole("heading",{name:"Dollhouse view"});
+  await expect(overview).toBeVisible();
+  await expect(page.getByRole("link",{name:"Exit tour"})).toHaveAttribute("href","/plan/f");
+  const canvas=page.locator("canvas");
+  async function tapFloor(x:number,z:number){
+    const box=(await canvas.boundingBox())!;
+    const aspect=box.width/box.height;
+    const target=new Vector3(5,.65,3.4);
+    const camera=new PerspectiveCamera(42,aspect,.005,2000);
+    camera.position.copy(target).addScaledVector(new Vector3(.82,1.1,1.22).normalize(),18.5/Math.min(1,aspect));
+    camera.lookAt(target);
+    camera.updateMatrixWorld();
+    const point=new Vector3(x,0,z).project(camera);
+    await page.mouse.click(box.x+(point.x+1)*box.width/2,box.y+(1-point.y)*box.height/2);
+  }
+  await tapFloor(2.3,3.6);
+  await expect(page.getByRole("heading",{name:"Walkthrough"})).toBeVisible();
+  await page.getByRole("button",{name:"Overview",exact:true}).click();
+  await page.getByRole("button",{name:"Add view",exact:true}).click();
+  await tapFloor(2.3,3.6);
+  await expect(page.getByRole("heading",{name:"View 4"})).toBeVisible();
+  expect(config.views.at(-1)?.position.x).toBeCloseTo(230,0);
+  expect(config.views.at(-1)?.position.y).toBeCloseTo(360,0);
+  expect(config.objects).toEqual(sampleScene.objects);
+  await page.goto("/phone/showcase/f#overview");
+  await expect(page.getByRole("button",{name:"View 4",exact:true})).toBeVisible({timeout:15000});
 });
