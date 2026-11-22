@@ -20,9 +20,6 @@ function SampleFurniture({interior}:{interior:boolean}){
     return <mesh castShadow receiveShadow position={[x,y,z]}><boxGeometry args={[w,h,d]}/><meshStandardMaterial color={color}/></mesh>;
   }
   return <>
-    {Array.from({length:27},(_,i)=><group key={"board"+i}>
-      {block(5,.002,i*.25+.1,9.9,.002,.006,"#aa865f")}
-    </group>)}
     {[3.31,4.64,5.94].map(x=><group key={x}>{block(x,1.58,.008,.035,1.65,.08,"#756955")}</group>)}
     {block(4.625,.75,.01,2.71,.07,.17,"#99816a")}
     {block(4.625,2.4,.01,2.71,.06,.08,"#756955")}
