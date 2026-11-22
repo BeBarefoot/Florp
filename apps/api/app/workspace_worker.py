@@ -103,6 +103,50 @@ def recover_notched_crop(polygon, region, structural_ink, wall_width):
     return polygon, region
 
 
+def dimension_framed_crop(strips, image):
+    """Locate a facade between two outboard dashed dimension lines on a coloured sheet."""
+    if strips.boundary_mask is None or not strips.blue.any():
+        return None
+    h, w = image.shape[:2]
+    dash = strips.rejected.get("dimension_dashes")
+    if dash is None:
+        return None
+    cols = np.flatnonzero(dash.sum(axis=0) > 0.35 * h)
+    if not len(cols):
+        return None
+    clusters = np.split(cols, np.flatnonzero(np.diff(cols) > 2) + 1)
+    if len(clusters) != 2:
+        return None
+    left, right = int(clusters[0][-1]) + 1, int(clusters[1][0])
+    if right - left < 0.35 * w or not strips.blue[:, left:right].any():
+        return None
+    ink = (strips.boundary_mask | strips.blue)[:, left:right].astype(np.uint8)
+    # Long horizontal material runs distinguish facades from lettering.
+    bands = cv2.morphologyEx(
+        ink,
+        cv2.MORPH_OPEN,
+        np.ones((2, max(12, round(0.025 * (right - left)))), np.uint8),
+    )
+    rows = np.flatnonzero(bands.sum(axis=1) > 0.09 * (right - left))
+    if not rows.size or np.ptp(rows) < 0.4 * h:
+        return None
+    groups = np.split(rows, np.flatnonzero(np.diff(rows) > 4) + 1)
+    if len(groups) < 3:
+        return None
+    # Short piers at the end of a glazed facade can be much shorter than
+    # the long bands that locate its rows. Include solid tint on those rows.
+    facade = strips.structural_colour[:, left:right].astype(np.uint8)
+    ends = cv2.morphologyEx(facade, cv2.MORPH_OPEN, np.ones((4, 8), np.uint8))
+    xs = np.flatnonzero((bands[rows] | ends[rows]).any(axis=0))
+    pad = max(3, round(0.55 * strips.stats["w_wall"]))
+    x1, x2 = (
+        max(left, left + int(xs.min()) - pad),
+        min(right, left + int(xs.max()) + pad),
+    )
+    y1, y2 = max(0, int(rows.min()) - pad), min(h - 1, int(rows.max()) + pad)
+    return [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
+
+
 def build(path, roi=None, *, plan_id=None):
     image = decode(Path(path).read_bytes())
     h, w = image.shape[:2]
@@ -123,6 +167,7 @@ def build(path, roi=None, *, plan_id=None):
     strips = wall_strips(image)
     stats = strips.stats
     w_wall = float(stats["w_wall"])
+    framed = None
     if roi:
         polygon = [(float(x), float(y)) for x, y in roi]
         env_mask = mask_from_polygon(polygon, image.shape)
@@ -130,6 +175,10 @@ def build(path, roi=None, *, plan_id=None):
         polygon, env_mask = building_envelope(strips.mask, w_wall)
         if polygon and stats.get("coloured_walls") and strips.boundary_mask is not None:
             polygon, env_mask = recover_notched_crop(polygon, env_mask, strips.boundary_mask | strips.blue, w_wall)
+        framed = dimension_framed_crop(strips, image)
+        if framed:
+            polygon = framed
+            env_mask = mask_from_polygon(polygon,image.shape)
     outside = strips.mask.astype(bool) & ~env_mask
     if outside.any():
         n, _, st, _ = cv2.connectedComponentsWithStats(outside.astype(np.uint8), connectivity=8)
@@ -157,7 +206,7 @@ def build(path, roi=None, *, plan_id=None):
     )
     _remeasure(objects, mask, classes)
     exterior_zone = None
-    if polygon is not None and not roi:
+    if polygon is not None and not roi and not framed:
         k = int(8 * w_wall) | 1
         exterior_zone = cv2.erode(env_mask.astype(np.uint8), np.ones((k, k), np.uint8)) == 0
     for i, o in enumerate(objects):
@@ -231,8 +280,17 @@ def build(path, roi=None, *, plan_id=None):
             "Local detector unavailable; openings come from wall gaps only and need review against the original. Add missing openings with two clicks."
         )
     found = gap_openings.detect(
-        image, [o for o in objects if o.kind == "wall"], strips, boxes, exterior_zone
+        image, [o for o in objects if o.kind == "wall"], strips, boxes, exterior_zone, framed_site=bool(framed)
     )
+    # Photo void probes extend past the ends of walls. A crop must constrain
+    # the inferred aperture and its generated host as well as the masonry.
+    if polygon:
+
+        def inside(point):
+            x, y = round(point.x), round(point.y)
+            return 0 <= x < w and 0 <= y < h and env_mask[y, x]
+
+        found.objects = [o for o in found.objects if inside(o.start) and inside(o.end)]
     objects.extend(found.objects)
     if solid is not None:
         # A detected swing provides the missing jamb, but the adjoining

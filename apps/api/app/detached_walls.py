@@ -195,8 +195,31 @@ def prune_detached_photo_walls(model, objects):
 
     keep = set(core) | reconnected
     for group in groups:
-        if any(walls[k].source == "user" for k in group) or has_traced_junction(group):
+        if (
+            any(walls[k].source == "user" for k in group)
+            or has_traced_junction(group)
+            or (spans_building(group) and any(long_traced(k) for k in group))
+        ):
             keep.update(group)
+    # Glazed facades can be split by an obscuring stamp or a few missing
+    # jamb pixels. Retain observed openings bracketed by retained wall runs.
+    previous_count = -1
+    while len(keep) != previous_count:
+        previous_count = len(keep)
+        anchors = [traces[k] for k in keep if traces[k]]
+        for group in groups:
+            if group[0] in keep:
+                continue
+            for k in group:
+                r = traces[k]
+                if k not in hosted or not r or r.length < 4 * r.thickness:
+                    continue
+                aligned = [a for a in anchors if r.same_lane(a)]
+                reach = max(3 * r.thickness, 0.85 * r.length)
+                if any(0 <= r.lo - a.hi <= reach for a in aligned) and any(
+                    0 <= a.lo - r.hi <= reach for a in aligned
+                ):
+                    keep.update(group)
     if len(keep) == len(walls) and not reconnected:
         return model, 0
     retained = [w for k, w in walls.items() if k in keep]
