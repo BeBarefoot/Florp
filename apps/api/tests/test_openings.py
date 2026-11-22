@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import pytest
 from app.ink_layers import wall_strips
 from app.openings import Box, Gap, _photo_end_gaps, _photo_mixed_returns, _rails, detect, enumerate_gaps
 from app.plan_reconstruct import reconstruct
@@ -56,7 +57,8 @@ def frame(*extra):
     ]
 
 
-def test_drawn_door_gives_gap_span_hinge_swing_and_hosts_on_gap_wall():
+@pytest.mark.parametrize("tone", [60, 222])
+def test_drawn_door_gives_gap_span_hinge_swing_and_hosts_on_gap_wall(tone):
     top = [wall(0, (80, 200), (250, 200)), wall(1, (330, 200), (400, 200))]
     walls = top + [
         wall(2, (330, 200), (330, 330)),
@@ -66,9 +68,9 @@ def test_drawn_door_gives_gap_span_hinge_swing_and_hosts_on_gap_wall():
 
     def draw(img):
         cv2.ellipse(
-            img, (250, 200), (80, 80), 0, 0, 90, (60, 60, 60), 1
+            img, (250, 200), (80, 80), 0, 0, 90, (tone, tone, tone), 1
         )  # arc from the closed to the open leaf
-        cv2.line(img, (250, 205), (250, 280), (60, 60, 60), 1)  # open leaf
+        cv2.line(img, (250, 205), (250, 280), (tone, tone, tone), 1)  # open leaf
 
     img, strips = scene(walls, draw)
     found = detect(img, [w for w in walls], strips)

@@ -147,6 +147,11 @@ def _line_ink(image, strips):
     line = gray < 0.8 * paper
     if strips.ink is not None:
         line |= strips.ink
+    if not strips.stats.get("coloured_walls"):
+        # Add only locally dark strokes. Uniform gray infill or shadows do
+        # not become window rails simply because they are darker than paper.
+        local = cv2.GaussianBlur(gray.astype(np.float32), (0, 0), 1.5)
+        line |= (gray < 0.95 * paper) & (local - gray >= 0.035 * paper)
     grown = (
         cv2.dilate(
             (strips.red | strips.blue | strips.dark).astype(np.uint8),
@@ -837,7 +842,7 @@ def detect(image, walls, strips, boxes=(), exterior=None, *, framed_site=False) 
                 continue
         kind, conf, door = None, 0.0, None
         if not photographic:
-            rails, rail_min = _rails(line, gap)
+            rails, rail_min = _rails(line, gap, reject_rungs=True)
         else:
             # A shelf or dimension stroke can end at two crosswalls and
             # look like glazing. Require a wall continuing along the gap.
