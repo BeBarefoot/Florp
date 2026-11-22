@@ -45,3 +45,19 @@ def test_unordered_pair_site_and_stair_review(client, monkeypatch, tmp_path):
     assert c.put(f'/projects/{other}/floor-pair',json=pair).status_code == 404
     assert name_level('second_floor.jpg') == 2
     assert name_level('קומת קרקע.png') == 1
+
+
+def test_faded_yard_around_patio_and_tinted_paper():
+    import numpy as np
+    from shapely.geometry import Point, Polygon
+    from app.gardens import detect_gardens
+
+    sheet = np.full((280, 700, 3), (224, 228, 226), np.uint8)
+    assert detect_gardens(sheet) == []
+    sheet[10:265, 8:152] = (204, 217, 212)
+    sheet[35:240, 48:142] = (206, 211, 228)
+    regions = detect_gardens(sheet)
+    assert len(regions) == 1
+    yard = Polygon(regions[0]['points'], regions[0]['holes'])
+    assert yard.contains(Point(20/700, 150/280))
+    assert not yard.contains(Point(90/700, 150/280))

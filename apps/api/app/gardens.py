@@ -1,6 +1,7 @@
 from typing import Annotated, Literal
 
 import cv2
+import numpy as np
 from shapely.geometry import Polygon
 from pydantic import BaseModel, Field, model_validator
 
@@ -32,6 +33,13 @@ def detect_gardens(image):
     h, w = image.shape[:2]
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     green = cv2.inRange(hsv, (31, 18, 45), (90, 255, 255))
+    # Detect pale green relative to the paper's own colour cast.
+    b,g,r = cv2.split(cv2.medianBlur(image, 3).astype(np.int16))
+    paper = hsv[:,:,2] >= np.percentile(hsv[:,:,2], 60)
+    gb, gr = g-b, g-r
+    pale = ((gb >= np.median(gb[paper])+5) & (gr >= np.median(gr[paper])+1)
+            & (hsv[:,:,0] >= 30) & (hsv[:,:,0] <= 85) & (hsv[:,:,2] >= 90))
+    green |= pale.astype(np.uint8)*255
     # Bridge narrow dimension lines crossing a continuous patch of lawn.
     radius = max(1, round(min(h, w) / 450))
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2*radius+1, 2*radius+1))
@@ -45,20 +53,26 @@ def detect_gardens(image):
         margin = min(x/w, y/h, (w-x-cw)/w, (h-y-ch)/h)
         if margin > .2 or cv2.contourArea(contour) < .008*w*h:
             continue
-        poly = cv2.approxPolyDP(contour, max(1., cv2.arcLength(contour, True)*.004), True)
-        if 3 <= len(poly) <= 256:
-            holes = []
-            child = hierarchy[0,i,2]
-            while child >= 0:
-                inside = contours[child]
-                if cv2.contourArea(inside) >= .0005*w*h:
-                    ring = cv2.approxPolyDP(inside, max(1., cv2.arcLength(inside, True)*.004), True)
-                    if 3 <= len(ring) <= 256:
-                        holes.append([(float(a)/w,float(b)/h) for a,b in ring[:,0]])
-                child = hierarchy[0,child,0]
-            if len(holes) > 128:
+        rings = []
+        child = hierarchy[0,i,2]
+        while child >= 0:
+            hole = contours[child]
+            if len(hole) >= 3 and cv2.contourArea(hole) >= .0005*w*h:
+                rings.append(hole[:,0])
+            child = hierarchy[0,child,0]
+        # Joint simplification keeps a patio hole inside the lawn outline.
+        area = Polygon(contour[:,0], rings)
+        if not area.is_valid:
+            area = area.buffer(0)
+        parts = area.geoms if area.geom_type == "MultiPolygon" else [area]
+        for part in parts:
+            if part.area < .008*w*h or part.area > .85*w*h:
                 continue
-            if not Polygon(poly[:,0], [[(x*w,y*h) for x,y in ring] for ring in holes]).is_valid:
-                continue
-            regions.append({'kind':'garden','holes':holes,'points':[(float(a)/w,float(b)/h) for a,b in poly[:,0]]})
-    return regions
+            shape = part.simplify(max(1., part.exterior.length*.003), preserve_topology=True)
+            def normalized(ring):
+                return [(x/w,y/h) for x,y in list(ring.coords)[:-1]]
+            points = normalized(shape.exterior)
+            holes = [normalized(ring) for ring in shape.interiors]
+            if len(points)<=256 and len(holes)<=128 and all(len(r)<=256 for r in holes):
+                regions.append({'kind':'garden','points':points,'holes':holes})
+    return regions[:12]
