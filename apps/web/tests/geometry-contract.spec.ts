@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import type {PlanModel} from '../lib/plan/model';
-import {withDerived,metersPerPixel} from '../lib/plan/derive';
+import {withDerived,metersPerPixel,wallFootprint} from '../lib/plan/derive';
 import {wallPieces} from '../lib/plan/mesh';
 import {moveNode,deleteWall,addWall} from '../lib/plan/ops';
 const cases=JSON.parse(readFileSync(resolve(process.cwd(),'../../tests/fixtures/geometry-contract.json'),'utf8')) as {name:string;model:PlanModel;expectedAreasPx2:number[];expectedBoundsPx:number[][]}[];
@@ -34,4 +34,11 @@ test('room adjustments retain unambiguous semantics and flag merge/split',()=>{
  expect(split.rooms).toHaveLength(3);
  expect(split.rooms.filter(r=>r.needsSemanticReview)).toHaveLength(2);
  expect(m.rooms[0].label).toBe('Bedroom');
+});
+
+test('scale check detects a compressed footprint and respects recalibration',()=>{
+ const model=cases[0].model;
+ expect(wallFootprint(model,null)).toBeNull();
+ expect(wallFootprint(model,.001)?.unusuallySmall).toBe(true);
+ expect(wallFootprint(model,.05)?.unusuallySmall).toBe(false);
 });

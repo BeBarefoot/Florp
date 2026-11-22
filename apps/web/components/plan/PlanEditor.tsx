@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { API, request, type Blueprint } from "../../lib/api";
 import type { Finding, PlanModel, PlanResponse, Pt } from "../../lib/plan/model";
-import { metersPerPixel, withDerived } from "../../lib/plan/derive";
+import { metersPerPixel, wallFootprint, withDerived } from "../../lib/plan/derive";
 import { deleteOpening, deleteWall, decideOpening, setReference } from "../../lib/plan/ops";
 import {regionArea} from "../SiteOutline";
 import PlanCanvas from "./PlanCanvas";
@@ -317,6 +317,7 @@ export default function PlanEditor({ id }: { id: string }) {
     );
   const m = model;
   const mpp = metersPerPixel(m);
+  const footprint = wallFootprint(m, mpp);
   const proposals = m.openings.filter((o) => o.status === "proposed").length;
   const exportBlocker = !mpp
     ? "Set one measurement first."
@@ -420,6 +421,7 @@ export default function PlanEditor({ id }: { id: string }) {
       {({ toScreen }) =>
         tool === "measure" && measure.length === 2 ? (
           <MeasurePopover
+            model={m}
             points={measure}
             toScreen={toScreen}
             pixelsPerMeterNow={mpp ? 1 / mpp : null}
@@ -501,7 +503,11 @@ export default function PlanEditor({ id }: { id: string }) {
           savePlan={async () => live.current && await persist(live.current) ? live.current : null} />}
       </main>
       <Inspector
-        reviewPanel={<><button disabled={busy} onClick={()=>void detectYard()}>Detect yard</button>{info?.floor&&<section className="fe-section">
+        reviewPanel={<>{footprint?.unusuallySmall && <section className="fe-card fe-accent">
+          <h3>Check the plan scale</h3>
+          <p>The building spans {footprint.width.toFixed(2)} × {footprint.depth.toFixed(2)} m. Its walls are taller than either distance.</p>
+          <button onClick={() => { setDisplay("2d"); setMeasure([]); setTool("measure"); }}>Measure a known distance</button>
+        </section>}<button disabled={busy} onClick={()=>void detectYard()}>Detect yard</button>{info?.floor&&<section className="fe-section">
           <h3>{info.floor.level===1?"First floor":"Second floor"}</h3>
           <label><input type="checkbox" checked={showSite} onChange={e=>setShowSite(e.target.checked)}/> Garden and stair outlines</label>
           {info.floor.regions.filter(r=>r.kind==="garden").map((r,i)=><p key={i}>Garden {i+1} · {mpp?

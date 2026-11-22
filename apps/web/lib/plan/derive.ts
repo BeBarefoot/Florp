@@ -52,6 +52,24 @@ export function metersPerPixel(m: PlanModel): number | null {
   const px = Math.hypot(r.p2.x - r.p1.x, r.p2.y - r.p1.y);
   return px >= 5 ? r.lengthMeters / px : null;
 }
+/** Scale check using wall centre lines, excluding gardens and unused nodes. */
+export function wallFootprint(m: PlanModel, scale: number | null) {
+  if (!scale || !Number.isFinite(scale) || !m.walls.length) return null;
+  const nodes = nodeMap(m);
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  let lowestWall = Infinity;
+  for (const wall of m.walls) {
+    for (const p of wallEnds(m, wall, nodes)) {
+      left = Math.min(left, p.x);
+      right = Math.max(right, p.x);
+      top = Math.min(top, p.y);
+      bottom = Math.max(bottom, p.y);
+    }
+    lowestWall = Math.min(lowestWall, wall.heightM);
+  }
+  const width = (right - left) * scale, depth = (bottom - top) * scale;
+  return { width, depth, unusuallySmall: width > 0 && depth > 0 && Math.max(width, depth) < lowestWall };
+}
 export const toM = (m: PlanModel, px: number) => {
   const s = metersPerPixel(m);
   return s ? px * s : null;
