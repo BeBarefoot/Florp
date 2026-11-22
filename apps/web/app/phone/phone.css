@@ -53,3 +53,9 @@
 .showcase-player[data-immersive=true] .show-top{right:16px}
 
 .show-edit{display:inline-flex;align-items:center;min-height:44px;text-decoration:underline;font-size:14px}
+
+.show-stage{min-width:0;min-height:0;position:relative}
+.show-movement{position:absolute;left:16px;bottom:16px;display:grid;grid-template-columns:repeat(3,44px);gap:4px;z-index:3;touch-action:none}
+.show-movement button{min-width:44px;min-height:44px;padding:0;background:#21342bf0;color:white;border-radius:12px;font-size:20px;touch-action:none;user-select:none}
+.show-movement button:first-child{grid-column:2}
+.show-movement button:nth-child(2){grid-column:1}

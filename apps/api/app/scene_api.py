@@ -330,8 +330,30 @@ async def submit(bid: str, request: Request):
 @router.get("/scene/renders")
 def jobs(bid: str):
     with Session(get_engine()) as s:
-        return [public(j) for j in s.exec(select(SceneRenderJob).where(SceneRenderJob.blueprint_id == bid)
-                                        .order_by(SceneRenderJob.created_at.desc()).limit(100)).all()]
+        rows = s.exec(select(SceneRenderJob).where(SceneRenderJob.blueprint_id == bid)
+                      .order_by(SceneRenderJob.created_at.desc()).limit(100)).all()
+        result = [public(job) for job in rows]
+        scene = current(s, bid)
+        if not scene:
+            return result
+        older_revisions = {job.scene_revision for job in rows if job.status == "complete"
+                           and job.plan_revision == scene.plan_revision and job.scene_revision != scene.revision}
+        if not older_revisions:
+            return result
+        older = {row.revision: row.config for row in s.exec(select(SceneRevision).where(
+            SceneRevision.blueprint_id == bid, SceneRevision.revision.in_(older_revisions)
+        )).all()}
+        current_settings = {key: value for key, value in scene.config.items() if key != "views"}
+        current_views = {view["id"]: view for view in scene.config.get("views", [])}
+        for job, item in zip(rows, result):
+            config = older.get(job.scene_revision)
+            if (job.status != "complete" or job.plan_revision != scene.plan_revision or config is None
+                    or current_settings != {key: value for key, value in config.items() if key != "views"}):
+                continue
+            if any(view["id"] == job.view_id and view == current_views.get(job.view_id)
+                   for view in config.get("views", [])):
+                item["compatibleSceneRevision"] = scene.revision
+        return result
 
 
 @router.get("/scene/renders/{job_id}")

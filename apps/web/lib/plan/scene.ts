@@ -17,7 +17,7 @@ export type Scene = { floorFinish?: FloorFinish; views: View[]; objects: Item[];
 export type Saved = { revision: number; planRevision: number | null; config: Scene };
 export type Frame = { width: number; height: number; configured: boolean; model: string; provider: string };
 export type Job = { id: string; viewId: string; name: string; prompt: string; model: string;
-  sceneRevision: number; planRevision: number; status: string; error: string | null };
+  sceneRevision: number; compatibleSceneRevision?: number; planRevision: number; status: string; error: string | null };
 export type VisibleRegion = { pixels:number; boundsXY:[number,number,number,number]; depthMm:[number,number] };
 export type Capture = { preview: string; depth: string; mask: string; coverage: Record<number, number>; visibleRegions:Record<number,VisibleRegion>; fingerprint: string };
 

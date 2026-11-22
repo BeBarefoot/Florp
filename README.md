@@ -20,6 +20,8 @@ To update, stop Florp, run `git pull --ff-only` from a clean local `main` checko
 
 ## Run and install the smartphone app
 
+From the web plan editor, select **Phone walkthrough** to save pending plan edits and open the tour directly. In **Overview**, tap an open floor spot to land there, or select **Add view** and tap the floor once to land and save that spot as a tour stop. In the walkthrough, use the on-screen arrows or WASD to move forward, backward and sideways. Drag to turn and walk. Hold Shift or an on-screen arrow while dragging to look up or down. Pinch or scroll to zoom. Open doors connect walkable rooms. Use **Save this view** to save your current position, heading and zoom. Sample and approximate-scale tours keep new stops for the current session only. If an older saved scene belongs to a previous plan revision, update it in the editor before saving new stops permanently.
+
 For an AI still of your current walkthrough view, stop moving and select **Download view image** and **Download view prompt**. Upload the PNG and text together to your image generator. The prompt describes the camera pose, framing, room boundaries, wall and opening dimensions, stairs and placed objects in model coordinates. Calibrate the plan against a known measurement for real-world dimensions. A tour marked **Approximate scale** uses estimated distances.
 
 
@@ -168,5 +170,15 @@ access as the presenter. When no clear interior starting point is available, the
 Use **Hide tour controls** for an uninterrupted view. When a completed design
 render matches the camera and the saved scene and plan revisions, **Show saved
 design** displays that image. **Return to 3D** restores the interactive view.
+
+### Realistic 3D walkthroughs
+
+**Use Three.js (the existing phone renderer) for the tour and Blender for asset preparation and lighting.** Start with the calibrated Florp GLB as the architectural reference. Keep the plan graph in Florp as the source for room boundaries, doors, windows and navigation.
+
+1. Set the floor finish in Florp. For production materials, use physically based textures for timber, tile and paint, with colour, roughness and normal maps tiled at their real-world size. [Poly Haven textures](https://polyhaven.com/textures) · [ambientCG](https://ambientcg.com/)
+2. Prepare properly licensed furniture and bathroom fixtures in Blender. Use a bed, wardrobe, toilet and vanity as the first set. Set metre units and a floor-level origin, simplify geometry, and export each asset as glTF/GLB. In Florp, the next rendering change is to use these meshes for the existing object types, matching their saved footprint, rotation and height.
+3. Validate one room on a real phone. Bake static lighting in Blender, use environment lighting for reflections and compress textures with KTX2 and meshes with Meshopt before expanding the asset library. Load the scene and verify movement through its doors at eye level. [Blender glTF exporter](https://docs.blender.org/manual/en/latest/addons/import_export/scene_gltf2.html) · [glTF Transform](https://gltf-transform.dev/)
+
+This phone tour currently displays Florp's existing 3D materials and fixtures. AI-generated stills can be attached to individual stops. A consistent view while walking comes from the textured 3D scene.
 
 [Room presentation](docs/images/phone-showcase.png) · [Dollhouse with camera stops](docs/images/phone-dollhouse.png)

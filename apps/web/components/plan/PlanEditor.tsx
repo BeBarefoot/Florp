@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { API, request, type Blueprint } from "../../lib/api";
 import type { Finding, PlanModel, PlanResponse, Pt } from "../../lib/plan/model";
 import { metersPerPixel, wallFootprint, withDerived } from "../../lib/plan/derive";
@@ -17,6 +18,7 @@ import type { Focus, Selection, Tool, ViewMode } from "./types";
 const Plan3D = dynamic(() => import("./Plan3D"), { ssr: false });
 
 export default function PlanEditor({ id }: { id: string }) {
+  const router = useRouter();
   const [showSite,setShowSite]=useState(true);
   const [info, setInfo] = useState<Blueprint | null>(null);
   const [model, setModel] = useState<PlanModel | null>(null);
@@ -452,6 +454,13 @@ export default function PlanEditor({ id }: { id: string }) {
           else void alignWalls(next);
         }}
         scaled={!!mpp}
+        walkthroughBusy={busy}
+        onWalkthrough={() => void (async () => {
+          if (saveDone.current) await saveDone.current;
+          const current = live.current;
+          if (!current || (JSON.stringify(current) !== saved.current && !await persist(current))) return;
+          router.push("/phone/showcase/" + encodeURIComponent(id) + "?from=editor");
+        })()}
         exportBlocker={exportBlocker}
         exportPlanHref={`${API}/blueprints/${id}/plan/export`}
         export3D={() => void (async () => {
@@ -479,7 +488,6 @@ export default function PlanEditor({ id }: { id: string }) {
         onReextract={() => void extract(revision.current, true)}
       />
       <main className="fe-stage">
-        {mpp&&<a className="phone-return" href={"/phone/"+id}>Open phone walkthrough</a>}
         {error && (
           <div className="fe-error" role="alert">
             <span>{error}</span>
