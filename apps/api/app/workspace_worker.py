@@ -90,6 +90,19 @@ def _detector_boxes(path, w, h):
         return [], False
 
 
+def recover_notched_crop(polygon, region, structural_ink, wall_width):
+    """Keep long source-supported faces lost inside an inferred crop's notches."""
+    hull = cv2.convexHull(np.rint(polygon).astype(np.int32)).reshape(-1, 2)
+    filled = np.zeros(region.shape, np.uint8)
+    cv2.fillPoly(filled, [hull], 1)
+    missing = ((filled > 0) & ~region & structural_ink).astype(np.uint8)
+    length = max(12, round(4*wall_width))
+    for size in ((1,length), (length,1)):
+        if cv2.morphologyEx(missing, cv2.MORPH_OPEN, np.ones(size,np.uint8)).any():
+            return [tuple(map(float,p)) for p in hull], filled.astype(bool) | region
+    return polygon, region
+
+
 def build(path, roi=None, *, plan_id=None):
     image = decode(Path(path).read_bytes())
     h, w = image.shape[:2]
@@ -115,6 +128,8 @@ def build(path, roi=None, *, plan_id=None):
         env_mask = mask_from_polygon(polygon, image.shape)
     else:
         polygon, env_mask = building_envelope(strips.mask, w_wall)
+        if polygon and stats.get("coloured_walls") and strips.boundary_mask is not None:
+            polygon, env_mask = recover_notched_crop(polygon, env_mask, strips.boundary_mask | strips.blue, w_wall)
     outside = strips.mask.astype(bool) & ~env_mask
     if outside.any():
         n, _, st, _ = cv2.connectedComponentsWithStats(outside.astype(np.uint8), connectivity=8)

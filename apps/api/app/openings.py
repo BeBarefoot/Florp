@@ -742,7 +742,7 @@ def detect(image, walls, strips, boxes=(), exterior=None) -> Result:
         # only used for the bounded fit with both jambs, leaf and arc.
         faint_stroke = (gray < 0.98 * paper) & (gray < local - 0.008 * paper)
         faint_door_ink = cv2.dilate(
-            (door_ink | faint_stroke).astype(np.uint8), np.ones((3, 3), np.uint8)
+            (door_ink | (faint_stroke & ~annotation & ~grown)).astype(np.uint8), np.ones((3, 3), np.uint8)
         ) > 0
     index = 0
     for gap in gaps:

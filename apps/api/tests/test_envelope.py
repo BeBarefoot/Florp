@@ -131,3 +131,13 @@ def test_automatic_envelope_does_not_cut_off_connected_wall_extension():
     assert region[220, 730]
     if polygon is None:
         assert region.all()
+
+
+def test_notched_crop_recovers_supported_facade_only():
+    from app.workspace_worker import recover_notched_crop
+    polygon = [(10,10),(40,10),(40,60),(90,60),(90,10),(130,10),(130,90),(10,90)]
+    region = mask_from_polygon(polygon, (110,160))
+    ink = np.zeros_like(region)
+    ink[20,55:80] = True
+    assert recover_notched_crop(polygon, region, ink, 4)[1][20,65]
+    assert not recover_notched_crop(polygon, region, ~region & False, 4)[1][20,65]
