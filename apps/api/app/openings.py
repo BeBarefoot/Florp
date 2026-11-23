@@ -777,6 +777,14 @@ def detect(image, walls, strips, boxes=(), exterior=None, *, framed_site=False) 
     line = _line_ink(image, strips)
     line_dil = cv2.dilate(line.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
     photographic = bool(strips.stats.get("coloured_walls") or strips.stats.get("paired_boundaries"))
+    pale_swing_ink = None
+    if not photographic and strips.stats.get("neutral_wall_bands"):
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.float32)
+        nearby = cv2.GaussianBlur(gray, (0, 0), 2)
+        # Pale swing strokes can fail the normal ink threshold after scanning.
+        # Use the extra ink only for validating an arc and leaf at a known gap.
+        strokes = (gray < nearby - 4) & ~(strips.mask > 0)
+        pale_swing_ink = cv2.dilate(strokes.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
     if photographic:
         gaps.extend(_photo_voids(walls, strips.structural_colour))
         gaps.extend(_photo_end_gaps(walls, (h, w)))
@@ -881,6 +889,8 @@ def detect(image, walls, strips, boxes=(), exterior=None, *, framed_site=False) 
             # times their thickness. Require arc/leaf evidence, not that ratio.
             if not photographic and width <= 20 * gap.t:
                 door = _door(line_dil, gap)
+                if door is None and pale_swing_ink is not None:
+                    door = _photo_door(line_dil | pale_swing_ink, gap)
             if door:
                 kind = "door"
                 conf = 0.5 + 0.3 * min(1.0, door[1]) + (0.1 if door[2] >= 0.6 else 0)

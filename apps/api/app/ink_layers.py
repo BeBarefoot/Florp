@@ -308,11 +308,32 @@ def _neutral_wall_bands(gray, paper, saturation, *, minimum_thickness=3):
     # Contrast is relative to nearby paper, so the same test works on a
     # white scan and a slightly shaded photo. Do not sharpen the wall mask:
     # halos around furniture and lettering can create false thick strokes.
+    # A wide filled wall can dominate the small paper estimator and disappear
+    # from its own center. Estimate paper across a wider cross-section here.
+    height, width = gray.shape
+    factor = min(1.0, 600 / max(height, width))
+    small = (
+        cv2.resize(gray, None, fx=factor, fy=factor, interpolation=cv2.INTER_AREA)
+        if factor < 1
+        else gray
+    )
+    reach = max(15, round(min(small.shape) * 0.10) | 1)
+    kernel = np.ones((reach, reach), np.uint8)
+    wide_paper = cv2.morphologyEx(small, cv2.MORPH_CLOSE, kernel)
+    if factor < 1:
+        wide_paper = cv2.resize(
+            wide_paper, (width, height), interpolation=cv2.INTER_LINEAR
+        )
+    paper = np.maximum(paper, wide_paper)
     fill = ((gray >= 105) & (gray <= 0.89 * paper) & (saturation < 22)).astype(np.uint8)
-    thickness = max(minimum_thickness, min(9, (round(min(gray.shape) / 190) | 1)))
+    thickness = max(minimum_thickness, min(9, (round(min(gray.shape) / 150) | 1)))
     length = max(25, 7 * thickness)
-    horizontal = cv2.morphologyEx(fill, cv2.MORPH_OPEN, np.ones((thickness, length), np.uint8))
-    vertical = cv2.morphologyEx(fill, cv2.MORPH_OPEN, np.ones((length, thickness), np.uint8))
+    horizontal = cv2.morphologyEx(
+        fill, cv2.MORPH_OPEN, np.ones((thickness, length), np.uint8)
+    )
+    vertical = cv2.morphologyEx(
+        fill, cv2.MORPH_OPEN, np.ones((length, thickness), np.uint8)
+    )
     # Require an orthogonal junction before recovering infill. Long gray
     # cabinet panels and grid rules alone are insufficient structural evidence.
     joined = horizontal | vertical
@@ -326,10 +347,10 @@ def _neutral_wall_bands(gray, paper, saturation, *, minimum_thickness=3):
         for bands, transpose in ((horizontal, False), (vertical.T, True)):
             keep = accepted.T if transpose else accepted
             ends = (keep & (bands > 0)).astype(np.uint8)
-            reach = max(length, min(round(bands.shape[1]*.22), 32*thickness))
-            kernel = np.ones((1,reach+1),np.uint8)
-            left = cv2.dilate(ends,kernel,anchor=(reach,0))
-            right = cv2.dilate(ends,kernel,anchor=(0,0))
+            reach = max(length, min(round(bands.shape[1] * 0.22), 32 * thickness))
+            kernel = np.ones((1, reach + 1), np.uint8)
+            left = cv2.dilate(ends, kernel, anchor=(reach, 0))
+            right = cv2.dilate(ends, kernel, anchor=(0, 0))
             supported = (left & right & bands).astype(bool)
             # Restore only actual infill pixels; leave the flanking gaps open.
             keep |= supported
