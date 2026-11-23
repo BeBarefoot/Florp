@@ -1,7 +1,6 @@
 # Florp architecture — implementation audit
 
-Audited 7 November 2026 against main after PR #52 (`85d5f31`). This describes
-implemented behavior, not measured architectural accuracy or production readiness.
+Updated 23 November 2026. This describes implemented behavior. Measured accuracy and production readiness are tracked as release gates.
 The delivery contract is [the production POC plan](PRODUCTION_POC_PLAN.md), covering
 [issue #1](https://github.com/BeBarefoot/Florp/issues/1).
 
@@ -9,7 +8,7 @@ The delivery contract is [the production POC plan](PRODUCTION_POC_PLAN.md), cove
 
 ```mermaid
 flowchart LR
-  U[PNG / JPG / first PDF page] --> B[Blueprint original + preview on disk]
+  U[PNG / JPEG / WebP / first PDF page] --> B[Blueprint original + preview on disk]
   B --> W[Local extraction subprocess]
   W --> P[PlanModel v2 / PlanRevision]
   P --> E[SVG editor: shared nodes, walls, hosted openings]
@@ -34,6 +33,7 @@ not a deployed multi-tenant service. Never expose its current API publicly as-is
 
 | Concern | Current implementation and contract |
 |---|---|
+| Phone walkthrough | `/phone` opens the library and tour. `/plan/[id]` handles geometry edits and calibration. The tour can route to a guided floor-zone and camera setup when there are no closed rooms. |
 | User workspace | `/blueprint/[id]` re-exports `/plan/[id]`; both use `PlanEditor`. `/blueprint/[id]/legacy` remains separate. |
 | Architecture | `app/plan_model.py`: PlanModel v2, image-space shared nodes, wall edges/thickness, wall-hosted openings, derived rooms, stairs, optional outline and room zones. |
 | Metric scale | A confirmed reference derives meters per pixel. Without a reference the model clears metric scale. Heights/sills can still be editable assumptions; calibration does not verify architecture. |
@@ -51,11 +51,7 @@ For a local selected-object edit, the API resolves the object ID in the submitte
 
 ## Verified evidence and limits
 
-PR #52 passed GitHub backend, frontend build/typecheck and browser workflow.
-Local evidence on that change: 405 Python tests passed, 1 skipped; 34 browser
-tests passed. These are engineering regressions, largely synthetic/mocked.
-They do not establish accuracy on held-out full plans, physical measurement
-fidelity, image provider account availability or generated-image consistency.
+Automated tests cover synthetic geometry, extraction regressions and mocked providers. Held-out plan accuracy, physical-device performance and live provider output remain separate validation tasks.
 
 The shared graph, derived rooms, revisions and render pipeline are implemented.
 Do not describe them as absent. `PlanReview` stores append-only user acceptance
