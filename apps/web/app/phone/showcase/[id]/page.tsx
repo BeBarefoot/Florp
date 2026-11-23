@@ -37,10 +37,8 @@ const Player=dynamic(()=>import("../../../../components/plan/Showcase"),{ssr:fal
 export default function ShowcasePage(){
   const {id}=useParams<{id:string}>();
   const [data,setData]=useState<[PlanResponse,Saved,Blueprint]|null>(null),[error,setError]=useState("");
-  const [fromEditor,setFromEditor]=useState(false);
   const [renders,setRenders]=useState<Record<string,string>>({});
   useEffect(()=>{
-    setFromEditor(new URLSearchParams(location.search).get("from")==="editor");
     setError("");setData(null);setRenders({});
     if(id==="sample")return;
     let live=true;
@@ -67,14 +65,14 @@ export default function ShowcasePage(){
   },[data,id]);
   const original=data?.[0].model;
   const plan=useMemo(()=>original?previewScale(original):null,[original]);
-  if(id==="sample")return <Player plan={samplePlan} scene={sampleScene} title="Courtyard apartment" back="/phone" sample/>;
+  if(id==="sample")return <Player plan={samplePlan} scene={sampleScene} title="Courtyard apartment" sample/>;
   const back=data?.[2].project_id?"/phone/spaces/"+data[2].project_id:"/phone";
   if(data&&data[2].id===id&&plan&&metersPerPixel(plan)&&plan.walls.length){
     const approximate=plan!==original;
     const currentScene=!approximate&&data[1].planRevision===plan.revision;
     return <Player key={id} plan={plan} scene={currentScene?data[1].config:emptyScene}
       approximate={approximate} renders={currentScene?renders:undefined} title={data[2].filename}
-      back={fromEditor?"/plan/"+id:back} edit={"/plan/"+id}
+      edit={"/plan/"+id}
       saveView={!approximate&&(!data[1].revision||currentScene)?async (view,initial)=>{
         const path="/blueprints/"+encodeURIComponent(id)+"/scene";
         const latest=await request<Saved>(path);

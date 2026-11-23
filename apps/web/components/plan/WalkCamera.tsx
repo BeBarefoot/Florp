@@ -5,18 +5,13 @@ import type { Pt } from "../../lib/plan/model";
 import type { Frame, View } from "../../lib/plan/scene";
 import { makeCamera } from "./SceneMesh";
 
-export type WalkInput = {
-  direction: {current: {forward:number;side:number}};
-  wake: {current: (()=>void)|null};
-};
-
 const movementKeys = new Map([
   ["w",[1,0]], ["arrowup",[1,0]], ["s",[-1,0]], ["arrowdown",[-1,0]],
   ["a",[0,-1]], ["arrowleft",[0,-1]], ["d",[0,1]], ["arrowright",[0,1]],
 ]);
 
-export function WalkCamera({view, scale, frame, canMove, pose, input}: {
-  input?: WalkInput;
+export function WalkCamera({view, scale, frame, canMove, pose, keyboard}: {
+  keyboard?: boolean;
   pose: {current: View|null}; view: View; scale: number; frame: Frame; canMove: (p: Pt) => boolean;
 }) {
   const camera = useMemo(() => makeCamera(view, scale, frame), [view, scale, frame]);
@@ -65,8 +60,7 @@ export function WalkCamera({view, scale, frame, canMove, pose, input}: {
     let animation=0, last=0;
     function tick(now:number){
       animation=0;
-      if(!input)return;
-      let {forward,side}=input.direction.current;
+      let forward=0, side=0;
       for(const key of keys){
         const [f,s]=movementKeys.get(key)!;
         forward+=f;side+=s;
@@ -92,10 +86,8 @@ export function WalkCamera({view, scale, frame, canMove, pose, input}: {
     function keyUp(event:KeyboardEvent){keys.delete(event.key.toLowerCase());wake();}
     function release(){
       keys.clear();
-      if(input)input.direction.current={forward:0,side:0};
     }
-    if(input){
-      input.wake.current=wake;
+    if(keyboard){
       window.addEventListener("keydown",keyDown);
       window.addEventListener("keyup",keyUp);
       window.addEventListener("blur",release);
@@ -121,7 +113,7 @@ export function WalkCamera({view, scale, frame, canMove, pose, input}: {
       }
       yaw += (after.x - before.x) * .007;
       const vertical = before.y - after.y;
-      const looking = input && (event.shiftKey || input.direction.current.forward || input.direction.current.side);
+      const looking = keyboard && event.shiftKey;
       if (looking) pitch = MathUtils.clamp(pitch + vertical * .006, MathUtils.degToRad(-45), MathUtils.degToRad(30));
       else step(MathUtils.clamp(vertical * .012, -.6, .6),0);
       const headingX = Math.cos(yaw), headingZ = Math.sin(yaw);
@@ -151,7 +143,6 @@ export function WalkCamera({view, scale, frame, canMove, pose, input}: {
     return () => {
       cancelAnimationFrame(animation);
       release();
-      if(input)input.wake.current=null;
       window.removeEventListener("keydown",keyDown);
       window.removeEventListener("keyup",keyUp);
       window.removeEventListener("blur",release);
@@ -164,6 +155,6 @@ export function WalkCamera({view, scale, frame, canMove, pose, input}: {
       pointers.forEach((_, id) => { if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id); });
       set({camera: previous});
     };
-  }, [camera, get, gl, input, invalidate, pose, scale, set, view]);
+  }, [camera, get, gl, keyboard, invalidate, pose, scale, set, view]);
   return null;
 }

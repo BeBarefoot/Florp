@@ -50,32 +50,46 @@
 .tour-create button[type=button],.tour-upload label:not(.tour-primary){background:var(--paper);color:var(--pine);border:1px solid var(--line)}
 
 .tour-shell:has(.showcase-player) .tour-mast{display:none}
-.tour-shell .showcase-player{position:relative;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto;width:100%;height:100dvh;max-width:none;margin:0;padding:0;background:#d8d9cb}
-.showcase-player canvas{touch-action:none}.show-top{position:absolute;top:max(16px,env(safe-area-inset-top));left:16px;right:16px;display:flex;justify-content:space-between;pointer-events:none;z-index:4}
-.show-top a,.show-top button{display:inline-flex;align-items:center;gap:8px;padding:10px 15px;background:var(--pine);color:white;border-radius:30px;pointer-events:auto;min-height:44px}
-.show-panel{display:flex;flex-direction:column;align-items:stretch;gap:12px;position:relative;z-index:3;padding:20px max(16px,calc((100vw - 800px)/2)) max(14px,env(safe-area-inset-bottom));background:var(--surface);border-radius:22px 22px 0 0;box-shadow:0 -6px 24px #28352812;max-height:48dvh;overflow:auto}
-.show-panel> *{flex-shrink:0}
-.show-heading{overflow-wrap:anywhere}.show-panel small{color:var(--muted)}.show-panel h1{font:normal clamp(26px,4vw,44px)/1.05 Georgia,serif;margin:4px 0}.show-panel p{margin:0;overflow-wrap:anywhere}
-.show-stops,.show-transport{display:flex;align-items:center;gap:8px}.show-stops{overflow-x:auto;padding:4px 0}
-.show-stops button,.show-transport button{display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
-.show-stops button{background:var(--paper);color:var(--pine)}.show-stops button[aria-pressed=true]{background:var(--pine);color:white}
-.show-transport button:first-child{margin-right:auto}.showcase-player .show-pin{border:2px solid white;border-radius:50%;min-width:44px;padding:6px;box-shadow:0 2px 8px #26382d55}
-@media(orientation:landscape) and (max-height:520px){.tour-shell .showcase-player{grid-template-columns:1fr 220px;grid-template-rows:100%}.show-panel{max-height:none;border-radius:0;padding:12px}.show-top{right:232px}.show-stops{flex-wrap:wrap}}
-.show-render{position:absolute;inset:0;grid-area:1/1;background:#1f3028;z-index:2}
+/* Keep the camera frame stable while the tour tools scroll independently. */
+.tour-shell .showcase-player{
+  position:relative;height:100dvh;width:100%;max-width:none;margin:0;padding:0;
+  overflow:hidden;background:#d8d9cb;
+}
+.show-stage,.show-render{position:absolute;inset:0}
+.show-stage canvas{touch-action:none}
+.show-render{background:var(--ink);z-index:2}
 .show-render img{width:100%;height:100%;object-fit:contain}
-
-.show-tools{display:flex;gap:8px}.showcase-player[data-immersive=true] .show-panel{display:none}
-.tour-shell .showcase-player[data-immersive=true]{grid-template:100%/100%}
-.showcase-player[data-immersive=true] .show-top{right:16px}
-
-.show-edit{display:inline-flex;align-items:center;min-height:44px;text-decoration:underline;font-size:14px}
-
-.show-stage{min-width:0;min-height:0;position:relative}
-.show-movement{position:absolute;left:16px;bottom:16px;display:grid;grid-template-columns:repeat(3,44px);gap:8px;z-index:3;touch-action:none}
-.show-movement button{min-width:44px;min-height:44px;padding:0;background:var(--pine);color:white;border-radius:12px;font-size:20px;touch-action:none;user-select:none}
-.show-movement button:first-child{grid-column:2}
-.show-movement button:nth-child(2){grid-column:1}
-
+.show-panel{
+  position:absolute;z-index:3;
+  inset:auto max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));
+  display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:8px 12px;
+  pointer-events:none;
+}
+.show-heading,.show-panel [role=status],.show-list{
+  color:var(--ink);background:var(--surface);border:1px solid var(--line);
+  border-radius:16px;box-shadow:0 3px 16px #282d291a;
+}
+.show-heading{grid-column:1;grid-row:2;width:fit-content;max-width:24rem;padding:10px 14px;overflow-wrap:anywhere}
+.show-heading small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12px}
+.show-heading h1{font:normal 24px/1.15 Georgia,serif;margin:2px 0}
+.show-heading p,.show-panel [role=status]{font-size:13px;line-height:1.4;margin:0}
+.show-panel [role=status]{grid-column:1;grid-row:1;align-self:start;padding:8px 12px}
+.show-list{
+  grid-column:2;grid-row:1 / span 2;pointer-events:auto;
+  width:96px;max-height:min(34dvh,268px);overflow-y:auto;overflow-x:hidden;
+  overscroll-behavior:contain;touch-action:pan-y;scrollbar-width:thin;
+  display:flex;flex-direction:column;gap:4px;padding:5px;
+}
+.show-list :is(button,a){
+  flex:none;display:grid;place-items:center;align-content:center;gap:3px;
+  width:100%;min-height:48px;padding:6px 3px;background:transparent;color:var(--pine);
+  border-radius:10px;text-align:center;font:600 11px/1.2 system-ui,sans-serif;overflow-wrap:anywhere;
+}
+.show-list svg{width:20px;height:20px;stroke-width:1.75}
+.show-list [aria-pressed=true]{background:var(--pine);color:var(--surface)}
+.show-list :focus-visible{outline-offset:-3px}
+@media (hover:hover){.show-list :is(button,a):not(:disabled):not([aria-pressed=true]):hover{background:var(--paper)}}
+.showcase-player .show-pin{border:2px solid white;border-radius:50%;min-width:44px;padding:6px;box-shadow:0 2px 8px #26382d55}
 .show-room-tag {
   display: block;
   padding: .15rem .48rem;
@@ -88,25 +102,3 @@
 }
 
 .show-room-label { pointer-events: none; }
-
-.show-actions,.show-downloads{
-  display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(min(100%,130px),1fr));
-  gap:8px;
-}
-.show-actions:empty{display:none}
-.show-downloads{border-top:1px solid var(--line);padding-top:12px}
-.show-downloads button,.show-actions .show-edit{
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding:8px 12px;
-  border:1px solid var(--line);
-  border-radius:12px;
-  background:var(--surface);
-  color:var(--pine);
-  text-decoration:none;
-  font:600 14px/1.3 system-ui,sans-serif;
-}
-.show-tools button{width:44px;justify-content:center;padding:0}
-.show-stops button{flex-shrink:0}

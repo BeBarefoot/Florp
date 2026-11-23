@@ -36,6 +36,6 @@ for (const width of [390,1280]) {
     await expect(page.getByText(/Approximate scale/)).toBeVisible();
     await page.getByRole("button",{name:"Overview"}).click();
     await expect(page.locator(".show-room-tag").filter({hasText:"Bedroom"})).toBeVisible();
-    await expect(page.getByRole("link",{name:"Exit tour"})).toHaveAttribute("href","/phone/spaces/s");
+    await expect(page.getByRole("link",{name:"Exit tour"})).toHaveCount(0);
   });
 }

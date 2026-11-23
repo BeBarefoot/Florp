@@ -5,11 +5,11 @@ import {Canvas,useThree} from "@react-three/fiber";
 import {Html,OrbitControls} from "@react-three/drei";
 import {Vector3} from "three";
 import Link from "next/link";
-import {ArrowLeft,Maximize2,Minimize2,Box,ChevronLeft,ChevronRight,MapPin,Pause,Play,Share2} from "lucide-react";
+import {Maximize2,Minimize2,Box,MapPin,Pause,Play,SkipBack,SkipForward,Image as ImageIcon,FileDown,ImageDown,Bookmark,MapPinPlus,X,PencilRuler} from "lucide-react";
 import {downloadPrompt,renderPrompt} from "../../lib/plan/renderPrompt";
 import {SceneMesh} from "./SceneMesh";
 import {metersPerPixel} from "../../lib/plan/derive";
-import {WalkCamera,type WalkInput} from "./WalkCamera";
+import {WalkCamera} from "./WalkCamera";
 import {findWalkStart,roomsOf,walkSpace} from "../../lib/plan/walkSpace";
 import {FloorPicker} from "./FloorPicker";
 import {newUuid} from "../../lib/uuid";
@@ -76,8 +76,8 @@ function clearSampleFloor(p:Pt,scale:number){
     .some(([a,b,c,d])=>p.x*scale>=a&&p.x*scale<=c&&p.y*scale>=b&&p.y*scale<=d);
 }
 
-function ShowcaseWalk({plan,scene,view,sample,pose,onFrame,input}:{
-  input?:WalkInput;plan:PlanModel;scene:Scene;view:View;sample:boolean;pose:{current:View|null};onFrame:(frame:WalkFrame|null)=>void;
+function ShowcaseWalk({plan,scene,view,sample,pose,onFrame,keyboard}:{
+  keyboard:boolean;plan:PlanModel;scene:Scene;view:View;sample:boolean;pose:{current:View|null};onFrame:(frame:WalkFrame|null)=>void;
 }){
   const {size,gl,get}=useThree();
   useEffect(()=>{
@@ -94,12 +94,12 @@ function ShowcaseWalk({plan,scene,view,sample,pose,onFrame,input}:{
   const scale=metersPerPixel(plan)!;
   const space=useMemo(()=>walkSpace(plan,scale,scene,view.eyeHeight),[plan,scene,scale,view.eyeHeight]);
   const frame=useMemo<Frame>(()=>({width:size.width,height:Math.max(1,size.height),configured:false,model:"",provider:""}),[size.width,size.height]);
-  return <WalkCamera view={view} scale={scale} frame={frame} pose={pose} input={input}
+  return <WalkCamera view={view} scale={scale} frame={frame} pose={pose} keyboard={keyboard}
     canMove={p=>space.validCamera(p,true)&&(!sample||clearSampleFloor(p,scale))}/>;
 
 }
 
-export default function Showcase({plan,scene,title,back,edit,sample=false,approximate=false,renders={},saveView}:{plan:PlanModel;scene:Scene;title:string;back:string;edit?:string;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View,initial?:View)=>Promise<View>}){
+export default function Showcase({plan,scene,title,edit,sample=false,approximate=false,renders={},saveView}:{plan:PlanModel;scene:Scene;title:string;edit?:string;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View,initial?:View)=>Promise<View>}){
   const [localViews,setLocalViews]=useState<View[]>([]);
   const [freeView,setFreeView]=useState<View|null>(null);
   const [adding,setAdding]=useState(false);
@@ -130,9 +130,6 @@ export default function Showcase({plan,scene,title,back,edit,sample=false,approx
   },[views,scale]);
   const latestViews=useRef(views);
   useEffect(()=>{latestViews.current=views;},[views]);
-  const touchInput=useRef({forward:0,side:0});
-  const wake=useRef<(()=>void)|null>(null);
-  const input=useMemo(()=>({direction:touchInput,wake}),[]);
   const space=useMemo(()=>walkSpace(plan,scale,scene),[plan,scale,scene]);
   const pose=useRef<View|null>(null);
   const [viewport,setViewport]=useState<WalkFrame|null>(null);
@@ -182,19 +179,12 @@ export default function Showcase({plan,scene,title,back,edit,sample=false,approx
     if(adding)void addView(entry);
     else setFreeView(entry);
   },[adding,addView,space,sample,scale]);
-  async function share(){
-    const url=new URL(location.href);url.hash=view&&!freeView&&!localViews.some(v=>v.id===view.id)?new URLSearchParams({view:view.id}).toString():"overview";
-    try{
-      if(navigator.share)await navigator.share({title,url:url.href});
-      else {await navigator.clipboard.writeText(url.href);setNotice("Tour link copied");}
-    }catch(e){if(!(e instanceof Error&&e.name==="AbortError"))setNotice(url.href);}
-  }
   return <main className="showcase-player" data-immersive={immersive} aria-label="3D showcase">
     <div className="show-stage"><Canvas shadows frameloop="demand" dpr={[1,1.6]} camera={{near:.005,far:2000}} fallback={<p>Enable WebGL to view this tour.</p>}>
       <color attach="background" args={[sample&&view?"#cfdfdf":"#d8d9cb"]}/>
       <SceneMesh m={plan} objects={scene.objects} closedDoorIds={scene.closedDoorIds} floorFinish={scene.floorFinish} presentation cutaway={!view}/>
       {sample&&<SampleFurniture interior={!!view}/>}
-      {view?<ShowcaseWalk key={view.id} plan={plan} scene={scene} view={view} sample={sample} pose={pose} onFrame={setViewport} input={rendered?undefined:input}/>:<><OverviewCamera plan={plan}/><FloorPicker scale={scale} onPick={land}/></>}
+      {view?<ShowcaseWalk key={view.id} plan={plan} scene={scene} view={view} sample={sample} pose={pose} onFrame={setViewport} keyboard={!rendered}/>:<><OverviewCamera plan={plan}/><FloorPicker scale={scale} onPick={land}/></>}
       {!view&&tags.map(tag=><Html key={tag.key} center wrapperClass="show-room-label" style={{pointerEvents:"none"}}
         position={[tag.position.x*scale,.18,tag.position.y*scale]} zIndexRange={[1,0]}>
         <span className="show-room-tag">{tag.text}</span>
@@ -203,56 +193,55 @@ export default function Showcase({plan,scene,title,back,edit,sample=false,approx
         <div className="show-pin-group">{indices.map(i=><button key={views[i].id} className="show-pin" aria-label={"Visit "+views[i].name} onClick={()=>select(i)}>{i+1}</button>)}</div>
       </Html>)}
     </Canvas>
-    {view&&!rendered&&<div className="show-movement" role="group" aria-label="Walk controls">
-      {([["↑","Walk forward",1,0],["←","Step left",0,-1],["↓","Walk backward",-1,0],["→","Step right",0,1]] as const).map(([symbol,label,forward,side])=>
-        <button key={label} aria-label={label}
-          onPointerDown={e=>{
-            if(e.button!==0)return;
-            e.currentTarget.setPointerCapture(e.pointerId);touchInput.current={forward,side};wake.current?.();
-          }}
-          onLostPointerCapture={()=>{touchInput.current={forward:0,side:0};}}
-          onKeyDown={e=>{if(e.key===" "||e.key==="Enter"){e.preventDefault();touchInput.current={forward,side};wake.current?.();}}}
-          onKeyUp={e=>{if(e.key===" "||e.key==="Enter")touchInput.current={forward:0,side:0};}}
-          onBlur={()=>{touchInput.current={forward:0,side:0};}}
-        >{symbol}</button>)}
-    </div>}</div>
+    </div>
     {view&&rendered&&renders[view.id]&&<div className="show-render"><img src={renders[view.id]} alt={"Saved design render for "+view.name}/></div>}
-    <div className="show-top"><Link href={back}><ArrowLeft size={18}/> Exit tour</Link><div className="show-tools"><button aria-label={immersive?"Show tour controls":"Hide tour controls"} aria-pressed={immersive} onClick={()=>setImmersive(!immersive)}>{immersive?<Minimize2 size={18}/>:<Maximize2 size={18}/>}</button><button onClick={share} aria-label="Share this tour"><Share2 size={18}/></button></div></div>
-    <section className="show-panel"><div className="show-heading"><small>{sample?"Sample tour · ":""}{title}{approximate?" · Approximate scale":""}</small><h1>{view?.name??"Dollhouse view"}</h1>
-      <p>{view&&rendered&&renders[view.id]?"Saved design render":view?"Drag to turn and walk. Use the arrows or WASD to move. Pinch or scroll to zoom.":adding?(saveView?"Tap an open floor spot to save a view there.":"Tap an open floor spot to add a view for this session."):"Tap the floor to walk there. Drag to orbit."}</p></div>
-      {view&&renders[view.id]&&<button aria-pressed={rendered} onClick={()=>{setPlaying(false);setRendered(!rendered);}}>{rendered?"Return to 3D":"Show saved design"}</button>}
-      <div className="show-stops" aria-label="Tour stops">
-        <button aria-pressed={!view} onClick={()=>select(-1)}><Box size={15}/> Overview</button>
-        {views.map((v,i)=><button key={v.id} aria-pressed={!freeView&&stop===i} onClick={()=>select(i)}><MapPin size={14}/>{v.name}</button>)}
+    <section className="show-panel" aria-label="Tour controls">
+      <div className="show-heading" hidden={immersive}>
+        <small>{sample?"Sample tour · ":""}{title}{approximate?" · Approximate scale":""}</small>
+        <h1>{view?.name??"Dollhouse view"}</h1>
+        <p>{adding?"Tap an open spot to add a view.":rendered?"Saved design render":view?"Drag to walk and turn. Pinch or scroll to zoom.":"Tap the floor to walk there. Drag to orbit."}</p>
       </div>
-      {views.length>1&&<div className="show-transport">
-        <button onClick={()=>{setRendered(false);if(!playing&&stop===views.length-1)select(-1);setPlaying(!playing);}}>{playing?<Pause size={16}/>:<Play size={16}/>} {playing?"Pause":"Play tour"}</button>
-        <button aria-label="Previous stop" disabled={stop<0} onClick={()=>select(stop-1)}><ChevronLeft/></button>
-        <button aria-label="Next stop" disabled={stop>=views.length-1} onClick={()=>select(stop+1)}><ChevronRight/></button>
-      </div>}
-      <div className="show-actions">
-        {!view&&hasFloor&&<button aria-pressed={adding} disabled={saving} onClick={()=>{setPlaying(false);setNotice("");setAdding(!adding);}}>
-          {adding?"Cancel adding view":"Add view"}
-        </button>}
-        {view&&!rendered&&<button disabled={saving} onClick={()=>{
-          setPlaying(false);
-          if(pose.current?.id===view.id)void addView(pose.current);
-        }}>Save this view</button>}
-        {edit&&<Link className="show-edit" href={edit}>Edit floor</Link>}
+      <div className="show-list" role="group" aria-label="Tour actions">
+        <button aria-label={immersive?"Show tour controls":"Hide tour controls"} aria-pressed={immersive}
+          onClick={()=>setImmersive(!immersive)}>
+          {immersive?<Minimize2/>:<Maximize2/>}<span>{immersive?"Show controls":"Expand view"}</span>
+        </button>
+        {!immersive&&<>
+          <button aria-pressed={!view} onClick={()=>select(-1)}><Box/>Overview</button>
+          {views.map((v,i)=><button key={v.id} aria-pressed={!freeView&&stop===i} onClick={()=>select(i)}><MapPin/>{v.name}</button>)}
+          {view&&renders[view.id]&&<button aria-pressed={rendered} onClick={()=>{setPlaying(false);setRendered(!rendered);}}>
+            {rendered?<Box/>:<ImageIcon/>}{rendered?"Return to 3D":"Show saved design"}
+          </button>}
+          {views.length>1&&<>
+            <button onClick={()=>{setRendered(false);if(!playing&&stop===views.length-1)select(-1);setPlaying(!playing);}}>
+              {playing?<Pause/>:<Play/>}{playing?"Pause":"Play tour"}
+            </button>
+            <button disabled={stop<0} onClick={()=>select(stop-1)}><SkipBack/>Previous stop</button>
+            <button disabled={stop>=views.length-1} onClick={()=>select(stop+1)}><SkipForward/>Next stop</button>
+          </>}
+          {!view&&hasFloor&&<button aria-pressed={adding} disabled={saving} onClick={()=>{setPlaying(false);setNotice("");setAdding(!adding);}}>
+            {adding?<X/>:<MapPinPlus/>}{adding?"Cancel adding view":"Add view"}
+          </button>}
+          {view&&!rendered&&<button disabled={saving} onClick={()=>{
+            setPlaying(false);
+            if(pose.current?.id===view.id)void addView(pose.current);
+          }}><Bookmark/>Save this view</button>}
+          {edit&&<Link href={edit}><PencilRuler/>Edit floor</Link>}
+          {view&&!rendered&&viewport?.viewId===view.id&&<>
+            <button onClick={()=>{
+              setPlaying(false);
+              if(pose.current?.id===view.id)downloadPrompt(renderPrompt(plan,scene,pose.current,viewport,[],approximate));
+            }}><FileDown/>Download view prompt</button>
+            <button onClick={()=>{
+              setPlaying(false);
+              const link=document.createElement("a");
+              link.href=viewport.image();link.download="florp-view.png";link.click();
+            }}><ImageDown/>Download view image</button>
+          </>}
+          {!hasFloor&&edit&&<Link href={edit+"?setup=floor"}><PencilRuler/>Mark a walkable floor in the editor</Link>}
+        </>}
       </div>
-      {view&&!rendered&&viewport?.viewId===view.id&&<div className="show-downloads">
-        <button onClick={()=>{
-          setPlaying(false);
-          if(pose.current?.id===view.id)downloadPrompt(renderPrompt(plan,scene,pose.current,viewport,[],approximate));
-        }}>Download view prompt</button>
-        <button onClick={()=>{
-          setPlaying(false);
-          const link=document.createElement("a");
-          link.href=viewport.image();link.download="florp-view.png";link.click();
-        }}>Download view image</button>
-      </div>}
-      {!hasFloor&&edit&&<p>No walkable floor was found. <Link href={edit+"?setup=floor"}>Mark a walkable floor in the editor</Link>.</p>}
-      {notice&&<p role="status">{notice}</p>}
+      {!immersive&&(!hasFloor||notice)&&<p role="status">{notice||"No walkable floor was found."}</p>}
     </section>
   </main>;
 }

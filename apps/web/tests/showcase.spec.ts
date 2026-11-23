@@ -95,7 +95,7 @@ test("dollhouse lands on the floor and saves a new view from one tap",async({pag
   await page.getByRole("button",{name:"Overview",exact:true}).click();
   const overview=page.getByRole("heading",{name:"Dollhouse view"});
   await expect(overview).toBeVisible();
-  await expect(page.getByRole("link",{name:"Exit tour"})).toHaveAttribute("href","/plan/f");
+  await expect(page.getByRole("link",{name:"Exit tour"})).toHaveCount(0);
   const canvas=page.locator("canvas");
   async function tapFloor(x:number,z:number){
     const box=(await canvas.boundingBox())!;
