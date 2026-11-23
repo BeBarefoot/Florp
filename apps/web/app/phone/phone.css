@@ -62,27 +62,27 @@
 .show-panel{
   position:absolute;z-index:3;
   inset:auto max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));
-  display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:8px 12px;
+  display:flex;flex-direction:column;align-items:stretch;gap:8px;
   pointer-events:none;
 }
 .show-heading,.show-panel [role=status],.show-list{
   color:var(--ink);background:var(--surface);border:1px solid var(--line);
   border-radius:16px;box-shadow:0 3px 16px #282d291a;
 }
-.show-heading{grid-column:1;grid-row:2;width:fit-content;max-width:24rem;padding:10px 14px;overflow-wrap:anywhere}
+.show-heading{width:fit-content;max-width:min(24rem,100%);padding:10px 14px;overflow-wrap:anywhere}
 .show-heading small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12px}
 .show-heading h1{font:normal 24px/1.15 Georgia,serif;margin:2px 0}
 .show-heading p,.show-panel [role=status]{font-size:13px;line-height:1.4;margin:0}
-.show-panel [role=status]{grid-column:1;grid-row:1;align-self:start;padding:8px 12px}
+.show-panel [role=status]{align-self:flex-start;padding:8px 12px}
 .show-list{
-  grid-column:2;grid-row:1 / span 2;pointer-events:auto;
-  width:96px;max-height:min(34dvh,268px);overflow-y:auto;overflow-x:hidden;
-  overscroll-behavior:contain;touch-action:pan-y;scrollbar-width:thin;
-  display:flex;flex-direction:column;gap:4px;padding:5px;
+  order:3;pointer-events:auto;
+  width:100%;overflow-x:auto;overflow-y:hidden;
+  overscroll-behavior-x:contain;touch-action:pan-x;scrollbar-width:thin;
+  display:flex;flex-direction:row;gap:4px;padding:5px;
 }
 .show-list :is(button,a){
-  flex:none;display:grid;place-items:center;align-content:center;gap:3px;
-  width:100%;min-height:48px;padding:6px 3px;background:transparent;color:var(--pine);
+  flex:0 0 82px;display:grid;place-items:center;align-content:center;gap:3px;
+  width:82px;min-height:56px;padding:6px 3px;background:transparent;color:var(--pine);
   border-radius:10px;text-align:center;font:600 11px/1.2 system-ui,sans-serif;overflow-wrap:anywhere;
 }
 .show-list svg{width:20px;height:20px;stroke-width:1.75}
