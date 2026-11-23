@@ -193,3 +193,37 @@ def normalize(image, options: Options):
             "warnings": notes,
         },
     )
+
+
+def sharpen_soft_scan(image):
+    """Measure edge spread at native resolution, then apply bounded unsharp masking."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    height, width = gray.shape
+    # Sample tiles instead of shrinking the drawing, which would change edge widths.
+    scores = []
+    for top in np.linspace(
+        0, max(0, height - 192), min(3, 1 + height // 192), dtype=int
+    ):
+        for left in np.linspace(
+            0, max(0, width - 192), min(3, 1 + width // 192), dtype=int
+        ):
+            tile = gray[top : top + 192, left : left + 192]
+
+            def gradient(a):
+                return cv2.magnitude(
+                    cv2.Sobel(a, cv2.CV_32F, 1, 0), cv2.Sobel(a, cv2.CV_32F, 0, 1)
+                )
+
+            edge = gradient(tile)
+            strong = edge >= max(20, np.percentile(edge, 94))
+            if strong.sum() >= 32:
+                softened = gradient(cv2.GaussianBlur(tile, (0, 0), 1.2))
+                scores.append(float(np.median(softened[strong] / edge[strong])))
+    if not scores or np.median(scores) < 0.70:
+        return image
+    smooth = cv2.GaussianBlur(gray, (0, 0), 1.6)
+    detail = np.clip(gray.astype(np.int16) - smooth, -20, 20)
+    result = image.copy()
+    for channel in range(3):
+        result[:, :, channel] = np.clip(image[:, :, channel] + detail, 0, 255)
+    return result

@@ -1,4 +1,5 @@
 "use client";
+import { roomTags } from "../../lib/plan/roomTags";
 import {useCallback,useEffect,useMemo,useRef,useState} from "react";
 import {Canvas,useThree} from "@react-three/fiber";
 import {Html,OrbitControls} from "@react-three/drei";
@@ -105,6 +106,7 @@ export default function Showcase({plan,scene,title,back,edit,sample=false,approx
   const [saving,setSaving]=useState(false);
   const savingRef=useRef(false);
   const [selectedId,setSelectedId]=useState<string|null>(null);
+  const tags = useMemo(() => roomTags(plan), [plan]);
   const hasFloor=roomsOf(plan).length>0;
   const views=useMemo(()=>{
     if(scene.views.length||localViews.length)return [...scene.views,...localViews];
@@ -182,6 +184,10 @@ export default function Showcase({plan,scene,title,back,edit,sample=false,approx
       <SceneMesh m={plan} objects={scene.objects} closedDoorIds={scene.closedDoorIds} floorFinish={scene.floorFinish} presentation cutaway={!view}/>
       {sample&&<SampleFurniture interior={!!view}/>}
       {view?<ShowcaseWalk key={view.id} plan={plan} scene={scene} view={view} sample={sample} pose={pose} onFrame={setViewport} input={rendered?undefined:input}/>:<><OverviewCamera plan={plan}/><FloorPicker scale={scale} onPick={land}/></>}
+      {!view&&tags.map(tag=><Html key={tag.key} center wrapperClass="show-room-label" style={{pointerEvents:"none"}}
+        position={[tag.position.x*scale,.18,tag.position.y*scale]} zIndexRange={[1,0]}>
+        <span className="show-room-tag">{tag.text}</span>
+      </Html>)}
       {!view&&views.map((v,i)=><Html key={v.id} center position={[v.position.x*scale,2,v.position.y*scale]} zIndexRange={[2,1]}>
         <button className="show-pin" aria-label={"Visit "+v.name} onClick={()=>select(i)}>{i+1}</button>
       </Html>)}

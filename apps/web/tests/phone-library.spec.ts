@@ -34,6 +34,8 @@ for (const width of [390,1280]) {
     await expect(page).toHaveURL(/\/phone\/showcase\/f$/,{timeout:20000});
     await expect(page.getByRole("heading",{name:"Walkthrough",exact:true})).toBeVisible({timeout:20000});
     await expect(page.getByText(/Approximate scale/)).toBeVisible();
+    await page.getByRole("button",{name:"Overview"}).click();
+    await expect(page.locator(".show-room-tag").filter({hasText:"Bedroom"})).toBeVisible();
     await expect(page.getByRole("link",{name:"Exit tour"})).toHaveAttribute("href","/phone/spaces/s");
   });
 }
