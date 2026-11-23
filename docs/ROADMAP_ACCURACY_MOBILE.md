@@ -40,10 +40,44 @@ ship independently as it clears validation.
 
 | Planned Pro feature | Scope and release evidence |
 | --- | --- |
-| AI chat assistant | Let users point to a room, wall, or object and ask for a repair or design change. Validate the proposed edit against the current revision, show what will change, and let the user apply or undo it. |
+| AI chat assistant | Let users point to a room, wall, or object and ask for a repair. Add a [Designer workflow](#designer-workflow) for layout goals that need questions and options before editing. |
 | Unreal Engine graphics | Prototype an Unreal Engine renderer for higher-quality lighting, materials, and furnished interiors. Verify scale, openings, object placement, and camera framing against the same Florp scene. Compare still renders and streamed walkthroughs using phone performance, loading time, and GPU cost per session. |
 | Advanced modules | Start with whole-home tools such as multi-floor editing and design variants. Use the same plan and scene contracts so edits and exports retain real-world scale. |
 | Pro support | Add a support entry point from the project. Let the buyer choose which diagnostics, plan, or scene to share. Define the support channel and response targets before launch. |
+
+### Designer workflow
+
+Start with a walk-in closet in a four-room home as the first end-to-end Pro
+design task. In the plan editor or phone walkthrough, the buyer opens **Designer**,
+selects the bedroom or adjoining area, and describes the goal in their own words.
+Designer uses the calibrated plan and existing furniture dimensions to ask targeted
+questions and show which wall, wardrobe, or door it means.
+
+1. **Establish what can move.** Ask which room should get the closet, whether all
+   four rooms must remain, and how much storage the buyer needs. Ask whether the
+   freestanding wardrobe can move, whether the bedroom door can move or change
+   swing, and what is known about the target wall. Record wall material (such as
+   brick or block) and load-bearing status independently. Offer **I’m not sure**
+   and keep load-bearing and unverified walls fixed in editable proposals. When
+   the buyer is unsure about the wall or doorway, offer a layout using furniture
+   or new partitions that respects those constraints.
+2. **Compare measured options.** Show alternatives in 2D and in the walkthrough.
+   For each option, show wardrobe depth, usable storage, aisle width, door swing,
+   remaining bedroom area, and any trade-offs. Confirm missing measurements that
+   affect fit and check the route from the bedroom into the closet. Show any
+   proposed moves or replacements directly on the plan.
+3. **Apply and export.** Let the buyer approve one proposal as a named design
+   variant. Validate room boundaries, wall and door constraints, clearances,
+   metric scale, and the source revision before applying the edits. Keep the
+   original available for comparison and allow undo. Export the selected variant
+   as an editable Florp ZIP, 2D plan, and 3D GLB, with the same geometry and scale
+   across all outputs.
+
+The first release should demonstrate the complete four-room workflow with a
+movable wardrobe, a fixed door, and an unverified wall. A second test should allow
+an explicitly movable doorway and show the difference in clearance. Verify that
+the approved variant reopens from its Florp bundle and matches the 2D drawing
+and 3D export.
 
 ### Place the model at its real address
 

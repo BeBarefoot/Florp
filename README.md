@@ -139,7 +139,8 @@ Florp is a self-serve app for homebuyers and homeowners. The first priority is t
 The next milestone is to benchmark first-pass extraction on real plans and measure how often buyers can go from upload to a usable walkthrough without help. Use a five-minute correction budget for supported plans. Validate the phone repair flow before expanding to whole-home navigation and richer visual assets. [Accuracy and mobile roadmap](docs/ROADMAP_ACCURACY_MOBILE.md) · [Whole-home roadmap](docs/ENVIZ_CAPABILITY_ROADMAP.md)
 
 The roadmap includes a Pro tier with AI chat, Unreal Engine graphics, advanced
-modules, and support. Feature access, scene compatibility, and job handling are
+modules, and support. Designer will ask what can move, compare measured layout
+options, and export the approved design as an editable Florp variant. Feature access, scene compatibility, and job handling are
 part of the initial infrastructure. A separate milestone lets buyers enter an
 address and place the calibrated model on Google Maps.
 [Product tiers and site placement](docs/ROADMAP_ACCURACY_MOBILE.md#product-tiers-and-site-placement)
