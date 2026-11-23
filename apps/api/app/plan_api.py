@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 import asyncio, hashlib, json, logging, math, os, shutil, signal, sys, tempfile
+from io import BytesIO
+from zipfile import BadZipFile, ZipFile
+from zlib import error as DeflateError
 from pathlib import Path
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -142,6 +145,35 @@ def save(bid: str, body: Save):
                 "A newer revision exists. Reload before saving; local changes are retained.",
             )
         return store(s, bid, derive(body.model), current + 1)
+
+
+@router.post("/blueprints/{bid}/plan/restore-bundle")
+def restore_bundle(bid: str, file: UploadFile = File(...)):
+    """Read back an exported plan for preview as an undoable editor edit."""
+    limit = 24 * 1024 * 1024
+    data = file.file.read(limit + 1)
+    if len(data) > limit:
+        raise HTTPException(413, "Plan bundle exceeds 24 MiB")
+    try:
+        with ZipFile(BytesIO(data)) as archive:
+            reports = [entry for entry in archive.infolist() if entry.filename == "report.json"]
+            if len(reports) != 1 or reports[0].file_size > limit:
+                raise ValueError("Expected one bounded report")
+            with archive.open(reports[0]) as report:
+                raw = report.read(limit + 1)
+            if len(raw) > limit:
+                raise ValueError("Report exceeds size limit")
+            model = PlanModel.model_validate(json.loads(raw)["plan"])
+    except (BadZipFile, DeflateError, EOFError, RuntimeError, KeyError, ValueError, TypeError):
+        raise HTTPException(422, "Choose a Florp plan bundle containing a valid saved plan.") from None
+
+    with Session(get_engine()) as s:
+        bp = blueprint(s, bid)
+        if model.id != bid or (model.image_transform.width, model.image_transform.height) != (bp.width, bp.height):
+            raise HTTPException(422, "This bundle belongs to a different floor or source image.")
+        row = latest(s, bid)
+        model.revision = row.revision if row else 0
+    return derive(model).dump()
 
 
 @router.post("/blueprints/{bid}/plan/align-walls")

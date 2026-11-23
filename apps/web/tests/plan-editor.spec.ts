@@ -678,3 +678,27 @@ test("a suggested fourth wall can be previewed, added and undone", async ({page}
   await page.getByRole("button",{name:"Undo",exact:true}).click();
   await expect(page.locator('polygon[data-kind="room"]')).toHaveCount(0);
 });
+
+test("opens a corrected bundle and switches to 3D without aligning its walls", async ({page}) => {
+  const original = setReference(fixture(), {x:100,y:100}, {x:500,y:100}, 4);
+  const restored = {...original, walls:original.walls.map((w,i) => i===0 ? {...w,thicknessPx:26} : w)};
+  const {puts} = await setup(page,{model:original});
+  await page.route("**/blueprints/p/plan/restore-bundle", route => {
+    expect(route.request().headers()["content-type"]).toContain("multipart/form-data");
+    return route.fulfill({json:restored});
+  });
+  await page.route("**/blueprints/p/plan/align-walls**", () => {
+    throw Error("Displaying the corrected model should not request wall alignment");
+  });
+  await page.route("**/blueprints/p/scene**", route => route.fulfill({json:{
+    revision:0,planRevision:null,config:{views:[],objects:[],style:""}
+  }}));
+  await page.getByText("History & source notes",{exact:true}).click();
+  await page.getByLabel("Restore corrected plan (.zip)").setInputFiles({
+    name:"florp-plan.zip",mimeType:"application/zip",buffer:Buffer.from("fixture")
+  });
+  await expect.poll(() => puts.at(-1)?.walls[0].thicknessPx).toBe(26);
+  await page.getByRole("radio",{name:"3D",exact:true}).click();
+  await expect(page.locator(".scene-frame canvas")).toBeVisible();
+  expect(puts.at(-1)?.walls[0].thicknessPx).toBe(26);
+});

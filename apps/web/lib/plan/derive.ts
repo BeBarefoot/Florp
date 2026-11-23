@@ -217,8 +217,14 @@ export function rooms(m: PlanModel): Room[] {
       label: null,
     });
   }
-  const matches = result.map((r) => m.rooms.filter((old) =>
-    old.id === r.id || inside(centroid(old.polygon), r.polygon) || inside(centroid(r.polygon), old.polygon)));
+  const previousByBoundary = new Map(m.rooms.map(old => [JSON.stringify(old.wallIds), old]));
+  const exact = new Set(result.map(r => JSON.stringify(r.wallIds)).filter(key => previousByBoundary.has(key)));
+  const unmatched = m.rooms.filter(old => !exact.has(JSON.stringify(old.wallIds)));
+  const matches = result.map(r => {
+    const previous = previousByBoundary.get(JSON.stringify(r.wallIds));
+    return previous ? [previous] : unmatched.filter(old =>
+      inside(centroid(old.polygon), r.polygon) || inside(centroid(r.polygon), old.polygon));
+  });
   result.forEach((r, i) => {
     const old = matches[i][0];
     if (old && matches[i].length === 1 && matches.filter((group) => group.includes(old)).length === 1) {
