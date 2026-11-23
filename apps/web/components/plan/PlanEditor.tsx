@@ -70,6 +70,14 @@ export default function PlanEditor({ id }: { id: string }) {
     setModel(r.model);
   }
   function edit(next: PlanModel, record = true) {
+    const current = live.current;
+    if (current && next.findings === current.findings && next.findings.some(f=>f.closure) &&
+        (next.nodes !== current.nodes || next.walls !== current.walls || next.openings !== current.openings)) {
+      // Source evidence refers to a particular wall graph. Align walls can
+      // search the edited floor again, and undo restores the earlier findings.
+      next = {...next, findings: next.findings.filter(f=>!f.closure)};
+      setActiveFinding(null);
+    }
     if (record && live.current) {
       const before = live.current;
       setPast((p) => [...p.slice(-49), before]);

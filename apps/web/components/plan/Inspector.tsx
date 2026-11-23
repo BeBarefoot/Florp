@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { Finding, FindingCategory, PlanModel, Pt } from "../../lib/plan/model";
 import { FINDING_LABELS, ROOM_TYPES } from "../../lib/plan/model";
 import { areaM2, metersPerPixel, nodeMap, openingEnds, wallLength } from "../../lib/plan/derive";
-import { decideOpening, deleteOpening, deleteWall, dismissFinding, patchOpening, patchWall, setRoomLabel } from "../../lib/plan/ops";
+import { addWall, decideOpening, deleteOpening, deleteWall, dismissFinding, patchOpening, patchWall, setRoomLabel } from "../../lib/plan/ops";
 import type { Selection, Tool } from "./types";
 
 type Props = {
@@ -103,7 +103,7 @@ export default function Inspector(p: Props) {
           <h3>Add {p.tool}</h3>
           <p>
             {p.tool === "wall"
-              ? "Click two points. Walls stay horizontal or vertical automatically. Ends snap to aligned corners and wall intersections. Moving a corner keeps connected walls square."
+              ? "Click two points. Draw at any angle. Nearly straight runs snap horizontally or vertically. Ends snap to nearby corners and walls."
               : "Click two points along a wall. Hold Shift to lock the drawing axis."} Esc cancels.
           </p>
         </section>
@@ -307,6 +307,14 @@ export default function Inspector(p: Props) {
                     onMouseLeave={() => p.activeFinding?.id === f.id && p.setActiveFinding(null)}
                   >
                     <button className="fe-link" onClick={() => openFinding(f)}>{f.message}</button>
+                    {f.closure && <button onClick={()=>{
+                      const c=f.closure!;
+                      const result=addWall(m,c.start,c.end,c.thicknessPx,1e-7);
+                      if(result.wallId){
+                        p.edit(dismissFinding(result.model,f.id));
+                        p.setActiveFinding(null);
+                      }
+                    }}>Add closing wall</button>}
                     {f.severity === "warn" && (
                       <button
                         className="fe-dismiss"

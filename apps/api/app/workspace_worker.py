@@ -16,16 +16,34 @@ from .deterministic_blueprint.preprocess import decode, sharpen_soft_scan
 
 def _remeasure(objects, strip_mask, classes):
     """Thickness from the strip's own local width along each run, not from scan-band extents."""
-    h, w = strip_mask.shape
-    dt = cv2.distanceTransform((strip_mask > 0).astype(np.uint8), cv2.DIST_L2, 3)
-    cap = 1.6 * max(classes)
     for o in objects:
-        xs = np.rint(np.linspace(o.start.x, o.end.x, 25)).astype(int).clip(0, w - 1)
-        ys = np.rint(np.linspace(o.start.y, o.end.y, 25)).astype(int).clip(0, h - 1)
-        vals = 2 * dt[ys, xs]
-        vals = vals[vals > 0]
-        if vals.size:
-            o.thickness_px = float(np.clip(np.median(vals), 1, cap))
+        # structural_runs returns axial segments here. Scan both faces across
+        # the interior of the run; intersections near its ends inflate widths.
+        horizontal = o.start.y == o.end.y
+        axis, cross = ("x", "y") if horizontal else ("y", "x")
+        mask = strip_mask.T if horizontal else strip_mask
+        lane = round(getattr(o.start, cross))
+        along = np.linspace(getattr(o.start, axis), getattr(o.end, axis), 21)[3:-3]
+        radius = min(512, max(12, math.ceil(2 * max(max(classes), o.thickness_px))))
+        lo, hi = max(0, lane - radius), min(mask.shape[1], lane + radius + 1)
+        widths, centers = [], []
+        for sample in np.rint(along).astype(int).clip(0, mask.shape[0] - 1):
+            occupied = mask[sample, lo:hi] > 0
+            if not occupied[lane - lo]:
+                continue
+            left = np.flatnonzero(~occupied[: lane - lo])
+            right = np.flatnonzero(~occupied[lane - lo + 1 :])
+            if (not left.size and lo > 0) or (not right.size and hi < mask.shape[1]):
+                continue
+            a = lo + left[-1] + 1 if left.size else lo
+            b = lane + right[0] if right.size else hi - 1
+            widths.append(b - a + 1)
+            centers.append((a + b) / 2)
+        if len(widths) >= len(along) // 2 + 1:
+            o.thickness_px = float(np.clip(np.median(widths), 1, 1000))
+            center = float(np.median(centers))
+            setattr(o.start, cross, center)
+            setattr(o.end, cross, center)
 
 
 def _trim_photo_edge_leaders(objects, supported, wall_width):

@@ -159,8 +159,12 @@ def align_plan_walls(bid: str, body: Save, recover_missing: bool = False):
         if (row.revision if row else 0) != body.expected_revision:
             raise HTTPException(409, "A newer revision exists. Reload before aligning walls.")
         path = bp.preview_path
-    repaired = close_source_joints(body.model, decode(Path(path).read_bytes()), recover_missing=recover_missing)
-    return derive(repaired).dump()
+    image = decode(Path(path).read_bytes())
+    repaired = derive(close_source_joints(body.model, image, recover_missing=recover_missing))
+    if recover_missing:
+        from .wall_closures import search_closures
+        search_closures(repaired, image)
+    return repaired.dump()
 
 
 @router.get("/blueprints/{bid}/plan/yard")

@@ -43,7 +43,7 @@ export function moveNode(m: PlanModel, id: string, p: Pt): PlanModel {
       changed = false;
       for (const w of m.walls) {
         const [a, b] = wallEnds(m, w, before);
-        if ((Math.abs(b.y - a.y) > Math.abs(b.x - a.x)) !== vertical) continue;
+        if (vertical ? Math.abs(b.x-a.x)>1e-6 : Math.abs(b.y-a.y)>1e-6) continue;
         if (!ids.has(w.a) && !ids.has(w.b)) continue;
         for (const end of [w.a, w.b]) if (!ids.has(end)) {
           ids.add(end);
@@ -147,7 +147,10 @@ function wallTarget(m: PlanModel, p: Pt, radius: number, from?: Pt): WallTarget 
 
 export function wallPlacement(m: PlanModel, p1: Pt, p2: Pt, radius = 10) {
   const start = wallTarget(m, p1, radius);
-  const horizontal = Math.abs(p2.x - start.point.x) >= Math.abs(p2.y - start.point.y);
+  const dx=Math.abs(p2.x-start.point.x), dy=Math.abs(p2.y-start.point.y);
+  if(Math.min(dx,dy)>Math.min(radius,Math.max(dx,dy)*.12))
+    return {start,end:wallTarget(m,p2,radius)};
+  const horizontal = dx >= dy;
   const p = horizontal ? { x: p2.x, y: start.point.y } : { x: start.point.x, y: p2.y };
   const end = wallTarget(m, p, radius, start.point);
   return { start, end };
@@ -165,7 +168,7 @@ export function addWall(m: PlanModel, p1: Pt, p2: Pt, thicknessPx: number, snap 
   if (dist(placement.start.point, placement.end.point) < 3) return { model: m, wallId: "" };
   const first = materializeTarget(m, placement.start);
   // Re-resolve against any host segments created by the first T-junction.
-  const target = wallTarget(first.model, placement.end.point, 1e-7, placement.start.point);
+  const target = wallTarget(first.model, placement.end.point, 1e-7);
   const second = materializeTarget(first.model, target);
   const wallId = uid("w");
   if (first.nodeId === second.nodeId) return { model: m, wallId: "" };

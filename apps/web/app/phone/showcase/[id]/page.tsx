@@ -75,15 +75,16 @@ export default function ShowcasePage(){
     return <Player key={id} plan={plan} scene={currentScene?data[1].config:emptyScene}
       approximate={approximate} renders={currentScene?renders:undefined} title={data[2].filename}
       back={fromEditor?"/plan/"+id:back} edit={"/plan/"+id}
-      saveView={!approximate&&(!data[1].revision||currentScene)?async view=>{
+      saveView={!approximate&&(!data[1].revision||currentScene)?async (view,initial)=>{
         const path="/blueprints/"+encodeURIComponent(id)+"/scene";
         const latest=await request<Saved>(path);
         if(latest.revision && latest.planRevision!==plan.revision)
           throw Error("The floor has changed. Reload the tour before saving.");
-        if(latest.config.views.length>=30)throw Error("The tour already has 30 saved views.");
+        const prior=latest.config.views.length||!initial?latest.config.views:[initial];
+        if(prior.length>=30)throw Error("The tour already has 30 saved views.");
         const saved=await request<Saved>(path,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({
           expectedRevision:latest.revision,planRevision:plan.revision,
-          config:{...latest.config,views:[...latest.config.views,{...view,name:"View "+(latest.config.views.length+1)}]},
+          config:{...latest.config,views:[...prior,{...view,name:"View "+(prior.length+1)}]},
         })});
         setRenders({});
         setData(current=>current?.[2].id===id?[current[0],saved,current[2]]:current);

@@ -258,6 +258,8 @@ def findings(model: PlanModel, counters: dict | None = None) -> list[Finding]:
         out += [
             f for f in model.findings if f.category in ("pruned_fragments", "merged_duplicates", "open_passage")
         ]
+    from .wall_closures import current_closures
+    out.extend(current_closures(model))
     dismissed = set(model.dismissed_findings)
     return [
         f for f in out if f.category == "opening_needs_approval" or f.id not in dismissed

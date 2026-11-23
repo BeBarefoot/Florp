@@ -15,6 +15,7 @@ from .gardens import Garden
 FindingCategory = Literal[
     "opening_needs_approval",
     "open_wall_end",
+    "suggested_closure",
     "low_confidence_wall",
     "unclosed_region",
     "pruned_fragments",
@@ -119,7 +120,14 @@ class Stair(Base):
     rise_m: float = Field(default=0.17, ge=0.08, le=0.3)
 
 
+class ClosureEvidence(Base):
+    start: Pt
+    end: Pt
+    thickness_px: float = Field(gt=0, le=1000)
+
+
 class Finding(Base):
+    closure: ClosureEvidence | None = None
     id: str
     category: FindingCategory
     severity: Literal["info", "warn"] = "warn"

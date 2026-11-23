@@ -615,7 +615,7 @@ def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = Non
                 confirm_at=cfg.auto_confirm_by_kind.get("door", cfg.auto_confirm),
             )
         model = repair_photo_doors(model, strips)
-    return derive(
+    model = derive(
         model,
         counters={
             "merged_duplicates": counters.merged_duplicates,
@@ -623,6 +623,10 @@ def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = Non
             "passages": [(p.x, p.y) for p in doc.passages],
         },
     )
+    if image is not None:
+        from .wall_closures import search_closures
+        search_closures(model, image)
+    return model
 
 
 def extend_dangling(

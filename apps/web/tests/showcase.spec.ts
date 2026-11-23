@@ -120,3 +120,29 @@ test("dollhouse lands on the floor and saves a new view from one tap",async({pag
   await page.goto("/phone/showcase/f#overview");
   await expect(page.getByRole("button",{name:"View 4",exact:true})).toBeVisible({timeout:15000});
 });
+
+test("saving from the starting camera preserves both numbered pins after reload", async ({page})=>{
+  let config={...sampleScene,views:[] as typeof sampleScene.views};
+  let revision=0;
+  await page.route("**/blueprints/f/*",async r=>{
+    const endpoint=new URL(r.request().url()).pathname.split("/").pop();
+    if(endpoint==="scene"&&r.request().method()==="PUT"){
+      config=r.request().postDataJSON().config;
+      revision++;
+    }
+    return r.fulfill({json:endpoint==="plan"?{revision:1,model:{...samplePlan,id:"f"}}:
+      endpoint==="scene"?{revision,planRevision:1,config}:{id:"f",filename:"Floor",project_id:"p"}});
+  });
+  await page.route("**/blueprints/f/scene/renders",r=>r.fulfill({json:[]}));
+  await page.goto("/phone/showcase/f");
+  await expect(page.getByRole("button",{name:"Download view prompt"})).toBeVisible();
+  await page.getByRole("button",{name:"Save this view"}).click();
+  await expect(page.getByRole("heading",{name:"View 2"})).toBeVisible();
+  expect(config.views.map(v=>v.name)).toEqual(["View 1","View 2"]);
+  await page.goto("/phone/showcase/f#overview");
+  for(const number of [1,2]){
+    await page.getByRole("button",{name:"Visit View "+number,exact:true}).click();
+    await expect(page.getByRole("heading",{name:"View "+number})).toBeVisible();
+    await page.getByRole("button",{name:"Overview",exact:true}).click();
+  }
+});

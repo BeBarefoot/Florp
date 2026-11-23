@@ -647,3 +647,34 @@ test("an open plan can get a floor and a camera through the guided setup",async(
   await expect.poll(()=>savedView).toBe(true);
   expect(puts.at(-1)?.roomZones).toHaveLength(1);
 });
+
+test("diagonal wall and door retain their free angle when edited", async () => {
+  const {patchOpening,addOpening} = await import("../lib/plan/ops");
+  const drawn = addWall(fixture(), {x:200,y:250}, {x:380,y:430}, 9);
+  const placed = addOpening(drawn.model,"door",{x:230,y:280},{x:280,y:330})!;
+  expect(placed.model.openings.at(-1)?.hostWallId).toBe(drawn.wallId);
+  const moved = moveNode(placed.model,drawn.model.walls.at(-1)!.b,{x:400,y:450});
+  const resized = patchOpening(moved,placed.openingId,{widthPx:100});
+  const [a,b] = resized.openings.at(-1)!.span!;
+  expect(b.x-a.x).toBeCloseTo(100/Math.sqrt(2));
+  expect(b.y-a.y).toBeCloseTo(b.x-a.x);
+});
+
+test("a suggested fourth wall can be previewed, added and undone", async ({page})=>{
+  const model=fixture({nodes:[
+    {id:"a",x:200,y:150},{id:"b",x:200,y:480},
+    {id:"c",x:700,y:480},{id:"d",x:700,y:150}
+  ],walls:fixture().walls.slice(0,3).map((w,i)=>({...w,a:"abc"[i],b:"bcd"[i]})),
+  openings:[],findings:[]});
+  const [a,,,d]=model.nodes;
+  model.findings=[{id:"suggested_closure:a:d",category:"suggested_closure",targetIds:["a","d"],
+    severity:"warn",anchor:{x:450,y:150},count:1,message:"Possible missing wall along a faint band",
+    closure:{start:a,end:d,thicknessPx:18}}];
+  await setup(page,{model});
+  await page.getByText("Suggested wall closures (1)").click();
+  await page.getByRole("button",{name:"Possible missing wall along a faint band"}).click();
+  await page.getByRole("button",{name:"Add closing wall"}).click();
+  await expect(page.locator('polygon[data-kind="room"]')).toHaveCount(1);
+  await page.getByRole("button",{name:"Undo",exact:true}).click();
+  await expect(page.locator('polygon[data-kind="room"]')).toHaveCount(0);
+});
