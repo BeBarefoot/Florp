@@ -22,6 +22,14 @@ The product goal is self-serve use. A buyer should get the most accurate draft t
 The shared geometry, saved cameras, phone tour, floor recovery, capture and render flow are implemented. Real-plan accuracy, phone repair usability and hosted readiness remain open release gates.
 
 
+## First buyer experience
+
+Start app design with the journey for someone buying an unbuilt home. The buyer
+uploads a floor plan, corrects what needs attention, walks through the model,
+chooses floors and walls by room, then places furniture at real scale. Give the
+buyer an editable starter palette and a planned Designer chat entry point that
+works with the same finish and furniture controls. [First buyer experience](PHONE_APP_PLAN.md#buying-a-home-before-its-built)
+
 ## Product tiers and site placement
 
 The four product pillars guide both tiers. Convert 2D plans into editable 3D homes,
