@@ -200,7 +200,7 @@ export default function Showcase({plan,scene,title,back,edit,sample=false,approx
         <span className="show-room-tag">{tag.text}</span>
       </Html>)}
       {!view&&pinGroups.map(({position,indices})=><Html key={views[indices[0]].id} center position={[position.x*scale,2,position.y*scale]} zIndexRange={[2,1]}>
-        <div style={{display:"flex"}}>{indices.map(i=><button key={views[i].id} className="show-pin" aria-label={"Visit "+views[i].name} onClick={()=>select(i)}>{i+1}</button>)}</div>
+        <div className="show-pin-group">{indices.map(i=><button key={views[i].id} className="show-pin" aria-label={"Visit "+views[i].name} onClick={()=>select(i)}>{i+1}</button>)}</div>
       </Html>)}
     </Canvas>
     {view&&!rendered&&<div className="show-movement" role="group" aria-label="Walk controls">
@@ -218,8 +218,8 @@ export default function Showcase({plan,scene,title,back,edit,sample=false,approx
     </div>}</div>
     {view&&rendered&&renders[view.id]&&<div className="show-render"><img src={renders[view.id]} alt={"Saved design render for "+view.name}/></div>}
     <div className="show-top"><Link href={back}><ArrowLeft size={18}/> Exit tour</Link><div className="show-tools"><button aria-label={immersive?"Show tour controls":"Hide tour controls"} aria-pressed={immersive} onClick={()=>setImmersive(!immersive)}>{immersive?<Minimize2 size={18}/>:<Maximize2 size={18}/>}</button><button onClick={share} aria-label="Share this tour"><Share2 size={18}/></button></div></div>
-    <section className="show-panel"><small>{sample?"Sample tour · ":""}{title}{approximate?" · Approximate scale":""}</small><h1>{view?.name??"Dollhouse view"}</h1>
-      <p>{view&&rendered&&renders[view.id]?"Saved design render":view?"Drag to turn and walk. Use the arrows or WASD to move. Pinch or scroll to zoom.":adding?(saveView?"Tap an open floor spot to save a view there.":"Tap an open floor spot to add a view for this session."):"Tap the floor to walk there. Drag to orbit."}</p>
+    <section className="show-panel"><div className="show-heading"><small>{sample?"Sample tour · ":""}{title}{approximate?" · Approximate scale":""}</small><h1>{view?.name??"Dollhouse view"}</h1>
+      <p>{view&&rendered&&renders[view.id]?"Saved design render":view?"Drag to turn and walk. Use the arrows or WASD to move. Pinch or scroll to zoom.":adding?(saveView?"Tap an open floor spot to save a view there.":"Tap an open floor spot to add a view for this session."):"Tap the floor to walk there. Drag to orbit."}</p></div>
       {view&&renders[view.id]&&<button aria-pressed={rendered} onClick={()=>{setPlaying(false);setRendered(!rendered);}}>{rendered?"Return to 3D":"Show saved design"}</button>}
       <div className="show-stops" aria-label="Tour stops">
         <button aria-pressed={!view} onClick={()=>select(-1)}><Box size={15}/> Overview</button>
@@ -230,24 +230,29 @@ export default function Showcase({plan,scene,title,back,edit,sample=false,approx
         <button aria-label="Previous stop" disabled={stop<0} onClick={()=>select(stop-1)}><ChevronLeft/></button>
         <button aria-label="Next stop" disabled={stop>=views.length-1} onClick={()=>select(stop+1)}><ChevronRight/></button>
       </div>}
-      {!view&&hasFloor&&<button aria-pressed={adding} disabled={saving} onClick={()=>{setPlaying(false);setNotice("");setAdding(!adding);}}>
-        {adding?"Cancel adding view":"Add view"}
-      </button>}
-      {view&&!rendered&&<button disabled={saving} onClick={()=>{
-        setPlaying(false);
-        if(pose.current?.id===view.id)void addView(pose.current);
-      }}>Save this view</button>}
+      <div className="show-actions">
+        {!view&&hasFloor&&<button aria-pressed={adding} disabled={saving} onClick={()=>{setPlaying(false);setNotice("");setAdding(!adding);}}>
+          {adding?"Cancel adding view":"Add view"}
+        </button>}
+        {view&&!rendered&&<button disabled={saving} onClick={()=>{
+          setPlaying(false);
+          if(pose.current?.id===view.id)void addView(pose.current);
+        }}>Save this view</button>}
+        {edit&&<Link className="show-edit" href={edit}>Edit floor</Link>}
+      </div>
+      {view&&!rendered&&viewport?.viewId===view.id&&<div className="show-downloads">
+        <button onClick={()=>{
+          setPlaying(false);
+          if(pose.current?.id===view.id)downloadPrompt(renderPrompt(plan,scene,pose.current,viewport,[],approximate));
+        }}>Download view prompt</button>
+        <button onClick={()=>{
+          setPlaying(false);
+          const link=document.createElement("a");
+          link.href=viewport.image();link.download="florp-view.png";link.click();
+        }}>Download view image</button>
+      </div>}
       {!hasFloor&&edit&&<p>No walkable floor was found. <Link href={edit+"?setup=floor"}>Mark a walkable floor in the editor</Link>.</p>}
       {notice&&<p role="status">{notice}</p>}
-    {view&&!rendered&&viewport?.viewId===view.id&&<><button onClick={()=>{
-      setPlaying(false);
-      if(pose.current?.id===view.id)downloadPrompt(renderPrompt(plan,scene,pose.current,viewport,[],approximate));
-    }}>Download view prompt</button><button onClick={()=>{
-      setPlaying(false);
-      const link=document.createElement("a");
-      link.href=viewport.image();link.download="florp-view.png";link.click();
-    }}>Download view image</button></>}
-    {edit&&<Link className="show-edit" href={edit}>Edit floor</Link>}
     </section>
   </main>;
 }

@@ -27,8 +27,8 @@ export default function PhoneLibrary(){
   return <main className="tour-library">
     <section className="tour-cover"><div>
       <h1>Your walkthroughs</h1>
-      <Link className="tour-primary show-launch" href="/phone/showcase/sample">Explore sample tour <ArrowUpRight size={17}/></Link>
-      <button className="show-new" onClick={()=>setCreating(true)}><Plus size={18}/> New space</button>
+      <div className="tour-cover-actions"><Link className="tour-primary show-launch" href="/phone/showcase/sample">Explore sample tour <ArrowUpRight size={17}/></Link>
+      <button className="show-new" onClick={()=>setCreating(true)}><Plus size={18}/> New space</button></div>
     </div></section>
     {creating&&<form className="tour-create" onSubmit={create}>
       <label>Space name<input autoFocus required value={name} onChange={e=>setName(e.target.value)} placeholder="Garden apartment"/></label>
