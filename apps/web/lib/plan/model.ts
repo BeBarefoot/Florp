@@ -42,6 +42,7 @@ export type Room = {
 export type Stair = { id: string; layout: "l" | "u"; treads: Pt[][]; riseM: number };
 export type FindingCategory =
   | "opening_needs_approval"
+  | "suggested_closure"
   | "open_wall_end"
   | "low_confidence_wall"
   | "unclosed_region"
@@ -49,6 +50,7 @@ export type FindingCategory =
   | "merged_duplicates"
   | "open_passage";
 export type Finding = {
+  closure?: {start:Pt;end:Pt;thicknessPx:number} | null;
   id: string;
   category: FindingCategory;
   severity: "info" | "warn";
@@ -79,6 +81,7 @@ export type PlanModel = {
 export type PlanResponse = { revision: number; model: PlanModel | null };
 export const FINDING_LABELS: Record<FindingCategory, string> = {
   opening_needs_approval: "Needs your approval",
+  suggested_closure: "Suggested wall closures",
   open_wall_end: "Open wall ends",
   low_confidence_wall: "Low-confidence walls",
   unclosed_region: "Unclosed rooms",

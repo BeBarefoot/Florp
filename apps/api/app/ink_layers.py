@@ -319,7 +319,21 @@ def _neutral_wall_bands(gray, paper, saturation):
     _, components = cv2.connectedComponents(joined, connectivity=8)
     near_horizontal = cv2.dilate(horizontal, np.ones((5, 5), np.uint8))
     junctions = np.unique(components[(near_horizontal & vertical) > 0])
-    return np.isin(components, junctions[junctions > 0])
+    accepted = np.isin(components, junctions[junctions > 0])
+    if accepted.any():
+        # A pier between two windows can have no junction of its own. Require
+        # aligned masonry on both sides, with substantial cross-section overlap.
+        for bands, transpose in ((horizontal, False), (vertical.T, True)):
+            keep = accepted.T if transpose else accepted
+            ends = (keep & (bands > 0)).astype(np.uint8)
+            reach = max(length, min(round(bands.shape[1]*.22), 32*thickness))
+            kernel = np.ones((1,reach+1),np.uint8)
+            left = cv2.dilate(ends,kernel,anchor=(reach,0))
+            right = cv2.dilate(ends,kernel,anchor=(0,0))
+            supported = (left & right & bands).astype(bool)
+            # Restore only actual infill pixels; leave the flanking gaps open.
+            keep |= supported
+    return accepted
 
 
 def wall_strips(image: np.ndarray) -> Strips:
@@ -484,7 +498,7 @@ def wall_strips(image: np.ndarray) -> Strips:
     dark = strips_from(dark_cand, False, recover_thin=True)
     red = strips_from(red_cand, True) | recovered
     blue = strips_from(blue_cand, False)
-    if red.sum() + blue.sum() < max(100, 0.003 * h * w) and dark.sum() < 0.015 * h * w:
+    if red.sum() + blue.sum() < max(100, 0.003 * h * w):
         neutral = _neutral_wall_bands(gray, paper, hsv[:, :, 1])
         if neutral.sum() >= max(100, 0.002 * h * w):
             dark |= neutral

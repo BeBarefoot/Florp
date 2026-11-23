@@ -169,7 +169,15 @@ export default function PlanCanvas(props: {
     } else if (d.kind === "opening") {
       const o = m.openings.find((x) => x.id === d.id);
       const w = o && m.walls.find((x) => x.id === o.hostWallId);
-      if (!o || !w) return;
+      if (!o) return;
+      if (!w) {
+        if (o.span && d.part !== "move") {
+          const span:[Pt,Pt] = d.part==="start" ? [p,o.span[1]] : [o.span[0],p];
+          const widthPx=Math.hypot(span[1].x-span[0].x,span[1].y-span[0].y);
+          if(widthPx>=2)props.edit(patchOpening(m,o.id,{span,widthPx}),false);
+        }
+        return;
+      }
       const [a, b] = wallEnds(m, w, nodes);
       const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
       const t = ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l;
@@ -345,7 +353,7 @@ export default function PlanCanvas(props: {
               />
             );
           })}
-        {selOpening && selOpening.hostWallId && tool === "select" && (() => {
+        {selOpening && (selOpening.hostWallId || selOpening.span) && tool === "select" && (() => {
           const ends = openingEnds(m, selOpening, nodes)!;
           const mid = { x: (ends[0].x + ends[1].x) / 2, y: (ends[0].y + ends[1].y) / 2 };
           return (
@@ -362,7 +370,7 @@ export default function PlanCanvas(props: {
                   onPointerDown={(e) => startDrag(e, { kind: "opening", id: selOpening.id, part, grab: 0 })}
                 />
               ))}
-              <circle
+              {selOpening.hostWallId && <circle
                 className="fe-handle"
                 cx={mid.x}
                 cy={mid.y}
@@ -376,7 +384,7 @@ export default function PlanCanvas(props: {
                   const t = ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l;
                   startDrag(e, { kind: "opening", id: selOpening.id, part: "move", grab: t - selOpening.offsetPx });
                 }}
-              />
+              />}
             </g>
           );
         })()}
@@ -404,6 +412,9 @@ export default function PlanCanvas(props: {
             ))}
           </g>
         )}
+        {showFinding?.closure && <line x1={showFinding.closure.start.x} y1={showFinding.closure.start.y}
+          x2={showFinding.closure.end.x} y2={showFinding.closure.end.y} stroke="#d9480f"
+          strokeWidth={showFinding.closure.thicknessPx} strokeDasharray={8*px} pointerEvents="none"/>}
         {showFinding && (
           <circle
             data-testid="finding-indicator"

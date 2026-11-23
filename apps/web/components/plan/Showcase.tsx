@@ -98,7 +98,7 @@ function ShowcaseWalk({plan,scene,view,sample,pose,onFrame,input}:{
 
 }
 
-export default function Showcase({plan,scene,title,back,edit,sample=false,approximate=false,renders={},saveView}:{plan:PlanModel;scene:Scene;title:string;back:string;edit?:string;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View)=>Promise<View>}){
+export default function Showcase({plan,scene,title,back,edit,sample=false,approximate=false,renders={},saveView}:{plan:PlanModel;scene:Scene;title:string;back:string;edit?:string;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View,initial?:View)=>Promise<View>}){
   const [localViews,setLocalViews]=useState<View[]>([]);
   const [freeView,setFreeView]=useState<View|null>(null);
   const [adding,setAdding]=useState(false);
@@ -117,6 +117,15 @@ export default function Showcase({plan,scene,title,back,edit,sample=false,approx
   const scale=metersPerPixel(plan)!;
   const stop=selectedId==="overview"?-1:selectedId===null?(views.length?0:-1):views.findIndex(v=>v.id===selectedId);
   const view=freeView??views[stop];
+  const pinGroups=useMemo(()=>{
+    const groups:{position:Pt;indices:number[]}[]=[];
+    views.forEach((v,i)=>{
+      const group=groups.find(g=>Math.hypot(g.position.x-v.position.x,g.position.y-v.position.y)*scale<.35);
+      if(group)group.indices.push(i);
+      else groups.push({position:v.position,indices:[i]});
+    });
+    return groups;
+  },[views,scale]);
   const latestViews=useRef(views);
   useEffect(()=>{latestViews.current=views;},[views]);
   const touchInput=useRef({forward:0,side:0});
@@ -148,15 +157,17 @@ export default function Showcase({plan,scene,title,back,edit,sample=false,approx
   const addView=useCallback(async (location:View)=>{
     if(savingRef.current)return;
     savingRef.current=true;setSaving(true);
-    const entry={...location,id:newUuid(),name:"View "+(scene.views.length+localViews.length+1)};
+    const entry={...location,id:newUuid(),name:"View "+(views.length+1)};
     try{
-      const saved=saveView?await saveView(entry):entry;
-      if(!saveView)setLocalViews(current=>[...current,saved]);
+      const initial = !scene.views.length && !localViews.length && views[0]?.id==="walk-start"
+        ? {...views[0],id:newUuid(),name:"View 1"} : undefined;
+      const saved=saveView?await saveView(entry,initial):entry;
+      if(!saveView)setLocalViews(current=>[...(initial?[initial]:[]),...current,saved]);
       setFreeView(null);setSelectedId(saved.id);setAdding(false);
       setNotice(saveView?"View saved":"View added for this session");
     }catch(e){setNotice(String(e));}
     finally{savingRef.current=false;setSaving(false);}
-  },[scene.views.length,localViews.length,saveView]);
+  },[scene.views.length,localViews.length,views,saveView]);
   const land=useCallback((point:Pt|null,yaw:number)=>{
     if(savingRef.current)return;
     if(!point||!space.validCamera(point,true)||(sample&&!clearSampleFloor(point,scale))){
@@ -182,8 +193,8 @@ export default function Showcase({plan,scene,title,back,edit,sample=false,approx
       <SceneMesh m={plan} objects={scene.objects} closedDoorIds={scene.closedDoorIds} floorFinish={scene.floorFinish} presentation cutaway={!view}/>
       {sample&&<SampleFurniture interior={!!view}/>}
       {view?<ShowcaseWalk key={view.id} plan={plan} scene={scene} view={view} sample={sample} pose={pose} onFrame={setViewport} input={rendered?undefined:input}/>:<><OverviewCamera plan={plan}/><FloorPicker scale={scale} onPick={land}/></>}
-      {!view&&views.map((v,i)=><Html key={v.id} center position={[v.position.x*scale,2,v.position.y*scale]} zIndexRange={[2,1]}>
-        <button className="show-pin" aria-label={"Visit "+v.name} onClick={()=>select(i)}>{i+1}</button>
+      {!view&&pinGroups.map(({position,indices})=><Html key={views[indices[0]].id} center position={[position.x*scale,2,position.y*scale]} zIndexRange={[2,1]}>
+        <div style={{display:"flex"}}>{indices.map(i=><button key={views[i].id} className="show-pin" aria-label={"Visit "+views[i].name} onClick={()=>select(i)}>{i+1}</button>)}</div>
       </Html>)}
     </Canvas>
     {view&&!rendered&&<div className="show-movement" role="group" aria-label="Walk controls">
