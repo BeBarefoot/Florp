@@ -59,3 +59,16 @@
 .show-movement button{min-width:44px;min-height:44px;padding:0;background:#21342bf0;color:white;border-radius:12px;font-size:20px;touch-action:none;user-select:none}
 .show-movement button:first-child{grid-column:2}
 .show-movement button:nth-child(2){grid-column:1}
+
+.show-room-tag {
+  display: block;
+  padding: .15rem .48rem;
+  border-radius: .4rem;
+  background: #fffdf3ed;
+  color: #213b32;
+  font-size: .8rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.show-room-label { pointer-events: none; }

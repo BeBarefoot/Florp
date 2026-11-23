@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import hashlib
 import time
 from .schema import Options
-from .preprocess import decode, normalize
+from .preprocess import decode, normalize, sharpen_soft_scan
 from .calibration import recognize, choose_scale
 from .geometry import wall_masks, clean_geometry, classify, polygons, polygonal
 from .export import normalize_metric, png, svg, dxf, bundle
@@ -44,6 +44,9 @@ class BlueprintEngine:
         source_shape = image.shape[:2]
         mark("decode")
         working, matrix, preprocessing = normalize(image, self.options)
+        analysis = sharpen_soft_scan(working)
+        preprocessing["sharpened"] = analysis is not working
+        working = analysis
         mark("normalize")
         words, ocr_notes = recognize(working, self.options)
         mark("ocr")

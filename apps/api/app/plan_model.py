@@ -87,13 +87,18 @@ class Opening(Base):
     status: Literal["proposed", "confirmed", "rejected"] = "proposed"
 
 
+class RoomSymbol(Base):
+    kind: Literal["car", "bed"]
+    position: Pt
+
+
 class Room(Base):
     id: str
     wall_ids: list[str] = Field(default_factory=list)
     polygon: list[Pt]
     area_px2: float = Field(ge=0)
     label: str | None = Field(default=None, max_length=80)
-    room_type: Literal["bedroom", "bathroom", "kitchen", "corridor", "other"] | None = None
+    room_type: Literal["bedroom", "garage", "bathroom", "kitchen", "corridor", "other"] | None = None
     ceiling_height_m: float | None = Field(default=None, ge=1.8, le=8)
     needs_semantic_review: bool = False
 
@@ -102,7 +107,7 @@ class RoomZone(Base):
     id: str = Field(min_length=1, max_length=120)
     polygon: list[Pt] = Field(min_length=3, max_length=32)
     label: str | None = Field(default=None, max_length=80)
-    room_type: Literal["bedroom", "bathroom", "kitchen", "corridor", "other"] | None = None
+    room_type: Literal["bedroom", "garage", "bathroom", "kitchen", "corridor", "other"] | None = None
     ceiling_height_m: float | None = Field(default=None, ge=1.8, le=8)
 
 
@@ -135,6 +140,7 @@ class PlanModel(Base):
     walls: list[Wall] = Field(default_factory=list, max_length=10000)
     openings: list[Opening] = Field(default_factory=list, max_length=5000)
     stairs: list[Stair] = Field(default_factory=list, max_length=32)
+    room_symbols: list[RoomSymbol] = Field(default_factory=list, max_length=256)
     rooms: list[Room] = Field(default_factory=list)
     room_zones: list[RoomZone] = Field(default_factory=list, max_length=50)
     findings: list[Finding] = Field(default_factory=list)
@@ -182,6 +188,9 @@ class PlanModel(Base):
                 raise ValueError("Opening is too narrow")
             if o.sill_m + o.height_m > host.height_m + 1e-6:
                 raise ValueError("Opening exceeds host wall height")
+        for symbol in self.room_symbols:
+            if not (0 <= symbol.position.x <= w and 0 <= symbol.position.y <= h):
+                raise ValueError("Room symbol exceeds source image")
         for stair in self.stairs:
             if stair.id in ids or stair.id in walls:
                 raise ValueError("Duplicate stair ID")

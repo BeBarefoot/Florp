@@ -253,7 +253,8 @@ export default function Inspector(p: Props) {
               <option value="">Unspecified</option>{ROOM_TYPES.map(t => <option key={t}>{t}</option>)}
             </select>
           </label>
-          {selRoom.needsSemanticReview && <p>Review this room after a split or merge.</p>}
+          {selRoom.needsSemanticReview && <button onClick={() => p.edit({...m, rooms:m.rooms.map(r =>
+            r.id === selRoom.id ? {...r, needsSemanticReview:false} : r)})}>Confirm room details</button>}
           <p className="fe-muted">Usable floor area, measured to the inner wall faces.</p>
         </section>
       )}

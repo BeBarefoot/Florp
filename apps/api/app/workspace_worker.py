@@ -11,7 +11,7 @@ import math
 from pathlib import Path
 import cv2, numpy as np
 from .plan_workspace import Document, Segment, Point
-from .deterministic_blueprint.preprocess import decode
+from .deterministic_blueprint.preprocess import decode, sharpen_soft_scan
 
 
 def _remeasure(objects, strip_mask, classes):
@@ -148,7 +148,10 @@ def dimension_framed_crop(strips, image):
 
 
 def build(path, roi=None, *, plan_id=None):
-    image = decode(Path(path).read_bytes())
+    source = decode(Path(path).read_bytes())
+    image = sharpen_soft_scan(source)
+    notes = ["Soft source edges detected. Applied mild sharpening before extraction."] if image is not source else []
+    from .room_symbols import detect_symbols, tag_rooms
     h, w = image.shape[:2]
     from .config import settings
     from .plan_reconstruct import extend_dangling, reconstruct
@@ -157,13 +160,13 @@ def build(path, roi=None, *, plan_id=None):
         from .semantic_workspace import build as semantic_build
 
         doc = semantic_build(image)
-        return reconstruct(doc, plan_id) if plan_id is not None else doc
+        doc.warnings.extend(notes)
+        return tag_rooms(reconstruct(doc, plan_id), detect_symbols(image, roi)) if plan_id is not None else doc
     from .ink_layers import wall_strips
     from .envelope import building_envelope, mask_from_polygon
     from .structural_runs import structural_runs, join_intersections
     from . import openings as gap_openings
 
-    notes = []
     strips = wall_strips(image)
     stats = strips.stats
     w_wall = float(stats["w_wall"])
@@ -326,7 +329,10 @@ def build(path, roi=None, *, plan_id=None):
         + ["Flat, uniformly scaled source assumed. Heights use editable defaults."],
     )
 
-    return reconstruct(doc, plan_id, strips=strips, image=image) if plan_id is not None else doc
+    if plan_id is None:
+        return doc
+    model = reconstruct(doc, plan_id, strips=strips, image=image)
+    return tag_rooms(model, detect_symbols(image, roi))
 
 
 if __name__ == "__main__":
