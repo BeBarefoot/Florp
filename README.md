@@ -85,6 +85,8 @@ private network. The HTTPS gateway below requires an owner password for the app 
 4. **Walk and save a view.** Drag to turn and walk, use the on-screen arrows or WASD to move, and pinch or scroll to zoom. Hold Shift or an on-screen arrow while dragging to look up or down. In **Overview**, tap the floor to land there, or choose **Add view** and tap to save a stop. **Save this view** saves the current camera on a calibrated plan. Sample and approximate-scale tours keep new stops for the session. If the plan changed since the scene was saved, review and save the scene against the latest plan before saving permanent stops.
 5. **Furnish and design.** In the editor, place furniture, choose a **Floor finish**, and save the scene. Use **Capture view** and **Export render inputs** for a camera-aligned preview, depth map and object mask. In the phone tour, **Download view image** and **Download view prompt** export the current view for an external image generator. Treat generated images as design previews.
 
+On a fresh extraction, Florp checks for soft edges and sharpens a working copy when needed. It looks for drawn car and bed symbols before calibration. In a closed room, a car suggests **Garage** and a bed suggests **Bedroom**. Outside a detected room, the symbol keeps its own label. Look for the tags in the plan editor or the phone tour’s **Overview**. Select a tagged room in the editor to change its name or type. Faint or unfamiliar symbols can go unrecognized.
+
 For two levels, upload both files to the same project and choose **Identify floors, garden and stairs**. Confirm the suggested order and outlines, then **Save floor pair**. Each floor has its own calibrated editor and walkthrough. Continuous stair travel is planned.
 
 ## Image generation

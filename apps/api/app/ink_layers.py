@@ -303,13 +303,13 @@ def _glyph_components(mask, min_holes=2):
     return rejected
 
 
-def _neutral_wall_bands(gray, paper, saturation):
+def _neutral_wall_bands(gray, paper, saturation, *, minimum_thickness=3):
     """Recover solid gray infill while excluding thin drafting strokes."""
     # Contrast is relative to nearby paper, so the same test works on a
     # white scan and a slightly shaded photo. Do not sharpen the wall mask:
     # halos around furniture and lettering can create false thick strokes.
     fill = ((gray >= 105) & (gray <= 0.89 * paper) & (saturation < 22)).astype(np.uint8)
-    thickness = max(3, min(9, (round(min(gray.shape) / 190) | 1)))
+    thickness = max(minimum_thickness, min(9, (round(min(gray.shape) / 190) | 1)))
     length = max(25, 7 * thickness)
     horizontal = cv2.morphologyEx(fill, cv2.MORPH_OPEN, np.ones((thickness, length), np.uint8))
     vertical = cv2.morphologyEx(fill, cv2.MORPH_OPEN, np.ones((length, thickness), np.uint8))
@@ -499,7 +499,12 @@ def wall_strips(image: np.ndarray) -> Strips:
     red = strips_from(red_cand, True) | recovered
     blue = strips_from(blue_cand, False)
     if red.sum() + blue.sum() < max(100, 0.003 * h * w):
-        neutral = _neutral_wall_bands(gray, paper, hsv[:, :, 1])
+        # On sheets with substantial dark walls, gray details also include
+        # softened furniture and grids. Require broader infill for recovery.
+        minimum_thickness = 7 if dark.sum() >= 0.015 * h * w else 3
+        neutral = _neutral_wall_bands(
+            gray, paper, hsv[:, :, 1], minimum_thickness=minimum_thickness
+        )
         if neutral.sum() >= max(100, 0.002 * h * w):
             dark |= neutral
             ink |= neutral

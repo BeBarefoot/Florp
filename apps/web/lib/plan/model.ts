@@ -27,8 +27,8 @@ export type Opening = {
   confidence: number;
   status: OpeningStatus;
 };
-export type RoomType = "bedroom" | "bathroom" | "kitchen" | "corridor" | "other";
-export const ROOM_TYPES: RoomType[] = ["bedroom", "bathroom", "kitchen", "corridor", "other"];
+export type RoomType = "bedroom" | "garage" | "bathroom" | "kitchen" | "corridor" | "other";
+export const ROOM_TYPES: RoomType[] = ["bedroom", "garage", "bathroom", "kitchen", "corridor", "other"];
 export type Room = {
   id: string;
   wallIds: string[];
@@ -71,6 +71,7 @@ export type PlanModel = {
   walls: Wall[];
   openings: Opening[];
   stairs?: Stair[];
+  roomSymbols?: { kind: "car" | "bed"; position: Pt }[];
   rooms: Room[];
   roomZones?: Omit<Room, "wallIds" | "areaPx2">[];
   findings: Finding[];
