@@ -285,7 +285,10 @@ def build(path, roi=None, *, plan_id=None):
     if strips.ink is not None:
         # On coloured plans, raw ink also includes dimension leaders and
         # furniture. It cannot justify extending a structural wall.
-        extension_ink = (mask > 0) if (strips.red.any() or strips.blue.any()) else strips.ink | (mask > 0)
+        material_only = strips.red.any() or strips.blue.any() or stats.get("neutral_wall_bands")
+        extension_ink = mask > 0
+        if not material_only:
+            extension_ink |= strips.ink
         material_ink = None
         if strips.boundary_mask is not None and strips.structural_colour is not None:
             # Only a band of original material can recover an extension

@@ -769,8 +769,105 @@ def _long_glazing(image, pieces, colour):
     return proposals
 
 
-def detect(image, walls, strips, boxes=(), exterior=None, *, framed_site=False) -> Result:
-    """Classify every wall gap; ``walls`` are axis-aligned wall Segments."""
+def _pale_doors(walls, material, swing_ink, existing, start_index):
+    """Find source-backed swings between facing jambs, including angled ones."""
+    from shapely.geometry import LineString, Point as ShapePoint
+    from shapely.strtree import STRtree
+
+    tips = []
+    for wall in walls:
+        a = np.array([wall.start.x, wall.start.y])
+        b = np.array([wall.end.x, wall.end.y])
+        length = np.linalg.norm(b - a)
+        if length >= max(8, wall.thickness_px):
+            direction = (b - a) / length
+            tips.extend(
+                ((a, -direction, wall.thickness_px), (b, direction, wall.thickness_px))
+            )
+    points = STRtree([ShapePoint(p) for p, _, _ in tips])
+    accepted = [
+        LineString([(o.start.x, o.start.y), (o.end.x, o.end.y)])
+        for o in existing
+        if o.kind != "wall"
+    ]
+    reach = 0.18 * max(material.shape)
+    results = []
+    for i, (start, outward, first_width) in enumerate(tips):
+        bounds = ShapePoint(start).buffer(min(reach, 16 * first_width))
+        neighbors = points.query(bounds)
+        pairs = []
+        for j in neighbors:
+            if j <= i:
+                continue
+            end, other_outward, second_width = tips[j]
+            delta = end - start
+            distance = np.linalg.norm(delta)
+            thickness = min(first_width, second_width)
+            if not max(12, 1.15 * thickness) <= distance <= min(reach, 16 * thickness):
+                continue
+            direction = delta / distance
+            if min(outward @ direction, -other_outward @ direction) < 0.55:
+                continue
+            pairs.append((distance, int(j), direction, thickness))
+        for distance, j, direction, thickness in sorted(pairs, key=lambda p: p[:2])[:4]:
+            end = tips[j][0]
+            gap_line = LineString([start, end])
+            if any(
+                gap_line.intersection(other.buffer(max(3, 0.20 * thickness))).length
+                > distance * 0.35
+                for other in accepted
+            ):
+                continue
+            normal = np.array([-direction[1], direction[0]])
+            raw_width = min(thickness, distance * 0.48)
+            samples = start + np.linspace(0.15, 0.85, 25)[:, None] * (end - start)
+            offsets = raw_width * np.array([-0.25, 0, 0.25])
+            xy = np.rint(samples[:, None, :] + offsets[None, :, None] * normal).astype(
+                int
+            )
+            x = xy[..., 0].clip(0, material.shape[1] - 1)
+            y = xy[..., 1].clip(0, material.shape[0] - 1)
+            if material[y, x].mean() > 0.15:
+                continue
+            # Rotate only the local patch. Fit in jamb coordinates while
+            # emitting the original measured opening endpoints.
+            pad = math.ceil(1.25 * distance + thickness / 2)
+            matrix = np.array(
+                [
+                    [*direction, pad - direction @ start],
+                    [*normal, pad - normal @ start],
+                ]
+            )
+            patch = cv2.warpAffine(
+                swing_ink, matrix, (2 * pad + 1, 2 * pad + 1), flags=cv2.INTER_NEAREST
+            )
+            fit = _photo_door(patch > 0, Gap(True, pad, pad, pad + distance, raw_width))
+            if fit is None:
+                continue
+            index = start_index + len(results) // 2
+            host, door = _segment(
+                Gap(True, 0, 0, distance, thickness),
+                "door",
+                0.78,
+                index,
+                fit,
+                source_supported=True,
+            )
+            p = Point(x=float(start[0]), y=float(start[1]))
+            q = Point(x=float(end[0]), y=float(end[1]))
+            host.start, host.end = p, q
+            door.start, door.end = (p, q) if fit[3] else (q, p)
+            leaf = normal * fit[4]
+            door.leaf = Point(x=float(leaf[0]), y=float(leaf[1]))
+            results.extend((host, door))
+            accepted.append(gap_line)
+    return results
+
+
+def detect(
+    image, walls, strips, boxes=(), exterior=None, *, framed_site=False
+) -> Result:
+    """Classify wall gaps, including angled jambs on pale drawings."""
     result = Result()
     h, w = image.shape[:2]
     gaps = enumerate_gaps(walls, (h, w))
@@ -1006,4 +1103,9 @@ def detect(image, walls, strips, boxes=(), exterior=None, *, framed_site=False) 
                 )
                 accepted.append(g)
                 index+=1
+    if pale_swing_ink is not None:
+        result.objects.extend(_pale_doors(
+            walls, strips.mask > 0, (line_dil | pale_swing_ink).astype(np.uint8),
+            result.objects, index,
+        ))
     return result

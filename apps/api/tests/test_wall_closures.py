@@ -93,3 +93,19 @@ def test_fourth_wall_meets_longer_return_without_covering_a_door():
         Opening(id="door", kind="door", host_wall_id="w3", offset_px=75, width_px=20)
     ]
     assert not any(f.closure for f in search_closures(model, image).findings)
+
+
+def test_pale_plan_prunes_short_isolated_fixture_stroke_but_preserves_partition():
+    from app.plan_reconstruct import Counters, ReconstructConfig, Run, _prune
+
+    points = [(10, 10), (200, 10), (100, 10), (100, 60), (25, 30), (75, 30)]
+    edges = [
+        [0, 2, Run(points[0], points[2], 24)],
+        [2, 1, Run(points[2], points[1], 24)],
+        [2, 3, Run(points[2], points[3], 8)],
+        [4, 5, Run(points[4], points[5], 8)],
+    ]
+    counters = Counters()
+    kept = _prune(points, edges, 24, ReconstructConfig(), counters, pale=True)
+    assert kept == edges[:3]
+    assert counters.pruned_fragments == 1

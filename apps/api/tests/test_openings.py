@@ -331,3 +331,44 @@ def test_pale_door_swing_on_wall_face_retains_jamb_span():
     found = detect(image, walls, strips)
     door, = [o for o in found.objects if o.kind == "door"]
     assert (door.start.x, door.end.x, door.start.y) == (250, 330, 60)
+
+
+@pytest.mark.parametrize("angle,wall_width", [(0, 54), (45, 15)])
+def test_pale_doors_between_facing_jambs_preserve_span(angle, wall_width):
+    from app.openings import Result, _pale_doors
+
+    start = np.array([210., 150.])
+    radians = np.deg2rad(angle)
+    direction = np.array([np.cos(radians), np.sin(radians)])
+    normal = np.array([-direction[1], direction[0]])
+    width = 70
+    end = start + width * direction
+    walls = [
+        wall(0, start - 90 * direction, start, wall_width),
+        wall(1, end, end + 90 * direction, wall_width),
+    ]
+    material = np.zeros((350, 440), np.uint8)
+    for segment in walls:
+        a, b = segment.start, segment.end
+        # Butt caps retain the actual wall tips, unlike cv2.line's round cap.
+        p, q = np.array([a.x, a.y]), np.array([b.x, b.y])
+        d = normal * wall_width / 2
+        cv2.fillConvexPoly(material, np.int32([p-d,q-d,q+d,p+d]), 1)
+    ink = np.zeros_like(material)
+    sweep = np.linspace(0, np.pi/2, 75)
+    arc = start + width * (np.cos(sweep)[:,None]*direction + np.sin(sweep)[:,None]*normal)
+    cv2.polylines(ink, [np.rint(arc).astype(np.int32)], False, 1, 2)
+    cv2.line(ink, tuple(start.astype(int)), tuple(np.rint(start + width*normal).astype(int)), 1, 2)
+    host, door = _pale_doors(walls, material, ink, [], 0)
+    assert door.host_id == host.id and door.uncertain
+    assert (door.start.x, door.start.y) == pytest.approx(start)
+    assert (door.end.x, door.end.y) == pytest.approx(end)
+    rebuilt = model(walls, Result(objects=[host, door]))
+    opening, = rebuilt.openings
+    assert opening.host_wall_id is not None
+    assert opening.width_px == pytest.approx(width)
+    assert opening.status == "proposed"
+    assert _pale_doors(walls, material, ink, [door], 0) == []
+    assert _pale_doors(walls, material, np.zeros_like(ink), [], 0) == []
+    cv2.line(material, tuple(start.astype(int)), tuple(np.rint(end).astype(int)), 1, wall_width)
+    assert _pale_doors(walls, material, ink, [], 0) == []

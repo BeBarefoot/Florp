@@ -386,7 +386,7 @@ def _collinear_sibling(points, edges, edge, reach):
     return False
 
 
-def _prune(points, edges, t_med, cfg, counters, supported_sources=frozenset()):
+def _prune(points, edges, t_med, cfg, counters, supported_sources=frozenset(), *, pale=False):
     for _ in range(3):
         deg = _degrees(edges)
         keep = []
@@ -404,7 +404,8 @@ def _prune(points, edges, t_med, cfg, counters, supported_sources=frozenset()):
                 continue
             dangling = deg[u] == 1 or deg[v] == 1
             isolated = deg[u] == 1 and deg[v] == 1
-            if (dangling and length < limit) or (
+            thin_fixture = pale and isolated and r.t < 0.45 * t_med and length < 4 * t_med
+            if thin_fixture or (dangling and length < limit) or (
                 isolated and length < max(2 * limit, 5 * r.t)
             ):
                 if length >= 1.5 * r.t and _collinear_sibling(
@@ -554,7 +555,10 @@ def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = Non
     points, edges = _build_graph(runs)
     edges = _merge_degree_two(points, edges)
     supported_sources = {o.id for o in doc.objects if o.kind == "wall" and o.boundary_supported}
-    edges = _prune(points, edges, t_med, cfg, counters, supported_sources)
+    edges = _prune(
+        points, edges, t_med, cfg, counters, supported_sources,
+        pale=bool(strips is not None and strips.stats.get("neutral_wall_bands")),
+    )
     used = sorted({k for u, v, _ in edges for k in (u, v)})
     index = {k: i for i, k in enumerate(used)}
     w, h = doc.width, doc.height
