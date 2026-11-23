@@ -75,3 +75,19 @@ def test_dismissed_findings_stay_hidden():
     data["dismissedFindings"] = [finding.id]
     assert not [f for f in derive(PlanModel.model_validate(data)).findings
                 if f.category == "open_wall_end"]
+
+
+def test_reloading_an_l_shaped_room_retains_both_room_labels():
+    coordinates = [(100,100),(190,100),(400,100),(400,310),(400,400),
+                   (100,400),(190,310)]
+    boundaries = [(0,1),(1,2),(2,3),(3,4),(4,5),(5,0),(1,6),(6,3)]
+    model = derive(PlanModel.model_validate({
+        "id":"p", "imageTransform":{"width":800,"height":600},
+        "nodes":[{"id":str(i),"x":x,"y":y} for i,(x,y) in enumerate(coordinates)],
+        "walls":[{"id":f"w{i}","a":str(a),"b":str(b),"thicknessPx":10}
+                 for i,(a,b) in enumerate(boundaries)],
+    }))
+    assert len(model.rooms) == 2
+    model.rooms[0].label = "Living room"
+    model.rooms[1].label = "Bedroom"
+    assert derive(model).rooms == model.rooms
