@@ -143,7 +143,30 @@ export default function PlanEditor({ id }: { id: string }) {
       saveDone.current = null;
     }
   }
-  async function alignWalls(nextDisplay?: Display, recoverMissing = false) {
+  async function restoreBundle(file: File) {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      if (saveDone.current) await saveDone.current;
+      const current = live.current;
+      const form = new FormData();
+      form.append("file", file);
+      const restored = await request<PlanModel>(`/blueprints/${id}/plan/restore-bundle`, {method:"POST", body:form});
+      if (live.current !== current || restored.revision !== revision.current)
+        throw Error("The floor changed while reading the bundle. Reload or try again.");
+      edit(restored);
+      setSelection(null);
+      setActiveFinding(null);
+      setTool("select");
+      setStatus("Corrected plan loaded");
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function alignWalls() {
     if (busy) return;
     setBusy(true);
     setError("");
@@ -152,7 +175,7 @@ export default function PlanEditor({ id }: { id: string }) {
       if (saveDone.current) await saveDone.current;
       const current = live.current;
       if (!current) return;
-      const next = await request<PlanModel>(`/blueprints/${id}/plan/align-walls?recover_missing=${recoverMissing}`, {
+      const next = await request<PlanModel>(`/blueprints/${id}/plan/align-walls?recover_missing=true`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ expectedRevision: revision.current, model: current }),
@@ -164,7 +187,6 @@ export default function PlanEditor({ id }: { id: string }) {
       if (JSON.stringify(next) !== JSON.stringify(current)) edit(next);
       else setStatus(JSON.stringify(current) === saved.current ? "Saved" : "Unsaved changes");
       setActiveFinding(null);
-      if (nextDisplay) setDisplay(nextDisplay);
       return next;
     } catch (e) {
       setError(String(e));
@@ -401,6 +423,13 @@ export default function PlanEditor({ id }: { id: string }) {
       }}
     >
       <summary>History & source notes</summary>
+      <label>Restore corrected plan (.zip)
+        <input type="file" accept=".zip,application/zip" disabled={busy} onChange={(e) => {
+          const file = e.currentTarget.files?.[0];
+          e.currentTarget.value = "";
+          if (file) void restoreBundle(file);
+        }} />
+      </label>
       {m.notes.map((n, i) => (
         <p key={i} className="fe-muted">{n}</p>
       ))}
@@ -467,10 +496,7 @@ export default function PlanEditor({ id }: { id: string }) {
         undo={undo}
         redo={redo}
         display={display}
-        setDisplay={(next) => {
-          if (next === "2d") setDisplay(next);
-          else void alignWalls(next);
-        }}
+        setDisplay={setDisplay}
         scaled={!!mpp}
         walkthroughBusy={busy}
         onWalkthrough={() => void (async () => {
@@ -502,7 +528,7 @@ export default function PlanEditor({ id }: { id: string }) {
           setView("original");
           setDisplay("2d");
         }}
-        onAlignWalls={() => void alignWalls(undefined, true)}
+        onAlignWalls={() => void alignWalls()}
         onReextract={() => void extract(revision.current, true)}
       />
       <main className="fe-stage">

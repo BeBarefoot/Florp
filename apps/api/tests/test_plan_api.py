@@ -239,3 +239,25 @@ def test_invalid_approval_profile_keeps_saved_revision_and_skips_worker(client,t
     result=c.post(route+'/extract?expected_revision=1')
     assert result.status_code==503
     assert c.get(route).json()==before
+
+
+def test_restore_bundle_preserves_exported_geometry_without_overwriting_current_revision(client):
+    c, bid = client
+    url = f"/blueprints/{bid}/plan"
+    original = plan(scale=reference(), openings=[dict(
+        id="front-door", kind="door", hostWallId="w0", offsetPx=120,
+        widthPx=85, hinge="end", swing="right", status="confirmed",
+    )])
+    first = c.put(url, json={"expectedRevision": 0, "model": original}).json()["model"]
+    archive = c.get(url + "/export").content
+    current = c.put(url, json={"expectedRevision": 1, "model": plan(scale=reference())}).json()
+    restored = c.post(url + "/restore-bundle", files={"file": ("plan.zip", archive)})
+    assert restored.status_code == 200, restored.text
+    assert restored.json() == {**first, "revision": 2}
+    assert c.get(url).json() == current
+    assert c.post(url + "/restore-bundle", files={"file": ("invalid.zip", b"invalid")}).status_code == 422
+
+    foreign = io.BytesIO()
+    with zipfile.ZipFile(foreign, "w") as bundle:
+        bundle.writestr("report.json", json.dumps({"plan": {**first, "id": "different-floor"}}))
+    assert c.post(url + "/restore-bundle", files={"file": ("foreign.zip", foreign.getvalue())}).status_code == 422

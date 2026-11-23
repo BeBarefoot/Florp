@@ -125,9 +125,17 @@ def rooms(model: PlanModel) -> list[Room]:
     def related(old, new):
         a = [(p.x, p.y) for p in old.polygon]
         b = [(p.x, p.y) for p in new.polygon]
-        return old.wall_ids == new.wall_ids or _inside(_centroid(a), b) or _inside(_centroid(b), a)
+        return _inside(_centroid(a), b) or _inside(_centroid(b), a)
 
-    links = [[old for old in model.rooms if related(old, new)] for new in result]
+    # An L-shaped room's centroid can lie inside its neighbor. Match stable
+    # wall boundaries first so loading the same plan preserves room names.
+    previous_by_boundary = {tuple(old.wall_ids): old for old in model.rooms}
+    exact = {tuple(new.wall_ids) for new in result} & previous_by_boundary.keys()
+    unmatched = [old for old in model.rooms if tuple(old.wall_ids) not in exact]
+    links = []
+    for new in result:
+        previous = previous_by_boundary.get(tuple(new.wall_ids))
+        links.append([previous] if previous else [old for old in unmatched if related(old, new)])
     for new, matches in zip(result, links):
         if len(matches) == 1 and sum(matches[0] in group for group in links) == 1:
             old = matches[0]
