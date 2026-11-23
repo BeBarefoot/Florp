@@ -78,7 +78,9 @@ invalid uploads preserve the latest revision. CI artifacts identify build/runtim
 
 ### B — Gate 1: measured extraction and fixture review
 
-Owner role: extraction engineer + independent architectural annotator.
+Owner role: extraction engineer + independent architectural annotator for benchmark ground truth.
+
+The product flow is self-serve. Measure first-pass extraction and buyer correction effort separately.
 
 - [ ] Assemble at least 30 consented full plans across clean/vector, scanned and
       photographed styles, including dimensions, furniture and negative site marks.
@@ -90,14 +92,14 @@ Owner role: extraction engineer + independent architectural annotator.
       on identical inputs. Record hashes, model/config, hardware, latency and failures.
 - [ ] Extend existing `extraction_benchmark.py` / `plan_score.py` reporting where needed:
       wall/opening precision and recall, host correctness, width/placement error,
-      per-room/topology errors, metric error and median/P90 correction time.
+      per-room/topology errors, metric error and median/P90 buyer correction time.
 - [ ] Implement only evidence-backed fixes to dominant errors. Keep uncertain fixtures
       optional; measure precision/recall per class rather than importing all boxes.
 
 Proposed pilot thresholds (targets, not achieved results): wall precision and recall
 ≥.95, door/window precision and recall ≥.90, correct host ≥.95, room-count agreement
 ≥.90, confirmed scale error ≤2%, opening placement/width P90 error ≤10 cm, and ≥90%
-of supported plans acceptable after ≤5 minutes correction. Report per cohort and
+of supported plans acceptable after ≤5 minutes of unaided buyer correction. Report per cohort and
 sample counts; do not hide unsupported failures in an aggregate. Product and the
 architectural reviewer must agree these tolerances before freezing the test set.
 A fixture model is optional until its per-class precision is ≥.90; missing fixtures
@@ -135,6 +137,11 @@ Owner role: product/frontend engineer + usability reviewer.
 
 - [ ] Implement upload/photo → review → calibrate → 3D → camera → design as clear steps,
       with one primary action, saved progress, undo, visible errors and retry guidance.
+- [ ] Test guided phone repairs for missing walls, room closure, scale and misplaced
+      openings. Measure whether buyers can find and fix each issue unaided.
+- [ ] Prototype chat repair on one selected finding. Show source evidence, a specific
+      proposed edit and its effect in 2D/3D. Ask for missing information and apply only
+      after buyer approval using the existing revision and validation flow.
 - [ ] Keep training/model diagnostics in developer mode. Add touch pan/zoom and reliable
       feature selection, object list/add/remove/rotate/resize and camera aim controls.
 - [ ] Add manifest/install behavior for the PWA; define offline scope explicitly. Never
@@ -280,11 +287,7 @@ Local launcher smoke test: API health and web HTTP 200; SIGTERM closes both port
 Locked uv install and shell syntax checks pass. CI validates locked installs and all suites; this does not imply dependencies
 have received a complete security audit or that optional research extras are supported.
 
-Next step: resolve the npm audit critical Next.js and high PostCSS findings with
-a tested framework dependency update. Then render idempotency/recovery and actionable
-provider failures, with mocked
-provider regressions. Preserve explicit consent; never retry a potentially billable
-submission automatically. Hosted worker/authorization and live evidence gates stay open.
+See Steps 3 and 4 for the dependency update and render recovery work. Hosted execution and live-provider evidence remain open release gates.
 
 ### Step 3 — Resolve dependency audit findings
 

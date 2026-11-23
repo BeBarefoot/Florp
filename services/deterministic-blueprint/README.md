@@ -1,6 +1,6 @@
 # Florp deterministic blueprint microservice
 
-A separate opt-in service for color architectural plans. Uses OpenCV, Shapely, NumPy and local Tesseract; no generative models, cloud inference, runtime checkpoint downloads, training, or edits to existing Florp projects.
+An opt-in local extractor for red and blue architectural wall bands. It returns metric wall footprints and diagnostic exports. The homeowner workflow uses the main Florp extractor and editor. See the [Florp README](../../README.md).
 
 ## Run on macOS
 
@@ -14,13 +14,13 @@ Then use the existing API environment:
 
 ```bash
 cd apps/api
-uv sync
-uv run uvicorn app.deterministic_blueprint.service:app --host 127.0.0.1 --port 8010 --workers 1
+uv sync --locked
+uv run --locked uvicorn app.deterministic_blueprint.service:app --host 127.0.0.1 --port 8010 --workers 1
 ```
 
 Check `tesseract --list-langs` includes `eng` and `heb`. Missing languages are reported, never downloaded implicitly. The service does not need Torch, MPS, a GPU or Florp's model weights.
 
-For a minimal installation separate from Florp, create a Python 3.11+ environment, install `services/deterministic-blueprint/requirements.txt`, and put `apps/api` on `PYTHONPATH`. The package has no imports from Florp's database or legacy extraction modules.
+For a minimal installation separate from Florp, create a Python 3.12 environment, install `services/deterministic-blueprint/requirements.txt`, and put `apps/api` on `PYTHONPATH`. The package has no imports from Florp's database or legacy extraction modules.
 
 Container alternative (build from repository root; builds download packages, processing does not):
 
@@ -28,8 +28,6 @@ Container alternative (build from repository root; builds download packages, pro
 docker build -f services/deterministic-blueprint/Dockerfile -t florp-deterministic .
 docker run --rm --cpus=8 --memory=2g -p 127.0.0.1:8010:8010 florp-deterministic
 ```
-
-The container definition is supplied; the development environment did not have Docker, so a container build was not validated here.
 
 ## Extract one plan
 
@@ -88,16 +86,11 @@ Required layers are `LAYER_WALLS_EXTERIOR`, `LAYER_WALLS_INTERIOR`, `LAYER_MAMAD
 
 The viewport is the selected architecture's axis-aligned bounding box expanded **exactly 50.0cm on each side**. This is a bounding rectangle, not a 50cm offset curve following every concavity. All floating-point vector coordinates retain the metric margin. PNG samples necessarily round: up to one output pixel of discrepancy per side, recorded in the report. Setting PNG DPI metadata alone does not calibrate a drawing; default print sampling at 1:100 is 1.1811 output pixels per architecture centimeter. It adds no source detail.
 
-## Pipeline and corrections to the supplied sample
+## Supported drawings
 
-1. PNG/JPEG decoding checks dimensions before allocating, normalizes EXIF, and composites alpha onto white. Maximum 24MP/24MiB.
-2. Canny and Hough-supported paper-boundary detection avoids treating an interior wall rectangle as a document. Known-aspect homography is applied only with sufficient evidence.
-3. Local OCR is timed out. Calibration pairs actual ticks/lines and numeric labels, not label proximity to arbitrary walls. Explicit reference has priority.
-4. Strong HSV red/blue seeds plus Lab chroma checks separate material candidates. A nearby-seed Lab fallback recovers some faded red hatching. OCR text pixels are suppressed while long straight wall evidence crossing OCR boxes is protected.
-5. Scale-aware closing fuses hatching; horizontal and vertical morphological openings are unioned for support tests. Area, thickness, elongation, density and straight-run coverage reject noise components. Black/gray, yellow and green are excluded by the material masks.
-6. CCOMP hierarchy preserves holes and islands. Simplification is metric, not proportional to contour perimeter. Shared-coordinate snapping is solved simultaneously around closed rings; invalid/excessive snaps are rejected instead of `buffer(0)` discarding topology. Material overlaps favor concrete.
-7. The exterior is inferred from closed perimeter topology; only classification uses gap bridging. Exported wall geometry never includes these inferred bridges. No convex hull replaces a concave boundary; the largest wall component is not presumed exterior.
-8. Metric normalization/export never truncates `50 * pixels_per_cm`. The supplied prototype ignored outer-only mode and filled contour holes; both are explicitly tested here.
+The pipeline uses colour to separate red block walls and blue concrete. It uses local OCR for scale candidates, morphology to recover hatched bands, and closed-ring geometry to preserve holes. Perimeter classification can use gaps to infer a boundary. Exported footprints follow the extracted wall evidence.
+
+This service targets colour wall footprints. For grayscale plans, hosted doors and windows, rooms, or walkthroughs, use the [main Florp app](../../README.md#upload-correct-and-walk).
 
 ## Timing and overload behavior
 
@@ -109,18 +102,14 @@ Run the reproducible benchmark **separately from tests**:
 
 ```bash
 cd apps/api
-uv run python scripts/benchmark_deterministic.py --runs 5 \
+uv run --locked python scripts/benchmark_deterministic.py --runs 5 \
   --image /path/to/private-plan.png \
-  --output ../../docs/deterministic-engine/local-benchmark.json
-uv run pytest -q tests/test_deterministic_blueprint.py
+  --output /tmp/florp-local-benchmark.json
+uv run --locked pytest -q tests/test_deterministic_blueprint.py
 ```
 
 Benchmark exits nonzero if any measured cold/warm/isolated request fails or exceeds 3.5 seconds. Linux pins the benchmark and its children to eight CPU cores. macOS reports hardware without pretending affinity was set. Native dependency imports occur inside every isolated HTTP worker and are included in those measurements. Outputs and evidence must also be checked: speed is not an accuracy score.
 
-## Accuracy boundary and current state
+## Accuracy and validation
 
-This is a tested **deterministic color-extraction baseline**, not a production-accuracy certification. The supplied photographs contain faded small walls, colored dimensions, cropped boundaries and a site layout. Some true block walls remain fragmented and some same-color annotations survive; cropped perimeter classification can be unresolved. Hebrew traineddata was absent in the benchmark host and reported; the container installs it. No real-plan polygon ground truth was supplied, so no measured IoU, dimensional-error or window-recall claim is made.
-
-Exactly matching wall and annotation colors cannot be semantically distinguished by thresholds alone. The service therefore always returns `requires_review=true` and `accuracy_certified=false`. Correct metric margins are relative to **the extracted architecture and chosen scale**, not proof that all architecture was correctly detected. Neither color masks nor a raster photo provide millimeter accuracy by themselves.
-
-To establish a production claim, evaluate original, manually traced independent plans with known dimensions: material mask IoU, wall-boundary error in cm, missed/false openings, perimeter classification, scale error and end-to-end P95/max latency. Test clean scans, angled photos, faint colors, monochrome rejection, Hebrew/rotated labels, site boundaries and incomplete crops separately. Set acceptance tolerances against source resolution. This service preserves uncertainty instead of closing unsupported gaps. It does not infer door/window types, sill heights, 3D extrusions or room measurements from ambiguous blank areas.
+Each report sets `requires_review=true` and `accuracy_certified=false`. The metric viewport margin is measured from the extracted architecture at the chosen scale. Check scale and perimeters on faded, cropped, or annotated plans. Establish accuracy with independently traced walls and known dimensions, and report quality and timing per input style. Historical measurements are in [engine validation](../../docs/deterministic-engine/VALIDATION.md).

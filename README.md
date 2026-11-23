@@ -1,8 +1,8 @@
 # Florp
 
-Turn a floor plan into an editable 2D drawing, walk through it in 3D, and try design ideas from a saved camera view.
+Turn a floor plan into an editable 2D drawing, walk through it on a phone, and try design ideas before buying or renovating a home.
 
-Florp is a single-user app that runs on your computer. macOS is the target for local use, and CI runs on Linux. Import, editing, walkthroughs, furniture and floor finishes work without an API key. The installable phone app uses the same projects and local API. [Phone app plan](docs/PHONE_APP_PLAN.md)
+Florp currently runs as a local, single-user app on a Mac. The browser editor and installable phone app share the same projects. Uploads, extraction, manual edits, furniture, floor finishes and walkthroughs work without an API key. An image provider is optional.
 
 ## Run on your Mac
 
@@ -20,45 +20,19 @@ To update, stop Florp, run `git pull --ff-only` from a clean local `main` checko
 
 ## Run and install the smartphone app
 
-From the web plan editor, select **Phone walkthrough** to save pending plan edits and open the tour directly. In **Overview**, tap an open floor spot to land there, or select **Add view** and tap the floor once to land and save that spot as a tour stop. In the walkthrough, use the on-screen arrows or WASD to move forward, backward and sideways. Drag to turn and walk. Hold Shift or an on-screen arrow while dragging to look up or down. Pinch or scroll to zoom. Open doors connect walkable rooms. Use **Save this view** to save your current position, heading and zoom. Sample and approximate-scale tours keep new stops for the current session only. If an older saved scene belongs to a previous plan revision, update it in the editor before saving new stops permanently.
+Start Florp on your Mac using the steps above. Open **Your walkthroughs** at `/phone`. Try **Explore sample tour**, or select **New space** and use **Upload plans** or **Take photo**. Tap a floor to extract and open it. From the web plan editor, **Phone walkthrough** saves pending plan edits and opens the same tour.
 
-For an AI still of your current walkthrough view, stop moving and select **Download view image** and **Download view prompt**. Upload the PNG and text together to your image generator. The prompt describes the camera pose, framing, room boundaries, wall and opening dimensions, stairs and placed objects in model coordinates. Calibrate the plan against a known measurement for real-world dimensions. A tour marked **Approximate scale** uses estimated distances.
-
-
-[Preview the phone walkthrough library](docs/images/phone-library.png). The cover uses an illustrative interior photograph. [Photo source](https://images.unsplash.com/photo-1600210492486-724fe5c67fb0)
-
-Florp’s smartphone app is a progressive web app (PWA) served by the same
-production launcher as the desktop editor. From the repository root, after the
-dependency installation above, run:
-
-```bash
-./scripts/start.sh
-```
-
-- **On the computer:** open `http://localhost:3000` in Chrome. Use the install
-  icon in the address bar or **Install page as app** in the browser menu. Launch
-  Florp from the installed shortcut to open your projects in a standalone window.
-- **Android over USB:** enable USB debugging, connect the phone, accept its
-  debugging prompt and run the following on the computer with Android Platform
-  Tools installed. Open `http://localhost:3000` in Android Chrome and choose
-  **Install app** or **Add to Home screen** from the menu.
+- **On your Mac:** open `http://localhost:3000/phone` in Chrome. Use the browser's install option to open Florp in its own window.
+- **Android over USB:** enable USB debugging and connect the phone. With Android Platform Tools installed, run the commands below, then open `http://localhost:3000/phone` in Android Chrome and choose **Install app** or **Add to Home screen**.
 
   ```bash
   adb reverse tcp:3000 tcp:3000
   adb reverse tcp:8000 tcp:8000
   ```
 
-- **iPhone simulator on Mac:** start an iPhone in Xcode Simulator, open
-  `http://localhost:3000` in Safari, and choose **Share → Add to Home Screen**.
-  For installation on a physical iPhone, use a trusted HTTPS origin for Florp
-  with an HTTPS-accessible API. See the private Wi-Fi installation steps below. Service workers require HTTPS or localhost.
+- **iPhone Simulator:** open `http://localhost:3000/phone` in the simulator's Safari. For a physical iPhone, use the HTTPS setup below.
 
-Open `/phone` to see **Your walkthroughs**. Select **New space**, enter a name, then choose **Upload plans** or **Take photo**. Tap a drawing to open its walkthrough.
-Drag vertically to walk, horizontally to turn, and pinch to zoom. Use **Overview**
-to orbit the floor. **Edit floor** opens the studio for calibration, saved cameras,
-floor finishes and design renders. The app saves projects on the computer running Florp.
-Offline launches show a reconnect screen. Editing, uploads and generation
-require connectivity. The app does not queue offline render requests.
+Uploads and edits are stored on the Mac. Keep Florp running and connected while using the phone app. A shared tour link needs access to the same Florp host.
 
 #### Install on a physical iPhone over private Wi-Fi
 
@@ -100,17 +74,18 @@ private network. The HTTPS gateway below requires an owner password for the app 
 3. Run `mkcert -CAROOT` to locate the CA folder. Transfer **only**
    `rootCA.pem` to the iPhone. Install the downloaded profile in Settings,
    then enable its trust under **General → About → Certificate Trust Settings**.
-4. Open `https://192.168.1.23:8443` in Safari and use **Share → Add to Home
+4. Open `https://192.168.1.23:8443/phone` in Safari and use **Share → Add to Home
    Screen**. Enable **Open as Web App** if offered. Keep both Mac terminals open.
 
-## Upload, walk and design
+## Upload, correct and walk
 
-1. **Upload a plan.** Create a project and add a PNG, JPEG, WebP or PDF. Florp imports the first page of each PDF. Export additional pages as separate files. The default limit is 20 MB per upload and 45 megapixels after decoding.
-2. **Review and calibrate.** Check the proposed walls, doors and windows against the drawing. Set one known distance and save the plan. Use **Architecture review** to record your checks for that saved revision. Review any detected furniture or bathroom fixtures individually before inserting them.
-3. **Walk and furnish.** Open 3D, place and aim a camera, then focus the 3D view. Use WASD to move and the left/right arrows to turn. Confirmed open doors allow passage when there’s enough clearance. Add, move or remove furniture, try a **Floor finish**, and save the scene to keep your view and edits.
-4. **Design from a view.** Use **Capture view** and **Export render inputs** to save the camera-aligned preview, depth and object mask locally. With an image provider configured, enter a **Design prompt**, approve generation and click **Generate preview**. Compare the result with the scene, since generated images can change visual details.
+1. **Upload.** Use PNG, JPEG, WebP or PDF. Florp imports the first page of each PDF, so export additional pages as separate files. The default limits are 20 MiB per upload and 45 megapixels after decoding.
+2. **Check and correct.** Open **Edit floor** from the tour to compare the extraction with the source. Confirm or reject proposed openings and edit walls, doors and windows. Set one known distance for metric measurements. The phone tour labels an uncalibrated draft **Approximate scale**. **Architecture review** records your checks for the saved revision. Review fixture suggestions individually before adding them.
+3. **Recover a missing floor.** If no closed rooms were found, choose **Mark a walkable floor in the editor** from the tour. Select two opposite corners of a clear area on the source drawing. Place and aim a camera, then choose **Save scene** to save the floor area and view. Use the plan editor to fix the missing wall or opening separately.
+4. **Walk and save a view.** Drag to turn and walk, use the on-screen arrows or WASD to move, and pinch or scroll to zoom. Hold Shift or an on-screen arrow while dragging to look up or down. In **Overview**, tap the floor to land there, or choose **Add view** and tap to save a stop. **Save this view** saves the current camera on a calibrated plan. Sample and approximate-scale tours keep new stops for the session. If the plan changed since the scene was saved, review and save the scene against the latest plan before saving permanent stops.
+5. **Furnish and design.** In the editor, place furniture, choose a **Floor finish**, and save the scene. Use **Capture view** and **Export render inputs** for a camera-aligned preview, depth map and object mask. In the phone tour, **Download view image** and **Download view prompt** export the current view for an external image generator. Treat generated images as design previews.
 
-**Working with two floors?** Upload both drawings to the same project and choose **Identify floors, garden and stairs**. Confirm the order, correct any suggested outlines, and select **Save floor pair**. Open either floor in its own editor. Calibrate the drawing to see an estimated garden area. Moving between floors uses the editor links. A continuous 3D stair connection is planned.
+For two levels, upload both files to the same project and choose **Identify floors, garden and stairs**. Confirm the suggested order and outlines, then **Save floor pair**. Each floor has its own calibrated editor and walkthrough. Continuous stair travel is planned.
 
 ## Image generation
 
@@ -155,30 +130,8 @@ The integration suite runs a real API and production frontend with temporary sto
 - [Production roadmap](docs/PRODUCTION_POC_PLAN.md), [whole-home capability roadmap](docs/ENVIZ_CAPABILITY_ROADMAP.md), and [issue #1](https://github.com/BeBarefoot/Florp/issues/1)
 - [Project history](HISTORY.md)
 
-### Present a floor on a phone
+## Product roadmap
 
-Open **Explore sample tour** in the phone library to try a furnished two-room apartment.
-Open any floor from the phone library to go straight into its 3D view. Newly
-uploaded drawings are extracted when opened. Floors without a measured reference
-show **Approximate scale**, and the viewer picks a clear starting point when
-there is no saved camera. Use **Edit floor** for optional corrections, calibration
-or named camera stops.
-Drag up or down to walk, sideways to turn, and pinch or scroll to zoom. Choose **Overview** to orbit the model and tap a numbered
-camera marker. **Play tour** advances through the saved views. **Share this tour**
-creates a link to the current stop on your Florp host. Recipients need the same host
-access as the presenter. When no clear interior starting point is available, the viewer opens in overview.
-Use **Hide tour controls** for an uninterrupted view. When a completed design
-render matches the camera and the saved scene and plan revisions, **Show saved
-design** displays that image. **Return to 3D** restores the interactive view.
+Florp is a self-serve app for homebuyers and homeowners. The first priority is the most accurate automatic extraction the source supports. When a draft needs help, the buyer should be able to repair it on the phone or ask a planned chat assistant to propose a specific correction for approval.
 
-### Realistic 3D walkthroughs
-
-**Use Three.js (the existing phone renderer) for the tour and Blender for asset preparation and lighting.** Start with the calibrated Florp GLB as the architectural reference. Keep the plan graph in Florp as the source for room boundaries, doors, windows and navigation.
-
-1. Set the floor finish in Florp. For production materials, use physically based textures for timber, tile and paint, with colour, roughness and normal maps tiled at their real-world size. [Poly Haven textures](https://polyhaven.com/textures) · [ambientCG](https://ambientcg.com/)
-2. Prepare properly licensed furniture and bathroom fixtures in Blender. Use a bed, wardrobe, toilet and vanity as the first set. Set metre units and a floor-level origin, simplify geometry, and export each asset as glTF/GLB. In Florp, the next rendering change is to use these meshes for the existing object types, matching their saved footprint, rotation and height.
-3. Validate one room on a real phone. Bake static lighting in Blender, use environment lighting for reflections and compress textures with KTX2 and meshes with Meshopt before expanding the asset library. Load the scene and verify movement through its doors at eye level. [Blender glTF exporter](https://docs.blender.org/manual/en/latest/addons/import_export/scene_gltf2.html) · [glTF Transform](https://gltf-transform.dev/)
-
-This phone tour currently displays Florp's existing 3D materials and fixtures. AI-generated stills can be attached to individual stops. A consistent view while walking comes from the textured 3D scene.
-
-[Room presentation](docs/images/phone-showcase.png) · [Dollhouse with camera stops](docs/images/phone-dollhouse.png)
+The next milestone is to benchmark first-pass extraction on real plans and measure how often buyers can go from upload to a usable walkthrough without help. Use a five-minute correction budget for supported plans. Validate the phone repair flow before expanding to whole-home navigation and richer visual assets. [Accuracy and mobile roadmap](docs/ROADMAP_ACCURACY_MOBILE.md) · [Whole-home roadmap](docs/ENVIZ_CAPABILITY_ROADMAP.md)
