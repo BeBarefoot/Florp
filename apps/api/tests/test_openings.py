@@ -311,3 +311,23 @@ def test_photo_crop_does_not_treat_hatched_edge_as_glazing():
     assert _cropped_material_band(image, gap)
     image[94:100, 15:115] = 210
     assert not _cropped_material_band(image,gap)
+
+
+def test_pale_door_swing_on_wall_face_retains_jamb_span():
+    walls = frame(wall(0, (80, 60), (250, 60), 20), wall(1, (330, 60), (400, 60), 20))
+    image = np.full((H, W, 3), 251, np.uint8)
+    for segment in walls:
+        a, b = segment.start, segment.end
+        if a.y == b.y:
+            points = ((round(a.x), round(a.y-10)), (round(b.x), round(b.y+10)))
+        else:
+            points = ((round(a.x-5), round(a.y)), (round(b.x+5), round(b.y)))
+        cv2.rectangle(image, *points, (195, 195, 195), -1)
+    cv2.ellipse(image, (250, 70), (80, 80), 0, 0, 90, (220, 220, 220), 2)
+    cv2.line(image, (250, 70), (250, 150), (220, 220, 220), 2)
+    image = cv2.GaussianBlur(image, (0, 0), 1)
+    strips = wall_strips(image)
+    assert strips.stats.get("neutral_wall_bands")
+    found = detect(image, walls, strips)
+    door, = [o for o in found.objects if o.kind == "door"]
+    assert (door.start.x, door.end.x, door.start.y) == (250, 330, 60)

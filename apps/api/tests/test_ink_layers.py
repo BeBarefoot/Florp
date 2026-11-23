@@ -156,3 +156,31 @@ def test_pale_gray_rooms_recover_solid_walls_without_grid_strokes(tmp_path):
     assert len(model.walls) == 4
     assert len(model.rooms) == 1
     assert [opening.kind for opening in model.openings] == ["window"]
+
+
+def test_wide_pale_wall_closes_room_without_filling_windows(tmp_path):
+    from app.workspace_worker import build
+
+    image = np.full((1000, 1120, 3), 251, np.uint8)
+    for start, end in [
+        ((60, 170), (285, 209)), ((450, 170), (1060, 209)),
+        ((60, 170), (95, 840)), ((1025, 170), (1060, 840)),
+        ((60, 750), (1060, 840)),
+    ]:
+        cv2.rectangle(image, start, end, (215, 215, 215), -1)
+        cv2.rectangle(image, start, end, (148, 148, 148), 2)
+    for y in (185, 195):
+        cv2.line(image, (285, y), (450, y), (178, 178, 178), 2)
+    for x in range(120, 1000, 20):
+        cv2.line(image, (x, 400), (x, 570), (211, 211, 211), 1)
+    cv2.rectangle(image, (175, 345), (200, 380), (173, 151, 165), 2)
+    blurred = cv2.GaussianBlur(image, (0, 0), 1.5)
+    path = tmp_path / "wide-gray-wall.png"
+    assert cv2.imwrite(str(path), blurred)
+    model = build(path, plan_id="wide-gray")
+    assert len(model.rooms) == 1
+    assert len(model.walls) == 4
+    assert max(w.thickness_px for w in model.walls) >= 85
+    window, = model.openings
+    assert window.kind == "window"
+    assert abs(window.width_px - 165) <= 5
