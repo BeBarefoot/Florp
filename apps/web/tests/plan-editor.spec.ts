@@ -693,6 +693,10 @@ test("opens a corrected bundle and switches to 3D without aligning its walls", a
   await page.route("**/blueprints/p/scene**", route => route.fulfill({json:{
     revision:0,planRevision:null,config:{views:[],objects:[],style:""}
   }}));
+  await page.route("**/blueprints/p/scene/renders", route => route.fulfill({json:[]}));
+  await page.route("**/blueprints/p/scene/render-settings", route => route.fulfill({json:{
+    width:1024,height:768,configured:false,model:"",provider:"fal"
+  }}));
   await page.getByText("History & source notes",{exact:true}).click();
   await page.getByLabel("Restore corrected plan (.zip)").setInputFiles({
     name:"florp-plan.zip",mimeType:"application/zip",buffer:Buffer.from("fixture")
