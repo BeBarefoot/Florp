@@ -2,7 +2,7 @@
 
 Updated 23 November 2026 · [Production POC plan](PRODUCTION_POC_PLAN.md) · [Issue #1](https://github.com/BeBarefoot/Florp/issues/1)
 
-Build a self-serve walkthrough for buyers and homeowners. Maximize first-pass extraction accuracy, let buyers repair problems on the phone or approve a proposed chat repair, and measure first-pass accuracy separately from buyer correction time. Optional visual generation runs on request.
+Build a self-serve walkthrough for buyers and homeowners. Maximize first-pass extraction accuracy, let buyers repair problems on the phone or approve a proposed chat repair, and measure first-pass accuracy separately from buyer correction time. Optional visual generation runs on request. The roadmap for Unreal Engine, Pro features, and address-based model placement lives in the [product tiers and site placement plan](ROADMAP_ACCURACY_MOBILE.md#product-tiers-and-site-placement).
 
 ## How Enviz works and what the evidence supports
 
