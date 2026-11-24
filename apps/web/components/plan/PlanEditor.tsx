@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { BrickWall, DoorOpen, MousePointer2, PanelTop, Trash2, Undo2 } from "lucide-react";
 import { API, request, type Blueprint } from "../../lib/api";
 import type { Finding, PlanModel, PlanResponse, Pt } from "../../lib/plan/model";
-import { metersPerPixel, wallFootprint, withDerived } from "../../lib/plan/derive";
+import { metersPerPixel, scaleCheck, wallFootprint, withDerived } from "../../lib/plan/derive";
 import { deleteOpening, deleteWall, decideOpening, setReference } from "../../lib/plan/ops";
 import {regionArea} from "../SiteOutline";
 import PlanCanvas from "./PlanCanvas";
@@ -34,6 +34,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
   const [view, setView] = useState<ViewMode>(phone?"overlay":"clean");
   const [display, setDisplay] = useState<Display>("2d");
   const [measure, setMeasure] = useState<Pt[]>([]);
+  const [checkingScale,setCheckingScale]=useState(false);
   const [corners, setCorners] = useState<Pt[]>([]);
   const [aspect, setAspect] = useState("1.41421356");
   const [activeFinding, setActiveFinding] = useState<Finding | null>(null);
@@ -51,6 +52,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
 
   const setTool = useCallback((t: Tool) => {
     setToolState(t);
+    setCheckingScale(false);
     setMeasure([]);
     setCorners([]);
     if (t !== "select" && t !== "attach") setDisplay((d) => (d === "3d" ? "2d" : d));
@@ -363,6 +365,13 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
     );
   const m = model;
   const mpp = metersPerPixel(m);
+  const check=scaleCheck(m);
+  const checkText=check?`${(check.difference*100).toFixed(1)}% difference · ${check.expected.toFixed(2)} m on the model, ${check.measured.toFixed(2)} m measured.`:"Add a second known distance before relying on furniture fit.";
+  function startScaleCheck(){
+    setDisplay("2d");
+    setTool("measure");
+    setCheckingScale(true);
+  }
   const footprint = wallFootprint(m, mpp);
   const proposals = m.openings.filter((o) => o.status === "proposed").length;
   const exportBlocker = !mpp
@@ -478,8 +487,10 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
             points={measure}
             toScreen={toScreen}
             pixelsPerMeterNow={mpp ? 1 / mpp : null}
+            checking={checkingScale}
             apply={(meters) => {
-              edit(setReference(m, measure[0], measure[1], meters));
+              edit(checkingScale?{...m,scale:{...m.scale,checkReference:{p1:measure[0],p2:measure[1],lengthMeters:meters}}}:
+                setReference(m, measure[0], measure[1], meters));
               setTool("select");
             }}
             cancel={() => setMeasure([])}
@@ -507,7 +518,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
       <main className="fe-stage">{canvas}</main>
       <div className="phone-plan-tools">
         <p role="status">{error||(tool==="select"?(selectedName?`${selectedName} selected`:"Tap a wall, door or window.") :
-          tool==="wall"?"Tap both ends of the wall.":"Tap both ends of the opening along a wall.")}</p>
+          tool==="measure"?"Tap both ends of a second known distance.":tool==="wall"?"Tap both ends of the wall.":"Tap both ends of the opening along a wall.")}</p>
         {error&&dirty&&<button onClick={()=>live.current&&void persist(live.current)}>Retry save</button>}
         <div className="phone-plan-actions" role="group" aria-label="Plan tools">
           {([["select","Select",MousePointer2],["wall","Wall",BrickWall],["door","Door",DoorOpen],["window","Window",PanelTop]] as const)
@@ -527,8 +538,10 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
         <div className="phone-plan-footer">
           <button aria-pressed={view==="overlay"} onClick={()=>setView(view==="overlay"?"clean":"overlay")}>Original drawing</button>
           <button onClick={()=>void navigateAfterSave("/plan/"+encodeURIComponent(id))}>Full editor</button>
+          {mpp&&<button onClick={startScaleCheck}>Check scale</button>}
           <span>{dirty?"Unsaved changes":status}</span>
         </div>
+        {mpp&&check&&<p role={check.mismatch?"alert":undefined}>{check.mismatch?"Measurements disagree. ":""}{checkText}</p>}
       </div>
     </div>;
   }
@@ -601,7 +614,11 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
           savePlan={async () => live.current && await persist(live.current) ? live.current : null} />}
       </main>
       <Inspector
-        reviewPanel={<>{footprint?.unusuallySmall && <section className="fe-card fe-accent">
+        reviewPanel={<>{mpp&&<section className="fe-card">
+          <h3>Scale check</h3>
+          <p role={check?.mismatch?"alert":undefined}>{check?.mismatch?"Measurements disagree. Review the scale before checking furniture fit. ":""}{checkText}</p>
+          <button onClick={startScaleCheck}>{check?"Measure again":"Check a second distance"}</button>
+        </section>}{footprint?.unusuallySmall && <section className="fe-card fe-accent">
           <h3>Check the plan scale</h3>
           <p>The building spans {footprint.width.toFixed(2)} × {footprint.depth.toFixed(2)} m. Its walls are taller than either distance.</p>
           <button onClick={() => { setDisplay("2d"); setMeasure([]); setTool("measure"); }}>Measure a known distance</button>

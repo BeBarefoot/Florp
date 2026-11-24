@@ -177,6 +177,21 @@ test("shared wall sides keep separate finishes in the saved scene and GLB",async
   expect(back.baseColorTexture).toBeDefined();
 });
 
+test("a conflicting second distance is saved and shown without changing the plan scale",async({page})=>{
+  test.setTimeout(60_000);
+  const {puts}=await setup(page,{model:setReference(fixture(),{x:100,y:100},{x:500,y:100},4)});
+  await page.getByRole("button",{name:"Check a second distance"}).click();
+  await clickAt(page,100,100);
+  await clickAt(page,100,600);
+  await page.getByRole("spinbutton",{name:"Known distance"}).fill("6");
+  await page.getByRole("button",{name:"Apply",exact:true}).click();
+  await expect(page.getByRole("alert").filter({hasText:"Measurements disagree"})).toContainText("16.7% difference");
+  await expect.poll(()=>puts.at(-1)?.scale.checkReference?.lengthMeters).toBe(6);
+  expect(puts.at(-1)?.scale.metersPerPixel).toBe(.01);
+  await page.reload();
+  await expect(page.getByRole("alert").filter({hasText:"Measurements disagree"})).toContainText("16.7% difference");
+});
+
 test("upload: extraction runs automatically and shows editable walls and openings", async ({ page }) => {
   await setup(page, { empty: true });
   await expect(page.locator("[data-kind=wall]")).toHaveCount(7);

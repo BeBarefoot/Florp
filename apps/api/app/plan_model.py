@@ -53,6 +53,7 @@ class Reference(Base):
 class Scale(Base):
     meters_per_pixel: float | None = None
     reference: Reference | None = None
+    check_reference: Reference | None = None
 
 
 class Node(Base):
@@ -222,14 +223,25 @@ class PlanModel(Base):
             poly = Polygon([(p.x, p.y) for p in zone.polygon])
             if not poly.is_valid or poly.area < 4:
                 raise ValueError("Invalid room zone shape")
-        ref = self.scale.reference
-        if ref:
+        def reference_pixels(ref):
             for p in (ref.p1, ref.p2):
                 if not (0 <= p.x <= w and 0 <= p.y <= h):
                     raise ValueError("Reference exceeds source image")
             pixels = math.hypot(ref.p2.x - ref.p1.x, ref.p2.y - ref.p1.y)
             if pixels < 5:
                 raise ValueError("Use a longer measurement reference")
+            return pixels
+
+        ref = self.scale.reference
+        check = self.scale.check_reference
+        if check:
+            if not ref:
+                raise ValueError("Set the scale reference before adding a check")
+            if (ref.p1, ref.p2) in ((check.p1, check.p2), (check.p2, check.p1)):
+                raise ValueError("Check the scale using a different known distance")
+            reference_pixels(check)
+        if ref:
+            pixels = reference_pixels(ref)
             self.scale.meters_per_pixel = ref.length_meters / pixels
         else:
             self.scale.meters_per_pixel = None

@@ -86,6 +86,23 @@ def test_save_revisions_conflicts_and_validation(client):
     assert len(c.get(path + "/history").json()) == 1
 
 
+def test_second_scale_reference_is_saved_without_overriding_primary(client):
+    c, bid = client
+    path = f"/blueprints/{bid}/plan"
+    scale = reference()
+    scale["checkReference"] = {"p1": {"x": 100, "y": 100}, "p2": {"x": 100, "y": 500},
+                               "lengthMeters": 5}
+    result = c.put(path, json={"expectedRevision": 0, "model": plan(scale=scale)})
+    assert result.status_code == 200, result.text
+    saved = c.get(path).json()["model"]["scale"]
+    assert saved["checkReference"] == scale["checkReference"]
+    assert saved["metersPerPixel"] == pytest.approx(.01)
+    scale["checkReference"] = scale["reference"]
+    result = c.put(path, json={"expectedRevision": 1, "model": plan(scale=scale)})
+    assert result.status_code == 422
+    assert "different known distance" in result.text
+
+
 def test_stair_detection_preserves_draft_and_exports_treads(client, monkeypatch):
     from app.plan_model import Stair
 

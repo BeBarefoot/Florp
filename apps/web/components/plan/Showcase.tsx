@@ -8,7 +8,7 @@ import Link from "next/link";
 import {Maximize2,Minimize2,Box,MapPin,Pause,Play,SkipBack,SkipForward,Image as ImageIcon,FileDown,ImageDown,Bookmark,MapPinPlus,X,PencilRuler,Layers} from "lucide-react";
 import {downloadPrompt,renderPrompt} from "../../lib/plan/renderPrompt";
 import {SceneMesh} from "./SceneMesh";
-import {metersPerPixel} from "../../lib/plan/derive";
+import {metersPerPixel,scaleCheck} from "../../lib/plan/derive";
 import {WalkCamera} from "./WalkCamera";
 import {findRoomView,findWalkStart,roomsOf,walkSpace} from "../../lib/plan/walkSpace";
 import {FloorPicker} from "./FloorPicker";
@@ -112,6 +112,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   const tags = useMemo(() => roomTags(plan), [plan]);
   const rooms=useMemo(()=>roomsOf(plan),[plan]);
   const hasFloor=rooms.length>0;
+  const check=scaleCheck(plan);
   const [finishesOpen,setFinishesOpen]=useState(false);
   const [pickingRoom,setPickingRoom]=useState(false);
   const [finishScope,setFinishScope]=useState("");
@@ -322,6 +323,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
         </>}
       </div>
       {!immersive&&(!hasFloor||notice||needsFinishReview)&&<p role="status">{notice||(!hasFloor?"No walkable floor was found.":"Some saved floor finishes need review. Open Finishes.")}</p>}
+      {!immersive&&check?.mismatch&&<p role="alert" className="show-scale-warning">Scale measurements differ by {(check.difference*100).toFixed(1)}%. Check scale in Edit floor.</p>}
     </section>}
   </main>;
 }

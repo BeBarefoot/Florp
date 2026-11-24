@@ -53,6 +53,15 @@ export function metersPerPixel(m: PlanModel): number | null {
   return px >= 5 ? r.lengthMeters / px : null;
 }
 /** Scale check using wall centre lines, excluding gardens and unused nodes. */
+export function scaleCheck(m:PlanModel) {
+  const check=m.scale.checkReference;
+  const scale=metersPerPixel(m);
+  if(!check||!scale)return null;
+  const expected=Math.hypot(check.p2.x-check.p1.x,check.p2.y-check.p1.y)*scale;
+  const difference=Math.abs(expected-check.lengthMeters)/check.lengthMeters;
+  return {expected, measured:check.lengthMeters, difference, mismatch:difference>.02+1e-9};
+}
+
 export function wallFootprint(m: PlanModel, scale: number | null) {
   if (!scale || !Number.isFinite(scale) || !m.walls.length) return null;
   const nodes = nodeMap(m);

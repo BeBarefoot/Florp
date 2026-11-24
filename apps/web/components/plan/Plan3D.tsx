@@ -4,7 +4,7 @@ import { Canvas } from "@react-three/fiber";
 import { Grid, OrbitControls } from "@react-three/drei";
 import type { PlanModel, Pt, RoomType } from "../../lib/plan/model";
 import { ROOM_TYPES } from "../../lib/plan/model";
-import { metersPerPixel, openingEnds } from "../../lib/plan/derive";
+import { metersPerPixel, openingEnds, scaleCheck } from "../../lib/plan/derive";
 import { meshSignature, wallPieces } from "../../lib/plan/mesh";
 import { API, request } from "../../lib/api";
 import { newUuid } from "../../lib/uuid";
@@ -32,6 +32,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
   model:PlanModel;phone?:boolean;dirty?:boolean;onPlanEdit?:(m:PlanModel)=>void;savePlan?:()=>Promise<PlanModel|null>;
 }) {
   const scale=metersPerPixel(m)!;
+  const check=scaleCheck(m);
   const path=`/blueprints/${m.id}`;
   const [saved,setSaved]=useState<Saved|null>(null), [scene,setScene]=useState<Scene>(initial.config);
   const [finishWallId,setFinishWallId]=useState("");
@@ -349,6 +350,8 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
   const asset=(name:string)=>`${API}${path}/scene/renders/${job?.id}/${name}`;
   return <div className="plan3d scene-studio" data-phone-map={phone?showMap:undefined} data-phone-step={phone?(design?"design":"walk"):undefined} data-testid="plan-3d" data-wall-lengths={meshSignature(pieces)} data-stair-count={m.stairs?.length??0}>
     <fieldset disabled={busy||!saved} className="scene-controls">
+      {check?.mismatch&&<p role="alert">Known measurements differ by {(check.difference*100).toFixed(1)}%. Review the scale in 2D before relying on furniture fit.</p>}
+      {!check&&<p>Check a second known distance in 2D before relying on furniture fit.</p>}
       {saved&&saved.planRevision!==null&&saved.planRevision!==m.revision&&<p>Saved scene uses plan revision {saved.planRevision}. Review camera and object placement, then save the scene for this plan.</p>}
       {phone&&<div className="phone-steps">
         <button disabled={!view} aria-pressed={!design&&!showMap&&cameraMode==="walk"} onClick={()=>{setDesign(false);setMapOpen(false);setCameraMode("walk");}}>Walk</button>

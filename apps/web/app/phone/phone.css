@@ -65,15 +65,15 @@
   display:flex;flex-direction:column;align-items:stretch;gap:8px;
   pointer-events:none;
 }
-.show-heading,.show-panel [role=status],.show-list{
+.show-heading,.show-panel [role=status],.show-scale-warning,.show-list{
   color:var(--ink);background:var(--surface);border:1px solid var(--line);
   border-radius:16px;box-shadow:0 3px 16px #282d291a;
 }
 .show-heading{width:fit-content;max-width:min(24rem,100%);padding:10px 14px;overflow-wrap:anywhere}
 .show-heading small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12px}
 .show-heading h1{font:normal 24px/1.15 Georgia,serif;margin:2px 0}
-.show-heading p,.show-panel [role=status]{font-size:13px;line-height:1.4;margin:0}
-.show-panel [role=status]{align-self:flex-start;padding:8px 12px}
+.show-heading p,.show-panel [role=status],.show-scale-warning{font-size:13px;line-height:1.4;margin:0}
+.show-panel [role=status],.show-scale-warning{align-self:flex-start;padding:8px 12px}
 .show-list{
   order:3;pointer-events:auto;
   width:100%;overflow-x:auto;overflow-y:hidden;
