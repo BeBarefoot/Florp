@@ -12,10 +12,16 @@ jobs:
         with:
           version: "0.13.5"
           python-version: "3.12"
+      - name: Install locked backend dependencies
+        working-directory: apps/api
+        run: uv sync --locked
+      - name: Report real-plan extraction coverage
+        working-directory: apps/api
+        shell: bash
+        run: uv run --locked python -m app.extraction_coverage | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Test FastAPI and geometry
         working-directory: apps/api
         run: |
-          uv sync --locked
           uv run --locked python -m compileall -q app scripts tests
           uv run --locked pytest -q
   frontend:

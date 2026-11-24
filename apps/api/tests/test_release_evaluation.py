@@ -17,6 +17,12 @@ def corpus(tmp_path,count):
 def test_release_refuses_small_corpus_even_when_perfect(tmp_path):
     assert not evaluate(corpus(tmp_path,1))['passed']
 
+def test_release_rejects_known_regression_source(tmp_path):
+    path = corpus(tmp_path, 1)
+    source = image_identity(tmp_path / "0.png")["image_sha256"]
+    with pytest.raises(ValueError, match="corrected regression source"):
+        evaluate(path, excluded_sources={source})
+
 def test_release_requires_quality_and_measured_correction_time(tmp_path):
     path=corpus(tmp_path,10);assert evaluate(path)['passed']
     doc=json.loads(path.read_text());doc['cases'][0]['exterior_complete']=False;path.write_text(json.dumps(doc))

@@ -127,6 +127,8 @@ Use `./scripts/dev.sh` for frontend hot reload. The local API docs are at [local
 
 The integration suite runs a real API and production frontend with temporary storage and provider keys disabled.
 
+From `apps/api`, run `uv run --locked python -m app.extraction_coverage` to count and score corrected real-plan regressions under the gitignored `data/gold` directory. Use `--gold-root` for a separate private collection and `--output` for a private JSON report with per-case metrics and errors. CI publishes aggregate counts even when no reference plans are available. A separate frozen, independently reviewed release corpus can be supplied with `--release-manifest`. Corrected regression sources are excluded from that evaluation.
+
 - [Architecture](docs/ARCHITECTURE.md) and [contributor handoff](docs/codex-handoff.md)
 - [Optional fixture detection weights](docs/FIXTURE_WEIGHTS.md) and [engine validation](docs/ENGINE_VALIDATION.md)
 - [Production roadmap](docs/PRODUCTION_POC_PLAN.md), [whole-home capability roadmap](docs/ENVIZ_CAPABILITY_ROADMAP.md), and [issue #1](https://github.com/BeBarefoot/Florp/issues/1)

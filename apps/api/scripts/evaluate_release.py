@@ -3,13 +3,14 @@ import argparse,json,hashlib,math
 from pathlib import Path
 from app.extraction_benchmark import load_prediction,image_identity,compare
 
-def evaluate(manifest_path:Path)->dict:
+def evaluate(manifest_path:Path, *, excluded_sources=())->dict:
     doc=json.loads(manifest_path.read_text());cases=doc['cases'];root=manifest_path.resolve().parent
     if doc.get('split')!='test' or doc.get('frozen') is not True:raise ValueError('Require a frozen held-out test corpus')
     groups=set();images=set();reports=[]
     for c in cases:
         if c.get('independently_reviewed') is not True:raise ValueError('Reference is not independently reviewed')
         identity=image_identity(root/c['image']);sha=identity['image_sha256']
+        if sha in excluded_sources:raise ValueError('A corrected regression source appears in the held-out corpus')
         if sha in images:raise ValueError('Duplicate image in release corpus')
         images.add(sha);groups.add(c['group_id'])
         truth=load_prediction(root/c['truth']);prediction=load_prediction(root/c['prediction'])
