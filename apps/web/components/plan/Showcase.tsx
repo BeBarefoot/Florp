@@ -243,7 +243,8 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   return <main className="showcase-player" data-immersive={immersive} aria-label="3D showcase">
     <div className="show-stage"><Canvas shadows frameloop="demand" dpr={[1,1.6]} camera={{near:.005,far:2000}} fallback={<p>Enable WebGL to view this tour.</p>}>
       <color attach="background" args={[sample&&view?"#cfdfdf":"#d8d9cb"]}/>
-      <SceneMesh m={plan} objects={scene.objects} closedDoorIds={scene.closedDoorIds} floorStyle={styledScene} presentation cutaway={!view}/>
+      <SceneMesh m={plan} objects={scene.objects} closedDoorIds={scene.closedDoorIds} floorStyle={styledScene}
+        wallFinishes={scene.wallFinishes} presentation cutaway={!view}/>
       {sample&&<SampleFurniture interior={!!view}/>}
       {view?<ShowcaseWalk key={view.id} plan={plan} scene={scene} view={view} sample={sample} pose={pose} onFrame={setViewport} keyboard={!rendered}/>:<><OverviewCamera plan={plan}/><FloorPicker scale={scale} onPick={land}/></>}
       {!view&&tags.map(tag=><Html key={tag.key} center wrapperClass="show-room-label" style={{pointerEvents:"none"}}

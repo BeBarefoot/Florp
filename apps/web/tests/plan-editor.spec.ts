@@ -138,6 +138,45 @@ test("phone editor adds and removes openings and walls with undo",async({page})=
   expect(puts.at(-1)?.openings).toHaveLength(2);
 });
 
+test("shared wall sides keep separate finishes in the saved scene and GLB",async({page})=>{
+  test.setTimeout(75_000);
+  const model=setReference(fixture({openings:[]}),{x:100,y:100},{x:500,y:100},4);
+  let config={views:[],objects:[],style:"",wallFinishes:{}};
+  let revision=0;
+  await setup(page,{model});
+  await page.route("**/blueprints/p/scene**",route=>{
+    const path=new URL(route.request().url()).pathname;
+    if(path.endsWith("/render-settings"))return route.fulfill({json:{width:1024,height:768,configured:false,model:"",provider:""}});
+    if(path.endsWith("/renders"))return route.fulfill({json:[]});
+    if(route.request().method()==="PUT"){
+      config=route.request().postDataJSON().config;
+      revision++;
+    }
+    return route.fulfill({json:{revision,planRevision:revision?1:null,config}});
+  });
+  await page.getByRole("radio",{name:"3D",exact:true}).click();
+  const tools=page.getByRole("group",{name:"Wall finishes"});
+  await tools.getByRole("combobox",{name:"Wall",exact:true}).selectOption("w6");
+  const side=tools.getByRole("combobox",{name:"Side",exact:true});
+  const finish=tools.getByRole("combobox",{name:"Wall finish",exact:true});
+  await finish.selectOption("paint");
+  await side.selectOption("b");
+  await finish.selectOption("tile");
+  await page.getByRole("button",{name:"Save scene",exact:true}).filter({visible:true}).first().click();
+  await expect.poll(()=>config.wallFinishes).toMatchObject({w6:{a:{kind:"paint"},b:{kind:"tile"}}});
+  await page.getByRole("button",{name:"Export",exact:true}).click();
+  const pending=page.waitForEvent("download");
+  await page.getByRole("menuitem",{name:"3D model (.glb)"}).click();
+  const {readFile}=await import("node:fs/promises");
+  const bytes=await readFile((await (await pending).path())!);
+  const gltf=JSON.parse(bytes.subarray(20,20+bytes.readUInt32LE(12)).toString());
+  const wall=gltf.nodes.find((node:{name:string})=>node.name==="w6");
+  const mesh=gltf.meshes[gltf.nodes[wall.children[0]].mesh];
+  const [front,back]=mesh.primitives.slice(-2).map(({material}:{material:number})=>gltf.materials[material].pbrMetallicRoughness);
+  expect(front.baseColorTexture).toBeUndefined();
+  expect(back.baseColorTexture).toBeDefined();
+});
+
 test("upload: extraction runs automatically and shows editable walls and openings", async ({ page }) => {
   await setup(page, { empty: true });
   await expect(page.locator("[data-kind=wall]")).toHaveCount(7);

@@ -7,6 +7,7 @@ import {yardShapes} from "./plan/yard";
 import { stairPieces } from "./plan/stairs";
 import { floorMaterialFor, floorTexture } from "./plan/floorMaterials";
 import { floorFinishes, type Scene } from "./plan/scene";
+import { wallChunkGeometry, wallSurfaceMaterials } from "./plan/wallMaterials";
 
 /** Metric glTF (meters) with stable wall/room/opening IDs in node extras. */
 export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draft"}, config?: Scene) {
@@ -15,6 +16,8 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
   if (m.openings.some((o) => o.status === "proposed"))
     throw Error("Approve or reject every proposed door and window before exporting 3D.");
   const scene = new THREE.Scene();
+  const textures: THREE.Texture[] = [];
+  let wallTile: THREE.Texture|null=null;
   scene.userData = {planRevision:m.revision, architectureReview:review};
   for (const piece of wallPieces(m)) {
     const group = new THREE.Group();
@@ -29,10 +32,20 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
     };
     group.position.set(piece.centre[0], 0, piece.centre[1]);
     group.rotation.y = piece.angle;
+    const [front,back]=wallSurfaceMaterials(piece,config?.wallFinishes);
+    const base=new THREE.MeshStandardMaterial({color:"#cbd9d5"});
+    const sides=[front,back].map(finish=>{
+      if(!finish)return base;
+      if(finish.kind==="tile"&&!wallTile){
+        wallTile=floorTexture({kind:"tile",color:"#ffffff",widthM:.6,lengthM:.6});
+        textures.push(wallTile);
+      }
+      return new THREE.MeshStandardMaterial({color:finish.color,map:finish.kind==="tile"?wallTile:null});
+    });
     for (const c of piece.chunks) {
       const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(c.end - c.start, c.high - c.low, piece.thicknessM),
-        new THREE.MeshStandardMaterial({ color: "#cbd9d5" }),
+        wallChunkGeometry(piece,c),
+        front||back?[base,base,base,base,...sides]:base,
       );
       mesh.position.set((c.start + c.end - piece.lengthM) / 2, (c.low + c.high) / 2, 0);
       group.add(mesh);
@@ -47,7 +60,6 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
     yard.rotation.x=-Math.PI/2;
     scene.add(yard);
   }
-  const textures: THREE.Texture[] = [];
   const rooms = [...floorOutlines(m), ...(m.roomZones??[]).map(room=>({
     id:room.id,label:room.label,points:room.polygon.map(p=>({x:p.x*scale,y:p.y*scale})),
   }))];

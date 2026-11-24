@@ -14,10 +14,13 @@ export const floorFinishes = {
 };
 export type FloorFinish = keyof typeof floorFinishes;
 export type FloorMaterial = { kind: "wood" | "concrete" | "marble" | "tile"; color: string; widthM: number; lengthM: number };
+export type WallSide = "a" | "b";
+export type WallMaterial = {kind:"paint"|"tile";color:string};
 export type Scene = {
   floorFinish?: FloorFinish;
   floorMaterial?: FloorMaterial | null;
   roomFloorMaterials?: Record<string, FloorMaterial>;
+  wallFinishes?: Record<string, Partial<Record<WallSide,WallMaterial|null>>>;
   views: View[]; objects: Item[]; style: string; closedDoorIds?: string[]; dismissedFixtureIds?: string[];
 };
 export type Saved = { revision: number; planRevision: number | null; config: Scene };

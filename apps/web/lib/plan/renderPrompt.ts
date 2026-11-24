@@ -30,7 +30,8 @@ export function renderPrompt(plan:PlanModel, scene:Scene, view:View, frame:{widt
       ceilingHeight:r.ceilingHeightM??2.8,defaultCeiling:r.ceilingHeightM==null})),
     walls:plan.walls.map(w=>{
       const [a,b]=wallEnds(plan,w,nodes);
-      return {id:w.id,centrelineXZ:[xz(a),xz(b)],length:length(a,b),thickness:w.thicknessPx*scale,height:w.heightM,material:w.material};
+      return {id:w.id,centrelineXZ:[xz(a),xz(b)],length:length(a,b),thickness:w.thicknessPx*scale,height:w.heightM,material:w.material,
+        finishes:scene.wallFinishes?.[w.id],positiveNormalSide:w.a<w.b?"a":"b"};
     }),
     openings:plan.openings.filter(o=>o.status==="confirmed").map(o=>{
       const ends=openingEnds(plan,o,nodes);

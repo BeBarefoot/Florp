@@ -62,10 +62,21 @@ class FloorMaterial(Data):
     length_m: float = Field(ge=0.05, le=5)
 
 
+class WallMaterial(Data):
+    kind: Literal["paint", "tile"]
+    color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
+
+
+class WallFinishes(Data):
+    a: WallMaterial | None = None
+    b: WallMaterial | None = None
+
+
 class Scene(Data):
     floor_finish: Literal["default", "oak", "slate", "limestone"] = "default"
     floor_material: FloorMaterial | None = None
     room_floor_materials: dict[str, FloorMaterial] = Field(default_factory=dict, max_length=990)
+    wall_finishes: dict[str, WallFinishes] = Field(default_factory=dict, max_length=10000)
     views: list[View] = Field(default_factory=list, max_length=30)
     objects: list[SceneObject] = Field(default_factory=list, max_length=100)
     style: str = Field(default="", max_length=1200)
@@ -112,6 +123,11 @@ def save_scene(bid: str, body: SaveScene):
         for room_id, material in body.config.room_floor_materials.items():
             if room_id not in room_ids and old_floors.get(room_id) != material.model_dump(by_alias=True):
                 raise HTTPException(422, "Assign the floor finish to a room on the current plan.")
+        wall_ids = {wall["id"] for wall in plan.model.get("walls", [])}
+        old_walls = old.config.get("wallFinishes", {}) if old else {}
+        for wall_id, finishes in body.config.wall_finishes.items():
+            if wall_id not in wall_ids and old_walls.get(wall_id) != finishes.model_dump(by_alias=True):
+                raise HTTPException(422, "Assign the wall finish to a wall on the current plan.")
         for items in (body.config.views, body.config.objects):
             if len({item.id for item in items}) != len(items) or any(
                 not (0 <= item.position.x <= bp.width and 0 <= item.position.y <= bp.height) for item in items
@@ -357,12 +373,12 @@ def jobs(bid: str):
         older = {row.revision: row.config for row in s.exec(select(SceneRevision).where(
             SceneRevision.blueprint_id == bid, SceneRevision.revision.in_(older_revisions)
         )).all()}
-        current_settings = {key: value for key, value in scene.config.items() if key != "views"}
+        current_settings = Scene.model_validate(scene.config).model_dump(exclude={"views"})
         current_views = {view["id"]: view for view in scene.config.get("views", [])}
         for job, item in zip(rows, result):
             config = older.get(job.scene_revision)
             if (job.status != "complete" or job.plan_revision != scene.plan_revision or config is None
-                    or current_settings != {key: value for key, value in config.items() if key != "views"}):
+                    or current_settings != Scene.model_validate(config).model_dump(exclude={"views"})):
                 continue
             if any(view["id"] == job.view_id and view == current_views.get(job.view_id)
                    for view in config.get("views", [])):

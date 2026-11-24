@@ -11,6 +11,8 @@ import { stairPieces } from "../../lib/plan/stairs";
 import { savedPose } from "../../lib/plan/camera";
 import { floorFinishes, blocks, type Capture, type Frame, type Item, type Scene, type View } from "../../lib/plan/scene";
 import { floorMaterialFor, floorTexture } from "../../lib/plan/floorMaterials";
+import { wallChunkGeometry, wallSurfaceMaterials } from "../../lib/plan/wallMaterials";
+import type { Chunk, WallPiece } from "../../lib/plan/mesh";
 
 export function makeCamera(view: View, scale: number, frame: Frame) {
   const pose = savedPose(view, scale, frame.width/frame.height);
@@ -37,13 +39,32 @@ export function EyeCamera({view, scale, frame}: {view: View; scale: number; fram
 
 type FloorStyle = Pick<Scene,"floorFinish"|"floorMaterial"|"roomFloorMaterials">;
 
-export function SceneMesh({m, objects, closedDoorIds, floorStyle={}, presentation=false, cutaway=false}: {m: PlanModel; objects: Item[]; closedDoorIds?: string[]; floorStyle?:FloorStyle; presentation?:boolean; cutaway?:boolean}) {
+function WallChunk({piece,chunk,wallIndex,presentation,finishes,tileMap}:{
+  piece:WallPiece;chunk:Chunk;wallIndex:number;presentation:boolean;
+  finishes:Scene["wallFinishes"];tileMap:T.Texture|null;
+}){
+  const [front,back]=wallSurfaceMaterials(piece,finishes);
+  const base=presentation?(piece.material==="concrete"?"#c7c5be":"#efeae0"):(piece.material==="concrete"?"#98a9b6":"#c9d6db");
+  const geometry=useMemo(()=>wallChunkGeometry(piece,chunk),[piece,chunk]);
+  useEffect(()=>()=>geometry.dispose(),[geometry]);
+  return <mesh geometry={geometry} castShadow={presentation} receiveShadow={presentation}
+    userData={{maskId:2000+wallIndex}} position={[(chunk.start+chunk.end-piece.lengthM)/2,(chunk.low+chunk.high)/2,0]}>
+    {front||back?[null,null,null,null,front,back].map((material,index)=>
+      <meshStandardMaterial key={index} attach={`material-${index}`} color={material?.color??base} map={material?.kind==="tile"?tileMap:null}/>
+    ):<meshStandardMaterial color={base}/>}
+  </mesh>;
+}
+
+export function SceneMesh({m, objects, closedDoorIds, floorStyle={}, wallFinishes, presentation=false, cutaway=false}: {m: PlanModel; objects: Item[]; closedDoorIds?: string[]; floorStyle?:FloorStyle; wallFinishes?:Scene["wallFinishes"]; presentation?:boolean; cutaway?:boolean}) {
   const scale = metersPerPixel(m)!;
   const {floorFinish="default",floorMaterial,roomFloorMaterials}=floorStyle;
   const width=m.imageTransform.width*scale, depth=m.imageTransform.height*scale;
   const sunTarget=useMemo(()=>{const target=new T.Object3D();target.position.set(width/2,0,depth/2);return target;},[width,depth]);
   const shadowSize=Math.max(4,width,depth)*.8;
   const walls = useMemo(()=>wallPieces(m),[m]);
+  const tiled=Object.values(wallFinishes??{}).some(({a,b})=>a?.kind==="tile"||b?.kind==="tile");
+  const wallTiles=useMemo(()=>tiled?floorTexture({kind:"tile",color:"#ffffff",widthM:.6,lengthM:.6}):null,[tiled]);
+  useEffect(()=>()=>wallTiles?.dispose(),[wallTiles]);
   const yards=useMemo(()=>yardShapes(m),[m]);
   const stairs = useMemo(()=>stairPieces(m),[m]);
   const rooms = useMemo(()=>roomsOf(m).map(r=>{
@@ -83,10 +104,8 @@ export function SceneMesh({m, objects, closedDoorIds, floorStyle={}, presentatio
       </mesh>}
     </group>)}
     {walls.map((p,wallIndex)=><group key={p.id} position={[p.centre[0],0,p.centre[1]]} rotation={[0,p.angle,0]}>
-      {p.chunks.map((c,i)=><mesh key={i} castShadow={presentation} receiveShadow={presentation} userData={{maskId:2000+wallIndex}} position={[(c.start+c.end-p.lengthM)/2,(c.low+c.high)/2,0]}>
-        <boxGeometry args={[c.end-c.start,c.high-c.low,p.thicknessM]}/>
-        <meshStandardMaterial color={presentation?(p.material==="concrete"?"#c7c5be":"#efeae0"):(p.material==="concrete"?"#98a9b6":"#c9d6db")}/>
-      </mesh>)}
+      {p.chunks.map((chunk,i)=><WallChunk key={i} piece={p} chunk={chunk} wallIndex={wallIndex}
+        presentation={presentation} finishes={wallFinishes} tileMap={wallTiles}/>)}
     </group>)}
     {m.openings.filter(o=>o.status==="confirmed"&&(o.kind==="door"||o.kind==="window")).map(o=>{
       const endpoints=openingEnds(m,o);

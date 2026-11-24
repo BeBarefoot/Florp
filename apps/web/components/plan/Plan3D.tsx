@@ -9,7 +9,7 @@ import { meshSignature, wallPieces } from "../../lib/plan/mesh";
 import { API, request } from "../../lib/api";
 import { newUuid } from "../../lib/uuid";
 import { floorFinishes, type FloorFinish, catalog, contains, footprint, intersects, newItem, type Capture, type Frame, type Item,
-  type Job, type ObjectKind, type Saved, type Scene, type View } from "../../lib/plan/scene";
+  type Job, type ObjectKind, type Saved, type Scene, type View, type WallMaterial, type WallSide } from "../../lib/plan/scene";
 import {renderPrompt, downloadPrompt} from "../../lib/plan/renderPrompt";
 import { CaptureBridge, EyeCamera, SceneMesh } from "./SceneMesh";
 import { roomsOf, walkSpace } from "../../lib/plan/walkSpace";
@@ -34,6 +34,8 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
   const scale=metersPerPixel(m)!;
   const path=`/blueprints/${m.id}`;
   const [saved,setSaved]=useState<Saved|null>(null), [scene,setScene]=useState<Scene>(initial.config);
+  const [finishWallId,setFinishWallId]=useState("");
+  const [wallSide,setWallSide]=useState<WallSide>("a");
   const [frame,setFrame]=useState(initialFrame), [jobs,setJobs]=useState<Job[]>([]);
   const [viewId,setViewId]=useState(""), [itemId,setItemId]=useState(""), [roomId,setRoomId]=useState("");
   const [mode,setMode]=useState<Mode>(null), [kind,setKind]=useState<ObjectKind>("bed");
@@ -59,6 +61,16 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
   const view=scene.views.find(v=>v.id===viewId)??scene.views[0];
   const item=scene.objects.find(o=>o.id===itemId);
   const rooms=useMemo(()=>roomsOf(m),[m]);
+  const finishWall=m.walls.find(wall=>wall.id===finishWallId);
+  const wallFinish=finishWall&&scene.wallFinishes?.[finishWall.id]?.[wallSide];
+  function setWallFinish(material:WallMaterial|null){
+    if(!finishWall)return;
+    const wallFinishes={...scene.wallFinishes};
+    const sides={...wallFinishes[finishWall.id],[wallSide]:material};
+    if(sides.a||sides.b)wallFinishes[finishWall.id]=sides;
+    else delete wallFinishes[finishWall.id];
+    change({...scene,wallFinishes});
+  }
   const unmatchedFinishes=unmatchedFloorFinishes(scene,rooms);
   function resolveFinish(previousRoom:string, destination?:string) {
     const materials={...scene.roomFloorMaterials};
@@ -69,9 +81,21 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
   const room=rooms.find(r=>r.id===roomId);
   const pieces=useMemo(()=>wallPieces(m),[m]);
   const nodeMap=useMemo(()=>new Map(m.nodes.map(n=>[n.id,n])),[m.nodes]);
+  const finishSideLines=finishWall&&(["a","b"] as const).map(side=>{
+    const a=nodeMap.get(finishWall.a)!, b=nodeMap.get(finishWall.b)!;
+    const length=Math.hypot(b.x-a.x,b.y-a.y);
+    const sign=(finishWall.a<finishWall.b)===(side==="a")?1:-1;
+    const distance=finishWall.thicknessPx/2+.08/scale;
+    const at=(fraction:number)=>({
+      x:a.x+(b.x-a.x)*fraction-(b.y-a.y)/length*distance*sign,
+      y:a.y+(b.y-a.y)*fraction+(b.x-a.x)/length*distance*sign,
+    });
+    const roomIndex=rooms.findIndex(room=>[.25,.5,.75].some(fraction=>contains(at(fraction),room.polygon)));
+    return {side,start:at(.18),end:at(.82),room:roomIndex<0?"":rooms[roomIndex].label||`Room ${roomIndex+1}`};
+  });
   const w=m.imageTransform.width*scale, h=m.imageTransform.height*scale;
   const cameraTarget:[number,number,number]=[w/2,0,h/2];
-  const fingerprintFor=(v:View|undefined)=>JSON.stringify([m,v,scene.objects,scene.closedDoorIds,scene.floorFinish,scene.floorMaterial,scene.roomFloorMaterials,frame.width,frame.height]);
+  const fingerprintFor=(v:View|undefined)=>JSON.stringify([m,v,scene.objects,scene.closedDoorIds,scene.floorFinish,scene.floorMaterial,scene.roomFloorMaterials,scene.wallFinishes,frame.width,frame.height]);
   const fingerprint=fingerprintFor(view);
   const shot=capture?.fingerprint===fingerprint?capture:null;
   const fixtureSuggestions=fixtureScan?.planRevision===m.revision&&!dirty?
@@ -358,6 +382,27 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
         {scene.floorMaterial&&<option value="custom" disabled>Custom walkthrough finish</option>}
         {Object.entries(floorFinishes).map(([key,finish])=><option key={key} value={key}>{finish.name}</option>)}
       </select></label>
+      <div className="scene-actions" role="group" aria-label="Wall finishes">
+        <label>Wall <select value={finishWall?.id??""} onChange={e=>setFinishWallId(e.target.value)}>
+          <option value="">Choose wall</option>
+          {m.walls.map((wall,i)=><option key={wall.id} value={wall.id}>Wall {i+1}</option>)}
+        </select></label>
+        {finishWall&&<>
+          <label>Side <select value={wallSide} onChange={e=>setWallSide(e.target.value as WallSide)}>
+            {finishSideLines&&finishSideLines.map(line=><option key={line.side} value={line.side}>
+              Side {line.side.toUpperCase()}{line.room?` · ${line.room}`:""}
+            </option>)}
+          </select></label>
+          <label>Wall finish <select value={wallFinish?.kind??""} onChange={e=>{
+            const kind=e.target.value as WallMaterial["kind"]|"";
+            setWallFinish(kind?{kind,color:wallFinish?.color??"#d9c9ad"}:null);
+          }}>
+            <option value="">Original</option><option value="paint">Paint</option><option value="tile">Tile</option>
+          </select></label>
+          {wallFinish&&<label>Wall colour <input type="color" value={wallFinish.color}
+            onChange={e=>setWallFinish({...wallFinish,color:e.target.value})}/></label>}
+        </>}
+      </div>
       {!!unmatchedFinishes.length&&<section aria-label="Floor finishes to review">
         <h3>Floor finishes to review</h3>
         <p>{dirty?"Save the plan to confirm room matches.":"These finishes belong to rooms from an earlier layout. Reassign them or remove them, then save the scene."}</p>
@@ -386,7 +431,10 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
             {showBlueprint&&<image href={API+path+"/preview"} width={m.imageTransform.width} height={m.imageTransform.height}/>}
             {rooms.map(r=><polygon key={r.id} points={points(r.polygon)} fill={r.id===roomId?"#b8ded5":"#e2eee7"} stroke="#b1c3bb" strokeWidth="1" opacity={showBlueprint ? .18 : 1}/>)}
             {m.walls.map(w=>{const a=nodeMap.get(w.a)!,b=nodeMap.get(w.b)!;
-              return <line key={w.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#233f4a" strokeWidth={w.thicknessPx}/>;})}
+              return <line key={w.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={w.id===finishWallId?"#b66b51":"#233f4a"} strokeWidth={w.thicknessPx}/>;})}
+            {finishSideLines&&finishSideLines.filter(line=>line.side===wallSide).map(({side,start,end})=>
+              <line key={side} x1={start.x} y1={start.y} x2={end.x} y2={end.y} stroke="#b66b51"
+                strokeWidth="3" vectorEffect="non-scaling-stroke" pointerEvents="none"/>)}
             {m.openings.filter(o=>o.status==="confirmed").map(o=>{
               const ends=openingEnds(m,o,nodeMap);if(!ends)return null;const [a,b]=ends;
               return <line key={o.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={o.kind==="window"?"#81c4d1":"#fff"} strokeWidth={nodeMap.size?m.walls.find(w=>w.id===o.hostWallId)?.thicknessPx??5:5}/>;})}
@@ -427,7 +475,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
           }} data-mode={view?cameraMode:"orbit"} style={{aspectRatio:`${frame.width}/${frame.height}`}}>
             <Canvas dpr={[1,2]} camera={{position:[w/2+w*.6,Math.max(7,h*.9),h/2+Math.max(8,h)],fov:55}}>
               <color attach="background" args={["#e9eff2"]}/>
-              <SceneMesh floorStyle={scene} m={m} objects={scene.objects} closedDoorIds={scene.closedDoorIds}/>
+              <SceneMesh floorStyle={scene} wallFinishes={scene.wallFinishes} m={m} objects={scene.objects} closedDoorIds={scene.closedDoorIds}/>
               <CaptureBridge bind={bind}/>
               {view&&cameraMode==="walk"?<WalkCamera view={view} scale={scale} frame={frame} canMove={p=>validCamera(p,true)} pose={walkPose}/>:
                 view&&cameraMode==="preview"?<EyeCamera view={view} scale={scale} frame={frame}/>:

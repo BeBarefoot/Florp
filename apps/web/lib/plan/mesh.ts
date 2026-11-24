@@ -11,6 +11,7 @@ export type WallPiece = {
   thicknessM: number;
   heightM: number;
   material: "block" | "concrete";
+  positiveSide: "a" | "b";
   chunks: Chunk[];
 };
 
@@ -149,6 +150,7 @@ export function wallPieces(m: PlanModel): WallPiece[] {
       thicknessM: w.thicknessPx * s,
       heightM: w.heightM,
       material: w.material,
+      positiveSide: w.a < w.b ? "a" : "b",
       chunks: chunks.filter((c) => c.end - c.start > 0.001 && c.high - c.low > 0.001),
     };
   });
