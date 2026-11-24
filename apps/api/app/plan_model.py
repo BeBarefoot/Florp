@@ -7,7 +7,7 @@ derived as ``px * meters_per_pixel``; calibration never rewrites coordinates.
 from __future__ import annotations
 import math
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 from pydantic.alias_generators import to_camel
 
 from .gardens import Garden
@@ -54,6 +54,14 @@ class Scale(Base):
     meters_per_pixel: float | None = None
     reference: Reference | None = None
     check_reference: Reference | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_reference_check(self, serialize):
+        data = serialize(self)
+        if self.check_reference is None:
+            data.pop("check_reference", None)
+            data.pop("checkReference", None)
+        return data
 
 
 class Node(Base):
