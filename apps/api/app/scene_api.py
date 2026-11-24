@@ -39,7 +39,7 @@ class View(Data):
     position: Pt
     yaw: float = Field(ge=-360, le=360)
     pitch: float = Field(ge=-45, le=30)
-    horizontal_fov: float = Field(ge=55, le=110)
+    horizontal_fov: float = Field(ge=55, le=120)
     eye_height: float = Field(ge=0.8, le=2.2)
 
 

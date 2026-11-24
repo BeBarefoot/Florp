@@ -4,6 +4,7 @@ export type CameraPoint = [x: number, y: number, z: number];
 
 export const DEFAULT_EYE_HEIGHT_M = 1.6;
 export const CAMERA_VERTICAL_FOV_DEG = 55;
+export const MAX_HORIZONTAL_FOV_DEG = 120;
 
 export function eyeLevelPose(origin: FloorPoint, aim: FloorPoint, eyeHeightM: number) {
   const dx = aim[0] - origin[0], dz = aim[1] - origin[1];

@@ -281,12 +281,17 @@ def test_save_furniture_catalog_items_preserves_metric_dimensions(client):
         {"id": "table", "kind": "table", "position": {"x": 470, "y": 260},
          "width": 1.4, "depth": .8, "height": .75, "rotation": 0},
     ]
+    view = {
+        "id": "corner", "name": "Corner view", "position": {"x": 150, "y": 120},
+        "yaw": 45, "pitch": -5, "horizontalFov": 120, "eyeHeight": 1.6,
+    }
     response = c.put(path + "/scene", json={
-        "expectedRevision": 0, "planRevision": 1, "config": {"objects": objects},
+        "expectedRevision": 0, "planRevision": 1, "config": {"objects": objects, "views": [view]},
     })
     assert response.status_code == 200, response.text
-    saved = c.get(path + "/scene").json()["config"]["objects"]
-    assert [{key: item[key] for key in source} for item, source in zip(saved, objects)] == objects
+    saved = c.get(path + "/scene").json()["config"]
+    assert saved["views"] == [view]
+    assert [{key: item[key] for key in source} for item, source in zip(saved["objects"], objects)] == objects
 
 
 def test_fixture_review_scan_does_not_edit_scene(client, monkeypatch):

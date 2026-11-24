@@ -147,7 +147,7 @@ test("downloaded showcase prompt follows the live position, heading and zoom",as
     return JSON.parse((await readFile(file!,"utf8")).trim().split("\n").at(-1)!).camera;
   }
   const before=await camera();
-  expect(before.horizontalFovDegrees).toBe(110);
+  expect(before.horizontalFovDegrees).toBeCloseTo(120);
   expect(before.eyeXYZ[0]).toBeGreaterThan(5.6);
   expect(before.eyeXYZ[2]).toBeGreaterThan(6);
   await page.mouse.move(160,230);
@@ -204,8 +204,8 @@ test("dollhouse lands on the floor and saves a new view from one tap",async({pag
     const box=(await canvas.boundingBox())!;
     const aspect=box.width/box.height;
     const target=new Vector3(5,.65,3.4);
-    const camera=new PerspectiveCamera(42,aspect,.005,2000);
-    camera.position.copy(target).addScaledVector(new Vector3(.82,1.1,1.22).normalize(),18.5/Math.min(1,aspect));
+    const camera=new PerspectiveCamera(45,aspect,.005,2000);
+    camera.position.copy(target).addScaledVector(new Vector3(.82,1.1,1.22).normalize(),19/Math.min(1,aspect));
     camera.lookAt(target);
     camera.updateMatrixWorld();
     const point=new Vector3(x,0,z).project(camera);
@@ -218,7 +218,7 @@ test("dollhouse lands on the floor and saves a new view from one tap",async({pag
   await tapFloor(2.3,3.6);
   await expect(page.getByRole("heading",{name:"View 4"})).toBeVisible();
   const saved=config.views.at(-1)!;
-  expect(saved.horizontalFov).toBe(110);
+  expect(saved.horizontalFov).toBeCloseTo(120);
   expect(saved.yaw).toBe(-45);
   expect(saved.position.x).toBeGreaterThan(30);
   expect(saved.position.x).toBeLessThan(65);
@@ -289,8 +289,8 @@ test("phone furnishing places metric objects, updates fit warnings and saves thr
       const box=(await canvas.boundingBox())!;
       const aspect=box.width/box.height;
       const target=new Vector3(5,.65,3.4);
-      const camera=new PerspectiveCamera(42,aspect,.005,2000);
-      camera.position.copy(target).addScaledVector(new Vector3(.82,1.1,1.22).normalize(),18.5/Math.min(1,aspect));
+      const camera=new PerspectiveCamera(45,aspect,.005,2000);
+      camera.position.copy(target).addScaledVector(new Vector3(.82,1.1,1.22).normalize(),19/Math.min(1,aspect));
       camera.lookAt(target);
       camera.updateMatrixWorld();
       const point=new Vector3(x,0,z).project(camera);
@@ -381,4 +381,51 @@ test("the tour opens full screen, scrolls its dock, and walks through an open do
     }
     await expect.poll(eyeX,{timeout:9000,intervals:[500,1000]}).toBeGreaterThan(7.2);
   }finally{await context.close();}
+});
+
+test("Furnish offers a session preview when scale or scene review prevents saving",async({page})=>{
+  test.setTimeout(75000);
+  await page.setViewportSize({width:390,height:844});
+  const {PerspectiveCamera,Vector3}=await import("three");
+  const writes:string[]=[];
+  let approximate=true;
+  await page.route("**/blueprints/f/*",route=>{
+    const endpoint=new URL(route.request().url()).pathname.split("/").pop();
+    if(route.request().method()==="PUT")writes.push(endpoint!);
+    const model={...samplePlan,id:"f",revision:2,
+      scale:approximate?{metersPerPixel:null,reference:null}:samplePlan.scale};
+    return route.fulfill({json:endpoint==="plan"?{revision:2,model}:
+      endpoint==="scene"?{revision:1,planRevision:1,config:sampleScene}:endpoint==="renders"?[]:
+      {id:"f",filename:"Owner floor",project_id:"p"}});
+  });
+  await page.goto("/phone/showcase/f");
+  await openTools(page);
+  await page.getByRole("button",{name:"Furnish",exact:true}).click();
+  const sheet=page.getByRole("region",{name:"Furnish",exact:true});
+  await expect(sheet.getByText(/approximate scale/)).toBeVisible();
+  const sofa=sheet.getByRole("button",{name:"Sofa 220 × 92 cm"});
+  await sofa.click();
+  const bounds=(await page.locator("canvas").boundingBox())!;
+  const aspect=bounds.width/bounds.height;
+  const target=new Vector3(5,.65,3.4);
+  const camera=new PerspectiveCamera(45,aspect,.005,2000);
+  camera.position.copy(target).addScaledVector(new Vector3(.82,1.1,1.22).normalize(),19/Math.min(1,aspect));
+  camera.lookAt(target);
+  camera.updateMatrixWorld();
+  const point=new Vector3(2.7,0,3).project(camera);
+  await page.mouse.click(bounds.x+(point.x+1)*bounds.width/2,bounds.y+(1-point.y)*bounds.height/2);
+  await sheet.getByRole("button",{name:"Keep preview"}).click();
+  await expect(sheet.getByText("Preview kept for this session")).toBeVisible();
+  await sheet.getByRole("button",{name:"Close Furnish"}).click();
+  await page.getByRole("button",{name:"Furnish",exact:true}).click();
+  await expect(sheet.getByLabel("Placed objects").getByRole("option",{name:"Sofa 1"})).toHaveCount(1);
+  expect(writes).toEqual([]);
+  approximate=false;
+  await page.reload();
+  await openTools(page);
+  await page.getByRole("button",{name:"Furnish",exact:true}).click();
+  await expect(sheet.getByText(/scene needs review/)).toBeVisible();
+  await expect(sofa).toBeEnabled();
+  await expect(sheet.getByRole("button",{name:"Save furniture"})).toHaveCount(0);
+  await expect(sheet.getByRole("option",{name:"Sofa 1"})).toHaveCount(0);
 });

@@ -6,6 +6,7 @@ import {Html,OrbitControls} from "@react-three/drei";
 import {DoubleSide,Shape,Vector2,Vector3} from "three";
 import Link from "next/link";
 import {Maximize2,LayoutGrid,Box,MapPin,Pause,Play,SkipBack,SkipForward,Image as ImageIcon,FileDown,ImageDown,Bookmark,MapPinPlus,X,PencilRuler,Layers,Armchair} from "lucide-react";
+import {MAX_HORIZONTAL_FOV_DEG} from "../../lib/plan/camera";
 import {downloadPrompt,renderPrompt} from "../../lib/plan/renderPrompt";
 import {SceneMesh} from "./SceneMesh";
 import {metersPerPixel,scaleCheck} from "../../lib/plan/derive";
@@ -22,7 +23,7 @@ import type {PlanModel,Pt} from "../../lib/plan/model";
 import type {FloorMaterial,Frame,Item,ObjectKind,Scene,View} from "../../lib/plan/scene";
 
 type FloorStyles = Pick<Scene,"floorMaterial"|"roomFloorMaterials">;
-const wideView = {pitch:-5, horizontalFov:110, eyeHeight:1.6};
+const wideView = {pitch:-5, horizontalFov:MAX_HORIZONTAL_FOV_DEG, eyeHeight:1.6};
 
 function SampleFurniture({interior}:{interior:boolean}){
   function block(x:number,y:number,z:number,w:number,h:number,d:number,color:string){
@@ -65,11 +66,11 @@ function OverviewCamera({plan}:{plan:PlanModel}){
     const aspect=size.width/Math.max(1,size.height);
     const span=Math.max(1,plan.imageTransform.width*scale,plan.imageTransform.height*scale);
     const target=new Vector3(plan.imageTransform.width*scale/2,.65,plan.imageTransform.height*scale/2);
-    const distance=span*1.85/Math.min(1,aspect);
+    const distance=span*1.90/Math.min(1,aspect);
     return {target,eye:target.clone().addScaledVector(new Vector3(.82,1.1,1.22).normalize(),distance)};
   },[plan,scale,size.width,size.height]);
   const perspective=camera as import("three").PerspectiveCamera;
-  return <><primitive object={perspective} position={eye} fov={42} onUpdate={()=>perspective.updateProjectionMatrix()}/>
+  return <><primitive object={perspective} position={eye} fov={45} onUpdate={()=>perspective.updateProjectionMatrix()}/>
     <OrbitControls target={target} enablePan={false} rotateSpeed={.65} minPolarAngle={.08} maxPolarAngle={Math.PI*.47}/></>;
 }
 
@@ -130,11 +131,13 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   const [finishNotice,setFinishNotice]=useState("");
   const [furnishing,setFurnishing]=useState(false);
   const [furnitureDraft,setFurnitureDraft]=useState<Item[]|null>(null);
+  const [previewFurniture,setPreviewFurniture]=useState<Item[]|null>(null);
   const [furnitureId,setFurnitureId]=useState("");
   const [placement,setPlacement]=useState<{kind:ObjectKind}|{move:string}|null>(null);
   const [furnitureNotice,setFurnitureNotice]=useState("");
   const priorTour=useRef<{id:string|null;view:View|null}>({id:null,view:null});
-  const objects=furnitureDraft??scene.objects;
+  const tourScene=useMemo(()=>previewFurniture?{...scene,objects:previewFurniture}:scene,[previewFurniture,scene]);
+  const objects=furnitureDraft??tourScene.objects;
   const selectedFurniture=objects.find(item=>item.id===furnitureId);
   const styledScene={...scene,...sessionFinishes,...finishDraft,objects};
   const needsFinishReview=unmatchedFloorFinishes(styledScene,rooms).length>0;
@@ -166,7 +169,11 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     ...(fit.clearance.length?["Obstructs the 60 cm doorway approach."]:[]),
     ...(fit.narrow.length?["Nearby gap is narrower than 60 cm."]:[]),
   ]:[];
-  const canFurnish=!!saveFurniture&&!check?.mismatch;
+  const persistFurniture=check?.mismatch?undefined:saveFurniture;
+  const previewReason=persistFurniture?undefined:
+    approximate?"Preview only. Furniture fit uses an approximate scale.":
+    check?.mismatch?"Preview only. Your scale measurements differ.":
+    "Preview only. The scene needs review against the current floor plan.";
   function openFurnish(){
     priorTour.current={id:selectedId,view:freeView};
     select(-1);
@@ -196,16 +203,21 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     if(item&&updateFurniture({...item,position:point}))setPlacement(null);
   };
   async function applyFurniture(){
-    if(!furnitureDraft||!canFurnish||!saveFurniture||placement||savingRef.current)return;
+    if(!furnitureDraft||placement||savingRef.current)return;
     savingRef.current=true;setSaving(true);
     try{
-      await saveFurniture(furnitureDraft);
+      if(persistFurniture){
+        await persistFurniture(furnitureDraft);
+        setPreviewFurniture(null);
+      }else{
+        setPreviewFurniture(furnitureDraft);
+      }
       setFurnitureDraft(null);
-      setFurnitureNotice("Furniture saved");
+      setFurnitureNotice(persistFurniture?"Furniture saved":"Preview kept for this session");
     }catch(error){setFurnitureNotice(String(error));}
     finally{savingRef.current=false;setSaving(false);}
   }
-  const space=useMemo(()=>walkSpace(plan,scale,scene),[plan,scale,scene]);
+  const space=useMemo(()=>walkSpace(plan,scale,tourScene),[plan,scale,tourScene]);
   const canFrame=useCallback((point:Pt,walking:boolean)=>
     space.validCamera(point,walking)&&(!sample||clearSampleFloor(point,scale)),[space,sample,scale]);
   const cornerNear=useCallback((point:Pt)=>{
@@ -305,13 +317,13 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     setNotice("");
     setFreeView({id:"free-walk",name:"Walkthrough",...wideView,...corner});
   }
-  return <main className="showcase-player" data-furnishing={furnishing&&canFurnish} aria-label="3D showcase">
+  return <main className="showcase-player" data-furnishing={furnishing} aria-label="3D showcase">
     <div className="show-stage"><Canvas shadows frameloop="demand" dpr={[1,1.6]} camera={{near:.005,far:2000}} fallback={<p>Enable WebGL to view this tour.</p>}>
       <color attach="background" args={[sample&&view?"#cfdfdf":"#d8d9cb"]}/>
       <SceneMesh m={plan} objects={objects} closedDoorIds={scene.closedDoorIds} floorStyle={styledScene}
         wallFinishes={scene.wallFinishes} presentation cutaway={!view}/>
       {sample&&<SampleFurniture interior={!!view}/>}
-      {view?<ShowcaseWalk key={view.id} plan={plan} scene={scene} view={view} sample={sample} pose={pose} onFrame={setViewport} keyboard={!rendered}/>:<><OverviewCamera plan={plan}/><FloorPicker scale={scale} onPick={furnishing?pickFurnitureFloor:land} placeOnFloor={furnishing&&!!placement}
+      {view?<ShowcaseWalk key={view.id} plan={plan} scene={tourScene} view={view} sample={sample} pose={pose} onFrame={setViewport} keyboard={!rendered}/>:<><OverviewCamera plan={plan}/><FloorPicker scale={scale} onPick={furnishing?pickFurnitureFloor:land} placeOnFloor={furnishing&&!!placement}
         onObject={furnishing&&!placement?id=>{setFurnitureId(id);setFurnitureNotice("");}:undefined}/></>}
       {fit&&selectedFurniture&&<>
         <FitOverlay points={footprint({...selectedFurniture,width:selectedFurniture.width+.08,depth:selectedFurniture.depth+.08},scale)}
@@ -328,7 +340,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     </Canvas>
     </div>
     {view&&rendered&&renders[view.id]&&<div className="show-render"><img src={renders[view.id]} alt={"Saved design render for "+view.name}/></div>}
-    {furnishing?<FurnishSheet objects={objects} selected={selectedFurniture} canEdit={canFurnish}
+    {furnishing?<FurnishSheet objects={objects} selected={selectedFurniture} previewReason={previewReason}
       pending={placement?"kind" in placement?"Tap the floor to place the "+placement.kind+".":"Tap the floor to move this object.":""}
       dirty={!!furnitureDraft} saving={saving} message={furnitureNotice} issues={fitWarnings}
       edit={edit&&"/phone/edit/"+encodeURIComponent(plan.id)}

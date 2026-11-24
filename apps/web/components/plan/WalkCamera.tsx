@@ -4,6 +4,7 @@ import { MathUtils, Raycaster, Vector2, Vector3 } from "three";
 import type { Pt } from "../../lib/plan/model";
 import type { Frame, View } from "../../lib/plan/scene";
 import { makeCamera } from "./SceneMesh";
+import { MAX_HORIZONTAL_FOV_DEG } from "../../lib/plan/camera";
 
 const movementKeys = new Map([
   ["w",[1,0]], ["arrowup",[1,0]], ["s",[-1,0]], ["arrowdown",[-1,0]],
@@ -35,11 +36,11 @@ export function WalkCamera({view, scale, frame, canMove, pose, keyboard, tapToWa
     function remember() {
       pose.current = {...view,position:{x:camera.position.x/scale,y:camera.position.z/scale},
         yaw:((MathUtils.radToDeg(yaw)%360+540)%360)-180, pitch:MathUtils.radToDeg(pitch),
-        horizontalFov:MathUtils.clamp(2*MathUtils.radToDeg(Math.atan(halfFov/camera.zoom)),55,110)};
+        horizontalFov:MathUtils.clamp(2*MathUtils.radToDeg(Math.atan(halfFov/camera.zoom)),55,MAX_HORIZONTAL_FOV_DEG)};
     }
     remember();
     function zoom(factor: number) {
-      camera.zoom = MathUtils.clamp(camera.zoom * factor, halfFov/Math.tan(MathUtils.degToRad(55)), halfFov/Math.tan(MathUtils.degToRad(27.5)));
+      camera.zoom = MathUtils.clamp(camera.zoom * factor, halfFov/Math.tan(MathUtils.degToRad(MAX_HORIZONTAL_FOV_DEG/2)), halfFov/Math.tan(MathUtils.degToRad(27.5)));
       camera.updateProjectionMatrix();
       remember();
       invalidate();
