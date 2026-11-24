@@ -94,3 +94,20 @@ async def test_pending_history(monkeypatch,job,expected):
     original=httpx.AsyncClient
     monkeypatch.setattr(local_comfy.httpx,'AsyncClient',lambda **kw:original(transport=httpx.MockTransport(lambda _:httpx.Response(200,json=job)),**kw))
     assert await local_comfy.poll(local_comfy.base_url()+'/history/'+JID)==(expected,None)
+@pytest.mark.asyncio
+async def test_find_receipt_checks_only_queue_and_history(monkeypatch):
+    original = httpx.AsyncClient
+    paths = []
+    def handle(request):
+        paths.append((request.method, request.url.path))
+        if request.url.path == "/queue":
+            return httpx.Response(200, json={"queue_running": [], "queue_pending": []})
+        return httpx.Response(200, json={
+            JID: {"prompt": [0, JID, {}, {"client_id": "florp-job"}]},
+        })
+    monkeypatch.setattr(local_comfy.httpx, "AsyncClient",
+                        lambda **kw: original(transport=httpx.MockTransport(handle), **kw))
+    receipt = await local_comfy.find_receipt("florp-job")
+    assert receipt[0] == JID
+    assert paths == [("GET", "/queue"), ("GET", "/history")]
+    assert await local_comfy.find_receipt("other-job") is None

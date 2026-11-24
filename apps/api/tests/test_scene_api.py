@@ -9,6 +9,47 @@ from app.config import settings
 from test_plan_api import client, plan, reference  # noqa: F401
 
 
+def test_recover_local_render_without_resubmitting(client, monkeypatch, tmp_path):
+    import json
+    from sqlmodel import Session
+    from app import main
+    from app.models import SceneRenderJob
+
+    c, bid = client
+    monkeypatch.setattr(settings, "storage_path", str(tmp_path))
+    lookups = []
+    with Session(main.engine) as session:
+        job = SceneRenderJob(blueprint_id=bid, request_key="original", input_hash="example",
+                             scene_revision=1, plan_revision=1, view_id="view", name="Render", prompt="",
+                             provider_model=local_comfy.MODEL, status="failed")
+        session.add(job)
+        session.commit()
+        job_id = job.id
+    folder = tmp_path / bid / "scene-renders" / job_id
+    folder.mkdir(parents=True)
+    (folder / "manifest.json").write_text(json.dumps({}))
+    image = io.BytesIO()
+    Image.new("RGB", (4, 4)).save(image, format="PNG")
+    async def find(key):
+        lookups.append(key)
+        return ("receipt", "history", "history") if len(lookups) > 1 else None
+    async def poll(url):
+        assert url == "history"
+        return "complete", image.getvalue()
+    async def forbidden(*args, **kwargs):
+        pytest.fail("Recovery submitted a render")
+    monkeypatch.setattr(local_comfy, "find_receipt", find)
+    monkeypatch.setattr(local_comfy, "poll", poll)
+    monkeypatch.setattr(local_comfy, "generate", forbidden)
+    path = f"/blueprints/{bid}/scene/renders/{job_id}"
+    assert c.post(path + "/recover").status_code == 409
+    assert c.get(path).json()["status"] == "failed"
+    assert c.post(path + "/recover").json()["status"] == "complete"
+    assert c.post(path + "/recover").json()["status"] == "complete"
+    assert lookups == [job_id, job_id]
+    assert c.get(path + "/result.png").content == image.getvalue()
+
+
 def test_floor_material_overrides_round_trip(client):
     c, bid = client
     path = f"/blueprints/{bid}"

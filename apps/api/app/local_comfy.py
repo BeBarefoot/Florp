@@ -122,3 +122,28 @@ async def poll(status_url, expected_size=(1024,768)):
         out = io.BytesIO()
         image.convert('RGB').save(out,format='PNG')
     return 'complete',out.getvalue()
+
+
+async def find_receipt(request_key):
+    """Find this exact Florp client ID in ComfyUI without submitting work."""
+    base = base_url()
+    async with httpx.AsyncClient(timeout=15, follow_redirects=False, trust_env=False) as client:
+        queue = checked(await client.get(base + "/queue"))
+        history = checked(await client.get(base + "/history", params={"max_items": 100}))
+    if not isinstance(queue, dict) or not isinstance(history, dict):
+        raise ProviderOutputError("Unexpected ComfyUI queue or history data.")
+    records = [*queue.get("queue_running", []), *queue.get("queue_pending", []),
+               *(job.get("prompt") for job in history.values() if isinstance(job, dict))]
+    matches = set()
+    for record in records:
+        if (isinstance(record, list) and len(record) > 3 and isinstance(record[3], dict)
+                and record[3].get("client_id") == request_key):
+            try:
+                matches.add(str(UUID(record[1])))
+            except (ValueError, TypeError, AttributeError):
+                continue
+    if len(matches) != 1:
+        return None
+    job_id = matches.pop()
+    url = base + "/history/" + job_id
+    return job_id, url, url

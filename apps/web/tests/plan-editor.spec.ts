@@ -543,6 +543,39 @@ test('failed Comfy render explains credit recovery and preserves the saved camer
   await expect(page.getByRole('button',{name:'Generate preview',exact:true})).toBeDisabled();
 });
 
+test("render review recovers an existing job and compares its saved mask",async({page})=>{
+  test.setTimeout(75_000);
+  const model=setReference(fixture(),{x:100,y:100},{x:500,y:100},4);
+  await setup(page,{model});
+  const view={id:"saved-view",name:"Bedroom",position:{x:300,y:250},yaw:0,pitch:0,horizontalFov:90,eyeHeight:1.6};
+  const job={id:"render",viewId:view.id,name:"Design",prompt:"Oak",model:"local-comfy:sdxl-depth",
+    sceneRevision:1,planRevision:1,status:"failed",error:"Receipt not received"};
+  let recoveries=0;
+  const image=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jPioAAAAASUVORK5CYII=","base64");
+  await page.route("**/blueprints/p/scene**",route=>{
+    const endpoint=new URL(route.request().url()).pathname.split("/").pop();
+    if(endpoint==="render-settings")return route.fulfill({json:{width:1024,height:768,configured:false,provider:"local-comfy",model:"local-comfy:sdxl-depth"}});
+    if(endpoint==="renders")return route.fulfill({json:[job]});
+    if(endpoint==="recover"){
+      expect(route.request().method()).toBe("POST");
+      recoveries++;
+      return route.fulfill({json:{...job,status:"complete",error:null}});
+    }
+    if(endpoint?.endsWith(".png"))return route.fulfill({contentType:"image/png",body:image});
+    return route.fulfill({json:{revision:1,planRevision:1,config:{views:[view],objects:[],style:"Oak"}}});
+  });
+  await page.route("**/blueprints/p/renders",()=>{throw Error("Recovery attempted to submit a render");});
+  await page.getByRole("radio",{name:"3D",exact:true}).click();
+  await page.getByRole("button",{name:"Check for existing render"}).click();
+  const review=page.getByRole("group",{name:"Render comparison"});
+  await review.getByRole("button",{name:"Overlay",exact:true}).click();
+  await review.getByRole("combobox",{name:"Reference layer"}).selectOption("mask.png");
+  await expect(review.getByAltText("Captured object and wall mask")).toHaveAttribute("src",/\/mask\.png$/);
+  await review.getByRole("slider",{name:/Design opacity/}).press("End");
+  await expect(review.getByAltText("Generated design visualisation")).toHaveCSS("opacity","1");
+  expect(recoveries).toBe(1);
+});
+
 test('architecture review requires explicit checks and becomes draft after calibration changes', async ({page}) => {
   const {puts}=await setup(page,{model:setReference(fixture({openings:[]}),{x:100,y:100},{x:500,y:100},4)});
   let reviewed=false;

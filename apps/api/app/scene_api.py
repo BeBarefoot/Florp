@@ -344,16 +344,18 @@ async def submit(bid: str, request: Request):
         result = None
         error = providers.render_error(exc)
     with Session(get_engine()) as s:
+        if result:
+            provider_job_id, status_url, response_url = result
+            values = dict(status="queued", provider_job_id=provider_job_id,
+                          status_url=status_url, response_url=response_url, error=None)
+        else:
+            values = dict(status="failed", error=error)
+        s.exec(update(SceneRenderJob).where(SceneRenderJob.id == job_id,
+               SceneRenderJob.status == "submitting").values(**values))
+        s.commit()
         job = s.get(SceneRenderJob, job_id)
         if job is None:
             raise HTTPException(404, "Render job not found")
-        if result:
-            job.provider_job_id, job.status_url, job.response_url = result
-            job.status = "queued"
-        else:
-            job.status, job.error = "failed", error
-        s.add(job)
-        s.commit()
         return public(job)
 
 
@@ -451,6 +453,42 @@ async def poll(bid: str, job_id: str):
         if saved is None:
             raise HTTPException(404, "Render job not found")
         return public(saved)
+
+
+@router.post("/scene/renders/{job_id}/recover")
+async def recover_render(bid: str, job_id: str):
+    """Find a local receipt or recheck a saved one. This never submits work."""
+    import httpx
+
+    with Session(get_engine()) as s:
+        job = s.get(SceneRenderJob, job_id)
+        if not job or job.blueprint_id != bid:
+            raise HTTPException(404, "Render job not found")
+        if job.status not in ("failed", "submitting"):
+            return public(job)
+        if job.provider_job_id and job.status_url:
+            receipt = (job.provider_job_id, job.status_url, job.response_url)
+        elif job.provider_model.startswith("local-comfy:"):
+            receipt = None
+        else:
+            raise HTTPException(409, "No saved receipt. Look for this render in the provider dashboard.")
+        original_status = job.status
+    if receipt is None:
+        try:
+            receipt = await local_comfy.find_receipt(job_id)
+        except (httpx.TransportError, providers.ProviderConfigurationError,
+                providers.ProviderOutputError, providers.ProviderRetryableError) as exc:
+            raise HTTPException(503, "Could not read the local ComfyUI queue or history. Check ComfyUI and try again.") from exc
+        if receipt is None:
+            raise HTTPException(409, "No unique receipt in the local ComfyUI queue or recent history.")
+    provider_job_id, status_url, response_url = receipt
+    with Session(get_engine()) as s:
+        s.exec(update(SceneRenderJob).where(SceneRenderJob.id == job_id,
+               SceneRenderJob.status == original_status).values(status="queued",
+                   provider_job_id=provider_job_id, status_url=status_url,
+                   response_url=response_url, error=None))
+        s.commit()
+    return await poll(bid, job_id)
 
 
 @router.get("/scene/renders/{job_id}/{asset}")

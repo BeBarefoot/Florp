@@ -15,6 +15,7 @@ import { CaptureBridge, EyeCamera, SceneMesh } from "./SceneMesh";
 import { roomsOf, walkSpace } from "../../lib/plan/walkSpace";
 import { WalkCamera } from "./WalkCamera";
 import { unmatchedFloorFinishes } from "../../lib/plan/floorMaterials";
+import RenderComparison from "./RenderComparison";
 
 type Mode = "camera" | "aim" | "sight" | "object" | "move" | "zone" | null;
 type CaptureFn = (v: View, s: number, f: Frame, key: string) => Capture;
@@ -46,7 +47,9 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
   const [sight,setSight]=useState(""), [message,setMessage]=useState(""), [busy,setBusy]=useState(false);
   const [authorized,setAuthorized]=useState(false), [variant,setVariant]=useState("");
   const [editObject,setEditObject]=useState("");
-  const [selectedJob,setSelectedJob]=useState(""), [overlay,setOverlay]=useState(false);
+  const [selectedJob,setSelectedJob]=useState("");
+  const [recoveringRender,setRecoveringRender]=useState(false);
+  const [recoveryMessage,setRecoveryMessage]=useState("");
   const [undo,setUndo]=useState<Scene[]>([]);
   const [ready,setReady]=useState(false);
   const [fixtureScan,setFixtureScan]=useState<{planRevision:number;suggestions:Item[]}|null>(null);
@@ -601,23 +604,23 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
           <button disabled={busy||!view||!ready||!authorized||!frame.configured||dirty||!validCamera(view.position)} onClick={()=>void generate()}>Generate preview</button>
       </section>
       {!!viewJobs.length&&<section className="scene-render">
-        <label>Render variants <select value={job?.id} onChange={e=>setSelectedJob(e.target.value)}>
+        <label>Render variants <select value={job?.id} onChange={e=>{setSelectedJob(e.target.value);setRecoveryMessage("");}}>
           {viewJobs.map(j=><option value={j.id} key={j.id}>{j.name} · {j.status}</option>)}</select></label>
         {job&&<p role="status">{job.status} {job.error??""} · {job.model} · Scene {job.sceneRevision}</p>}
+        {job&&["failed","submitting"].includes(job.status)&&<button disabled={recoveringRender} onClick={()=>void (async()=>{
+          setRecoveringRender(true);
+          setRecoveryMessage("");
+          try{
+            const recovered=await request<Job>(path+"/scene/renders/"+encodeURIComponent(job.id)+"/recover",{method:"POST"});
+            setJobs(current=>current.map(item=>item.id===recovered.id?recovered:item));
+          }catch(error){setRecoveryMessage(String(error));}
+          finally{setRecoveringRender(false);}
+        })()}>Check for existing render</button>}
+        {recoveryMessage&&<p role="status">{recoveryMessage}</p>}
         {job?.status==="failed"&&job.model.startsWith("local-comfy:")&&<p>See the local ComfyUI setup guide in the Florp README for port and model checks. Keep ComfyUI running until generation finishes.</p>}
         {job?.status==="failed"&&!job.model.startsWith("local-comfy:")&&<p>After fixing the account or configuration issue, select consent and generate a new preview. If the connection was interrupted, check the provider dashboard first to avoid paying twice. Your saved camera and capture remain available.</p>}
         {job?.status==="failed"&&job.model.startsWith("comfy:")&&<a href="https://cloud.comfy.org" target="_blank" rel="noreferrer">Open Comfy account and credits</a>}
-        {job?.status==="complete"&&<>
-          <button onClick={()=>setOverlay(!overlay)}>{overlay?"Side by side":"Overlay"}</button>
-          <div className={overlay?"scene-compare overlay":"scene-compare"}>
-            {/* Capture and result are served by the local API. */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={asset("preview.png")} alt="Measured scene capture"/>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={asset("result.png")} alt="Generated design visualisation"/>
-          </div>
-          <a href={asset("result.png")} target="_blank" rel="noreferrer">Open image</a>
-        </>}
+        {job?.status==="complete"&&<RenderComparison key={job.id} asset={asset}/>}
       </section>}
     </fieldset>
   </div>;
