@@ -109,3 +109,41 @@ def test_pale_plan_prunes_short_isolated_fixture_stroke_but_preserves_partition(
     kept = _prune(points, edges, 24, ReconstructConfig(), counters, pale=True)
     assert kept == edges[:3]
     assert counters.pruned_fragments == 1
+
+
+def test_neutral_reconstruction_closes_supported_partition_and_keeps_window_host():
+    from types import SimpleNamespace
+    from app.plan_reconstruct import reconstruct
+    from app.plan_workspace import Document, Point, Segment
+
+    def segment(key, start, end, kind="wall", supported=False):
+        return Segment(
+            id=key,
+            kind=kind,
+            start=Point(x=start[0], y=start[1]),
+            end=Point(x=end[0], y=end[1]),
+            thickness_px=10,
+            boundary_supported=supported,
+        )
+
+    objects = [
+        segment("left", (30, 40), (30, 140)),
+        segment("top", (30, 40), (145, 40)),
+        segment("right", (145, 40), (145, 140)),
+        segment("window", (55, 40), (112, 40), "window", True),
+    ]
+    doc = Document(width=180, height=180, objects=objects)
+    strips = SimpleNamespace(stats={"neutral_wall_bands": True}, boundary_mask=None, source_tint=None)
+    image = np.full((180, 180, 3), 255, np.uint8)
+    # A fixture outline touches the window and the missing partition.
+    cv2.rectangle(image, (82, 40), (89, 140), (220,) * 3, -1)
+    cv2.line(image, (30, 140), (145, 140), (165,) * 3, 1)
+    unresolved = reconstruct(doc, "plan", strips=strips, image=image)
+    assert not unresolved.rooms
+    cv2.rectangle(image, (30, 136), (145, 144), (219,) * 3, -1)
+    recovered = reconstruct(doc, "plan", strips=strips, image=image)
+    assert len(recovered.rooms) == 1
+    assert len(recovered.walls) == 4
+    window, = recovered.openings
+    assert window.host_wall_id
+    assert window.width_px == 57

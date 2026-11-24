@@ -165,7 +165,7 @@ def dimension_framed_crop(strips, image):
     return [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
 
 
-def build(path, roi=None, *, plan_id=None):
+def build(path, roi=None, *, plan_id=None, reconstruct_config=None):
     source = decode(Path(path).read_bytes())
     image = sharpen_soft_scan(source)
     notes = ["Soft source edges detected. Applied mild sharpening before extraction."] if image is not source else []
@@ -179,7 +179,7 @@ def build(path, roi=None, *, plan_id=None):
 
         doc = semantic_build(image)
         doc.warnings.extend(notes)
-        return tag_rooms(reconstruct(doc, plan_id), detect_symbols(image, roi)) if plan_id is not None else doc
+        return tag_rooms(reconstruct(doc, plan_id, reconstruct_config), detect_symbols(image, roi)) if plan_id is not None else doc
     from .ink_layers import wall_strips
     from .envelope import building_envelope, mask_from_polygon
     from .structural_runs import structural_runs, join_intersections
@@ -301,7 +301,7 @@ def build(path, roi=None, *, plan_id=None):
     boxes, detector_ok = _detector_boxes(path, w, h)
     if not detector_ok:
         notes.append(
-            "Local detector unavailable; openings come from wall gaps only and need review against the original. Add missing openings with two clicks."
+            "Local detector unavailable; openings come from walls and drawing symbols and need review against the original. Add missing openings with two clicks."
         )
     found = gap_openings.detect(
         image, [o for o in objects if o.kind == "wall"], strips, boxes, exterior_zone, framed_site=bool(framed)
@@ -352,7 +352,14 @@ def build(path, roi=None, *, plan_id=None):
 
     if plan_id is None:
         return doc
-    model = reconstruct(doc, plan_id, strips=strips, image=image)
+    model = reconstruct(doc, plan_id, reconstruct_config, strips=strips, image=image)
+    if not roi and stats.get("neutral_wall_bands"):
+        from .balconies import recover_balconies
+        from .wall_closures import search_closures
+
+        updated = recover_balconies(model, image)
+        if updated is not model:
+            model = search_closures(updated, image)
     return tag_rooms(model, detect_symbols(image, roi))
 
 

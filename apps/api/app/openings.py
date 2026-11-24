@@ -3,8 +3,8 @@
 Real openings are *gaps in the wall strips*. Every gap is enumerated first and
 then classified from the pixels inside it (window rails, door arc and leaf,
 overhead-door dashes). A detector box can only raise or lower the confidence of
-a gap that already exists; it never places an opening by itself, and the span
-is always the gap, never the box.
+a gap that already exists. Faint neutral plans also get a source pass that
+measures frame tracks and door swings next to existing wall runs.
 """
 
 from __future__ import annotations
@@ -864,6 +864,147 @@ def _pale_doors(walls, material, swing_ink, existing, start_index):
     return results
 
 
+def _neutral_windows(gray, walls):
+    """Recover narrow frame tracks even where the wall extractor bridged them."""
+    paper = _local_paper(gray)
+    dark = gray < 0.78 * paper
+    light = gray > 0.94 * paper
+    masonry = (gray >= 0.80 * paper) & (gray <= 0.92 * paper)
+    proposals = []
+    for horizontal, cross, intervals in _pieces(walls):
+        thickness = max(t for _, _, t in intervals)
+        if thickness < 8:
+            continue
+        rails, shoulders = (dark, light) if horizontal else (dark.T, light.T)
+        fill = masonry if horizontal else masonry.T
+        lo, hi = round(intervals[0][0]), min(rails.shape[1], round(intervals[-1][1]) + 1)
+        for center in range(round(cross) - 2, round(cross) + 3):
+            if center < 5 or center + 5 >= rails.shape[0]:
+                continue
+            core = rails[center - 2:center + 3, lo:hi]
+            band = shoulders[center - 5:center + 6, lo:hi]
+            infill = fill[center - 2:center + 3, lo:hi]
+            # A rail pair sits inside the wall band, with light space on
+            # each side. This excludes the two outlines of solid masonry
+            # and the continuous faces drawn across an empty doorway.
+            paired = np.zeros(hi - lo, bool)
+            for left in range(3):
+                for right in range(left + 2, 5):
+                    paired |= (
+                        core[left] & core[right]
+                        & band[:left + 3].any(axis=0) & band[right + 4:].any(axis=0)
+                        & (infill[left + 1:right].sum(axis=0) < 2)
+                    )
+            continuous = cv2.morphologyEx(
+                paired[None].astype(np.uint8), cv2.MORPH_CLOSE, np.ones((1, 5), np.uint8)
+            )[0]
+            changes = np.diff(np.r_[0, continuous.astype(np.int8), 0])
+            for a, b in zip(np.flatnonzero(changes == 1), np.flatnonzero(changes == -1)):
+                if b - a >= max(14, 1.4 * thickness) and paired[a:b].mean() >= 0.75:
+                    proposals.append(Gap(horizontal, cross, lo + a, lo + b - 1, thickness))
+    accepted = []
+    for gap in sorted(proposals, key=lambda g: g.hi - g.lo, reverse=True):
+        if not _overlaps_opening(gap, accepted):
+            accepted.append(gap)
+    return accepted
+
+
+def _opening_gap(opening):
+    horizontal = _axis(opening)
+    if horizontal is None:
+        return None
+    points = (opening.start, opening.end)
+    lo, hi = sorted(p.x if horizontal else p.y for p in points)
+    cross = sum(p.y if horizontal else p.x for p in points) / 2
+    return Gap(horizontal, cross, lo, hi, opening.thickness_px)
+
+
+def _interior_leaf(candidate, candidates, footprint):
+    """Prefer the leaf inside the plan when the same hinge shows both swings."""
+    from shapely.geometry import Point as ShapePoint
+
+    score, start, end, leaf = candidate
+    width = math.dist(start, end)
+    if footprint.covers(ShapePoint(start + width * leaf)):
+        return leaf
+    for other in candidates:
+        confidence, hinge, jamb, direction = other
+        if confidence < score - 0.06:
+            break
+        if (leaf @ direction < -0.95 and math.dist(hinge, start) <= 3
+                and math.dist(jamb, end) <= 3
+                and footprint.covers(ShapePoint(hinge + math.dist(hinge, jamb) * direction))):
+            return direction
+    return leaf
+
+
+def _neutral_openings(image, walls, result, index):
+    from shapely.geometry import LineString, MultiPoint
+    from .neutral_swings import swing_candidates
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    accepted = []
+    doors = []
+    for opening in result.objects:
+        if opening.kind != "door":
+            continue
+        line = LineString([(opening.start.x, opening.start.y), (opening.end.x, opening.end.y)])
+        accepted.append(line.buffer(max(4, 0.22 * line.length)))
+        gap = _opening_gap(opening)
+        if gap is not None:
+            doors.append(gap)
+    measured = []
+    measured_gaps = []
+    candidates = swing_candidates(gray, walls)
+    footprint = MultiPoint([(p.x, p.y) for wall in walls for p in (wall.start, wall.end)]).convex_hull
+    for candidate in candidates:
+        _, start, end, leaf = candidate
+        line = LineString([start, end])
+        if any(line.intersection(other).length > 0.45 * line.length for other in accepted):
+            continue
+        leaf = _interior_leaf(candidate, candidates, footprint)
+        thickness = max(3, min(12, line.length * 0.25))
+        host, door = _segment(
+            Gap(True, 0, 0, line.length, thickness),
+            "door", 0.78, index, source_supported=True,
+        )
+        index += 1
+        host.start = door.start = Point(x=float(start[0]), y=float(start[1]))
+        host.end = door.end = Point(x=float(end[0]), y=float(end[1]))
+        door.leaf = Point(x=float(leaf[0]), y=float(leaf[1]))
+        measured.extend((host, door))
+        accepted.append(line.buffer(max(4, 0.22 * line.length)))
+        gap = _opening_gap(door)
+        if gap is not None:
+            doors.append(gap)
+            measured_gaps.append((gap, "door", 0.78))
+    windows = []
+    for gap in _neutral_windows(gray, walls):
+        if _overlaps_opening(gap, doors):
+            continue
+        measured.extend(_segment(gap, "window", 0.78, index, source_supported=True))
+        windows.append(gap)
+        index += 1
+
+    # A pale drawing can show continuous wall faces across a doorway or a
+    # row of neighboring apertures. Replace coarse glazing spans when the
+    # source pass has a real swing or a measured frame at that location.
+    precise = doors + windows
+    superseded = set()
+    for opening in result.objects:
+        if opening.kind == "window" and _overlaps_opening(_opening_gap(opening), precise):
+            superseded.update((opening.id, opening.host_id))
+    result.objects[:] = [opening for opening in result.objects if opening.id not in superseded]
+    result.gaps[:] = [
+        entry for entry in result.gaps
+        if entry[1] != "window" or not _overlaps_opening(entry[0], precise)
+    ]
+    result.gaps.extend(measured_gaps)
+    result.gaps.extend((gap, "window", 0.78) for gap in windows)
+    result.objects.extend(measured)
+    return index
+
+
 def detect(
     image, walls, strips, boxes=(), exterior=None, *, framed_site=False
 ) -> Result:
@@ -891,7 +1032,13 @@ def detect(
     accepted = []
     frame_edges = faint_door_ink = None
     photo_pieces = _pieces(walls) if photographic else []
+    long_glazing = []
     if photographic:
+        colour = strips.structural_colour
+        long_glazing = [
+            gap for gap in _long_glazing(image, photo_pieces, colour)
+            if not _cropped_material_band(image, gap) and _photo_window_clear(colour, gap)
+        ]
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         relative = gray.astype(np.float32) / np.maximum(_local_paper(gray), 1)
         normalized = np.rint(np.clip(relative, 0, 1) * 255).astype(np.uint8)
@@ -981,6 +1128,10 @@ def detect(
         if rails >= 2:
             kind = "window"
             conf = 0.62 + (0.12 if rails >= 3 else 0) + (0.12 if rail_min >= 0.9 else 0)
+            # A coarse gap can span multiple separate tracks of frame edges.
+            # Let the source-backed glazing pass place each span individually.
+            if sum(_overlaps_opening(gap, [span]) for span in long_glazing) >= 2:
+                continue
         else:
             # Thin partitions can host ordinary doors much wider than nine
             # times their thickness. Require arc/leaf evidence, not that ratio.
@@ -1028,12 +1179,8 @@ def detect(
         accepted.append(gap)
         index += 1
     if photographic:
-        for gap in _long_glazing(image, photo_pieces, strips.structural_colour):
-            if (
-                _cropped_material_band(image, gap)
-                or _overlaps_opening(gap, accepted)
-                or not _photo_window_clear(strips.structural_colour, gap)
-            ):
+        for gap in long_glazing:
+            if _overlaps_opening(gap, accepted):
                 continue
             result.gaps.append((gap, "window", 0.74))
             result.objects.extend(
@@ -1104,6 +1251,7 @@ def detect(
                 accepted.append(g)
                 index+=1
     if pale_swing_ink is not None:
+        index = _neutral_openings(image, walls, result, index)
         result.objects.extend(_pale_doors(
             walls, strips.mask > 0, (line_dil | pale_swing_ink).astype(np.uint8),
             result.objects, index,

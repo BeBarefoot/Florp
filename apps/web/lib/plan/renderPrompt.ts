@@ -27,7 +27,7 @@ export function renderPrompt(plan:PlanModel, scene:Scene, view:View, frame:{widt
     rooms:rooms.map(r=>({id:r.id,label:r.label,type:r.roomType,perimeterXZ:r.polygon.map(xz),
       floorFinish:floorMaterialFor(scene,r.id)??floorFinishes[scene.floorFinish??"default"].name,
       successiveEdgeLengths:r.polygon.map((p,i)=>length(p,r.polygon[(i+1)%r.polygon.length])),
-      ceilingHeight:r.ceilingHeightM??2.8,defaultCeiling:r.ceilingHeightM==null})),
+      ceilingHeight:r.roomType==="balcony"?null:r.ceilingHeightM??2.8,defaultCeiling:r.roomType!=="balcony"&&r.ceilingHeightM==null})),
     walls:plan.walls.map(w=>{
       const [a,b]=wallEnds(plan,w,nodes);
       return {id:w.id,centrelineXZ:[xz(a),xz(b)],length:length(a,b),thickness:w.thicknessPx*scale,height:w.heightM,material:w.material,

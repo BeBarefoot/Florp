@@ -15,7 +15,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.plan_workspace import Document, Segment, Point, footprint
-from app.plan_reconstruct import reconstruct
+from app.plan_model import PlanModel
 from shapely.ops import unary_union
 
 
@@ -60,7 +60,7 @@ def render(document, source):
     return image, overlay, svg
 
 
-def debug_overlays(source, document, out: Path):
+def debug_overlays(source, document, model, out: Path):
     """Per-stage overlays: strips, thin ink, envelope, rejected components by reason, gap classes."""
     from app.ink_layers import wall_strips
 
@@ -109,8 +109,6 @@ def debug_overlays(source, document, out: Path):
 
     # The editor displays reconstructed geometry, not raw worker segments.
     # Save both so pixel retention and graph/pruning failures are distinguishable.
-    model = reconstruct(document, "diagnostic")
-    (out / "model.json").write_text(model.model_dump_json())
     nodes = {node.id: node for node in model.nodes}
     walls = {wall.id: wall for wall in model.walls}
     objects = [Segment(
@@ -144,6 +142,33 @@ def debug_overlays(source, document, out: Path):
     (out / "model.svg").write_text(svg)
 
 
+def write_regression_overlay(source, differences, output):
+    # Use the same missed/extra classification as the JSON report.
+    overlay = cv2.addWeighted(source, .55, np.full_like(source, 255), .45, 0)
+    for name, color in (("missed_wall_spans", (185, 60, 20)), ("extra_wall_spans", (35, 65, 220)),
+                        ("missed_openings", (150, 40, 130)), ("extra_openings", (0, 120, 240))):
+        is_opening = name.endswith("openings")
+        for feature in differences[name]:
+            if not feature["points"]:
+                continue
+            points = np.rint(feature["points"]).astype(np.int32)
+            cv2.polylines(overlay, [points], False, color, 3 if is_opening else 2, cv2.LINE_AA)
+            if is_opening:
+                for point in points[[0, -1]]:
+                    cv2.circle(overlay, tuple(point), 5, color, 2, cv2.LINE_AA)
+    legend = np.full((56, max(570, overlay.shape[1]), 3), 255, dtype=np.uint8)
+    for i, (label, color) in enumerate((
+        ("Missed wall", (185, 60, 20)), ("Extra wall", (35, 65, 220)),
+        ("Missed opening", (150, 40, 130)), ("Extra opening", (0, 120, 240)),
+    )):
+        x, y = 12 + i % 2 * 265, 22 + i // 2 * 23
+        cv2.line(legend, (x, y - 5), (x + 24, y - 5), color, 3, cv2.LINE_AA)
+        cv2.putText(legend, label, (x + 34, y), cv2.FONT_HERSHEY_SIMPLEX, .53, (45,45,45), 1, cv2.LINE_AA)
+    canvas = cv2.copyMakeBorder(overlay, 0, 0, 0, legend.shape[1]-overlay.shape[1],
+                                cv2.BORDER_CONSTANT, value=(255,255,255))
+    cv2.imwrite(str(output), np.vstack([legend, canvas]))
+
+
 def main():
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument("--image", required=True, type=Path)
@@ -175,22 +200,23 @@ def main():
         parser.error("--update-thresholds requires --gold")
     args.output.mkdir(parents=True, exist_ok=True)
     result = args.output / "document.json"
-    times = []
-    for _ in range(args.runs):
-        start = time.perf_counter()
+    worker = [
+        sys.executable, "-m", "app.workspace_worker", str(args.image.resolve()),
+    ]
+
+    def run_worker(arguments):
         subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "app.workspace_worker",
-                str(args.image.resolve()),
-                str(result.resolve()),
-            ],
+            worker + arguments,
             cwd=Path(__file__).resolve().parents[1],
             env={**os.environ, "OMP_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1"},
             check=True,
             timeout=20,
         )
+
+    times = []
+    for _ in range(args.runs):
+        start = time.perf_counter()
+        run_worker([str(result.resolve())])
         times.append(time.perf_counter() - start)
     document = Document.model_validate_json(result.read_bytes())
     from app.deterministic_blueprint.preprocess import decode
@@ -213,16 +239,24 @@ def main():
         "warnings": document.warnings,
         "accuracy": "Not measured by this script; compare output to independent annotations.",
     }
+    if args.debug or gold is not None:
+        # Score and visualize the saved editor model through the same
+        # worker entry point that handles an upload.
+        model_path = args.output / "model.json"
+        run_worker([str(model_path.resolve()), "--plan-id", gold.id if gold else "diagnostic"])
+        predicted = PlanModel.model_validate_json(model_path.read_bytes())
     if args.debug:
-        debug_overlays(source, document, args.output)
+        debug_overlays(source, document, predicted, args.output)
     if args.gold:
-        from app.plan_model import PlanModel
-        from app.plan_reconstruct import reconstruct
-        from app.plan_score import score, flat_metrics, minimum_thresholds
+        from app.plan_score import extraction_differences, score, flat_metrics, minimum_thresholds
 
-        result = score(reconstruct(document, gold.id), gold)
+        result = score(predicted, gold)
+        differences = extraction_differences(predicted, gold)
         report["score"] = result
+        report["accuracy"] = "Scored against the supplied corrected plan for regression."
         (args.output / "score.json").write_text(json.dumps(result, indent=2))
+        (args.output / "differences.json").write_text(json.dumps(differences, indent=2))
+        write_regression_overlay(source, differences, args.output / "regression-overlay.png")
         if args.update_thresholds:
             flat = flat_metrics(result)
             path = args.gold / "thresholds.json"

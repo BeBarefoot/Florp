@@ -300,6 +300,26 @@ def test_long_glazing_separated_by_an_opaque_mark():
     assert gaps[0].lo == 50 and gaps[0].hi <= 146
     assert gaps[1].lo >= 170 and gaps[1].hi == 280
 
+def test_coarse_photo_gap_does_not_hide_two_supported_windows():
+    image = np.full((150, 600, 3), 230, np.uint8)
+    colour = np.zeros(image.shape[:2], dtype=bool)
+    colour[53:64, 20:51] = True
+    colour[53:64, 210:236] = True
+    for y in (55, 62):
+        cv2.line(image, (50, y), (210, y), (50, 50, 50), 1)
+    image[49:65, 117:143] = (55, 180, 190)
+    strips = wall_strips(image)
+    strips.stats["coloured_walls"] = True
+    strips.structural_colour = colour
+    walls = [wall(0, (20, 58), (50, 58)), wall(1, (210, 58), (235, 58))]
+    windows = sorted(
+        (opening for opening in detect(image, walls, strips).objects if opening.kind == "window"),
+        key=lambda opening: opening.start.x,
+    )
+    assert len(windows) == 2
+    assert windows[0].end.x <= 117
+    assert windows[1].start.x >= 143
+
 
 def test_photo_crop_does_not_treat_hatched_edge_as_glazing():
     from app.openings import _cropped_material_band
@@ -372,3 +392,52 @@ def test_pale_doors_between_facing_jambs_preserve_span(angle, wall_width):
     assert _pale_doors(walls, material, np.zeros_like(ink), [], 0) == []
     cv2.line(material, tuple(start.astype(int)), tuple(np.rint(end).astype(int)), 1, wall_width)
     assert _pale_doors(walls, material, ink, [], 0) == []
+
+
+def test_soft_neutral_facade_separates_window_frame_from_balcony_door():
+    image = np.full((360, 440, 3), 252, np.uint8)
+    for start, end in [
+        ((45, 69), (104, 81)),
+        ((158, 69), (199, 81)),
+        ((236, 69), (391, 81)),
+        ((45, 69), (56, 310)),
+        ((380, 69), (391, 310)),
+        ((45, 299), (391, 310)),
+    ]:
+        cv2.rectangle(image, start, end, (215,) * 3, -1)
+        cv2.rectangle(image, start, end, (158,) * 3, 1)
+    # Drafted faces run across the door, but only the window has internal rails.
+    for y in (69, 81):
+        cv2.line(image, (104, y), (236, y), (165,) * 3, 1)
+    for y in (74, 76):
+        cv2.line(image, (104, y), (158, y), (95,) * 3, 1)
+    cv2.ellipse(image, (235, 75), (35, 35), 0, 90, 180, (140,) * 3, 1, cv2.LINE_AA)
+    cv2.line(image, (235, 75), (235, 110), (140,) * 3, 1, cv2.LINE_AA)
+    image = cv2.GaussianBlur(image, (0, 0), 0.55)
+
+    # The initial wall scan merged the narrow window into the upper wall.
+    walls = [
+        wall(0, (50, 75), (199, 75), 12),
+        wall(1, (236, 75), (385, 75), 12),
+        wall(2, (50, 75), (50, 304), 11),
+        wall(3, (385, 75), (385, 304), 11),
+        wall(4, (50, 304), (385, 304), 11),
+    ]
+    strips = wall_strips(image)
+    assert strips.stats["neutral_wall_bands"]
+    detected = detect(image, walls, strips)
+    door, = [item for item in detected.objects if item.kind == "door"]
+    window, = [item for item in detected.objects if item.kind == "window"]
+    assert sorted((door.start.x, door.end.x)) == pytest.approx([200, 235], abs=3)
+    assert sorted((window.start.x, window.end.x)) == pytest.approx([104, 158], abs=3)
+
+
+def test_double_swing_uses_inside_leaf_without_changing_the_measured_span():
+    from shapely.geometry import box
+    from app.openings import _interior_leaf
+
+    outward = (1.75, np.array([30, 80]), np.array([55, 80]), np.array([0, 1]))
+    inward = (1.73, np.array([30, 81]), np.array([55, 81]), np.array([0, -1]))
+    footprint = box(0, 0, 100, 82)
+    assert np.array_equal(_interior_leaf(outward, [outward], footprint), outward[-1])
+    assert np.array_equal(_interior_leaf(outward, [outward, inward], footprint), inward[-1])

@@ -572,8 +572,8 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
         <label>Room type <select value={room.roomType??""} onChange={e=>editRoom({roomType:e.target.value as RoomType||null})}>
           <option value="">Unspecified</option>{ROOM_TYPES.map(t=><option key={t}>{t}</option>)}</select></label>
         {"areaPx2" in room&&typeof room.areaPx2==="number"&&<span>{(room.areaPx2*scale*scale).toFixed(2)} m²</span>}
-        <label>Ceiling height (assumed) <input key={room.id} type="number" min="1.8" max="8" step=".05" defaultValue={room.ceilingHeightM??2.8}
-          onBlur={e=>{const n=e.target.valueAsNumber;if(n>=1.8&&n<=8&&n!==(room.ceilingHeightM??2.8))editRoom({ceilingHeightM:n});}}/> m</label>
+        {room.roomType!=="balcony"&&<label>Ceiling height (assumed) <input key={room.id} type="number" min="1.8" max="8" step=".05" defaultValue={room.ceilingHeightM??2.8}
+          onBlur={e=>{const n=e.target.valueAsNumber;if(n>=1.8&&n<=8&&n!==(room.ceilingHeightM??2.8))editRoom({ceilingHeightM:n});}}/> m</label>}
         {room.needsSemanticReview&&<strong>Review room labels after a split or merge.</strong>}
         {m.roomZones?.some(r=>r.id===room.id)&&<button onClick={()=>onPlanEdit?.({...m,roomZones:m.roomZones?.filter(r=>r.id!==room.id)})}>Remove room zone</button>}
       </div>}

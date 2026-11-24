@@ -2,7 +2,7 @@ import json
 import pytest
 from app.opening_calibration import tune, load_profile, load_gold, Profile
 from app.plan_model import PlanModel, Opening, Pt
-from app.plan_score import score, opening_observations
+from app.plan_score import extraction_differences, score, opening_observations
 from test_plan_model import square
 
 HASHES = ["a" * 64, "b" * 64, "c" * 64]
@@ -82,6 +82,19 @@ def test_orphan_prediction_counts_as_false_positive():
     assert result["openings"]["door"]["predicted"] == 1
     assert result["openings"]["door"]["precision"] == 0
     assert opening_observations(pred, gold)["door"] == [(0.99, False)]
+    extra = extraction_differences(pred, gold)["extra_openings"]
+    assert extra == [{"id": "orphan", "kind": "door", "host": None,
+                      "points": [(300, 300), (350, 300)]}]
+
+
+def test_differences_localize_missed_wall_without_flagging_coincident_walls():
+    gold = PlanModel.model_validate(square(openings=[]))
+    pred = gold.model_copy(deep=True)
+    missing = pred.walls.pop()
+    report = extraction_differences(pred, gold)
+    assert not report["extra_wall_spans"]
+    assert report["missed_wall_spans"]
+    assert {span["id"] for span in report["missed_wall_spans"]} == {missing.id}
 
 
 def test_thick_prediction_does_not_relax_its_own_precision_tolerance():
@@ -160,3 +173,27 @@ def test_active_threshold_without_support_is_rejected():
     raw["thresholds"]["door"] = 0.8
     with pytest.raises(ValueError, match="lacks supporting"):
         Profile.model_validate(raw)
+
+
+def test_opening_scoring_matches_diagonals_across_45_degrees_and_reversed_hosts():
+    data = square(
+        openings=[
+            {
+                "id": "door",
+                "kind": "door",
+                "hostWallId": "w0",
+                "offsetPx": 0,
+                "widthPx": 42,
+                "swing": "left",
+            },
+        ],
+    )
+    data["nodes"][1].update(x=131, y=130)
+    gold = PlanModel.model_validate(data)
+    data["nodes"][1].update(x=130, y=131)
+    data["walls"][0].update(a="n1", b="n0")
+    data["openings"][0].update(swing="right")
+    pred = PlanModel.model_validate(data)
+    result = score(pred, gold)
+    assert result["openings"]["door"]["f1"] == 1.0
+    assert result["door_swing_accuracy"] == 1.0

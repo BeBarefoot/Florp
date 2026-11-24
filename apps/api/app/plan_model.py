@@ -108,7 +108,7 @@ class Room(Base):
     polygon: list[Pt]
     area_px2: float = Field(ge=0)
     label: str | None = Field(default=None, max_length=80)
-    room_type: Literal["bedroom", "garage", "bathroom", "kitchen", "corridor", "other"] | None = None
+    room_type: Literal["bedroom", "garage", "bathroom", "kitchen", "corridor", "balcony", "other"] | None = None
     ceiling_height_m: float | None = Field(default=None, ge=1.8, le=8)
     needs_semantic_review: bool = False
 
@@ -117,7 +117,7 @@ class RoomZone(Base):
     id: str = Field(min_length=1, max_length=120)
     polygon: list[Pt] = Field(min_length=3, max_length=32)
     label: str | None = Field(default=None, max_length=80)
-    room_type: Literal["bedroom", "garage", "bathroom", "kitchen", "corridor", "other"] | None = None
+    room_type: Literal["bedroom", "garage", "bathroom", "kitchen", "corridor", "balcony", "other"] | None = None
     ceiling_height_m: float | None = Field(default=None, ge=1.8, le=8)
 
 

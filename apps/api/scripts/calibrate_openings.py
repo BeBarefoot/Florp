@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.opening_calibration import load_gold, tune
-from app.plan_reconstruct import reconstruct, ReconstructConfig
+from app.plan_reconstruct import ReconstructConfig
 from app.plan_score import opening_observations
 from app.workspace_worker import build
 
@@ -24,8 +24,8 @@ def calibrate(root, min_precision=0.95, min_examples=10):
         raise ValueError("Duplicate source images cannot count as independent cases")
     observations = {"door": [], "window": []}
     for source, gold, _ in records:
-        predicted = reconstruct(
-            build(source), gold.id, ReconstructConfig(auto_confirm=1.01)
+        predicted = build(
+            source, plan_id=gold.id, reconstruct_config=ReconstructConfig(auto_confirm=1.01),
         )
         for kind, samples in opening_observations(predicted, gold).items():
             observations[kind].extend(samples)

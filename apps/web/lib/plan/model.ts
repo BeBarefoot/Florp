@@ -27,8 +27,8 @@ export type Opening = {
   confidence: number;
   status: OpeningStatus;
 };
-export type RoomType = "bedroom" | "garage" | "bathroom" | "kitchen" | "corridor" | "other";
-export const ROOM_TYPES: RoomType[] = ["bedroom", "garage", "bathroom", "kitchen", "corridor", "other"];
+export type RoomType = "bedroom" | "garage" | "bathroom" | "kitchen" | "corridor" | "balcony" | "other";
+export const ROOM_TYPES: RoomType[] = ["bedroom", "garage", "bathroom", "kitchen", "corridor", "balcony", "other"];
 export type Room = {
   id: string;
   wallIds: string[];

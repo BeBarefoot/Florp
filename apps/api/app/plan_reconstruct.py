@@ -552,12 +552,22 @@ def reconstruct(doc: Document, plan_id: str, cfg: ReconstructConfig | None = Non
     gaps: list = []
     runs = _merge_collinear(runs, raw_openings, t_med, cfg, counters, gaps)
     runs = _snap_junctions(runs)
+    pale = bool(strips is not None and strips.stats.get("neutral_wall_bands"))
+    if pale and image is not None:
+        from .neutral_partitions import recover_partitions
+
+        recovered = recover_partitions(image, runs, raw_openings, t_med, doc.envelope)
+        for i, (line, width) in enumerate(recovered):
+            runs.append(Run(
+                a=list(line.coords[0]), b=list(line.coords[-1]), t=width,
+                confidence=0.85, sources=[f"neutral-partition-{i}"],
+            ))
     points, edges = _build_graph(runs)
     edges = _merge_degree_two(points, edges)
     supported_sources = {o.id for o in doc.objects if o.kind == "wall" and o.boundary_supported}
     edges = _prune(
         points, edges, t_med, cfg, counters, supported_sources,
-        pale=bool(strips is not None and strips.stats.get("neutral_wall_bands")),
+        pale=pale,
     )
     used = sorted({k for u, v, _ in edges for k in (u, v)})
     index = {k: i for i, k in enumerate(used)}

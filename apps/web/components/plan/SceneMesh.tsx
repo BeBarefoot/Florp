@@ -99,7 +99,7 @@ export function SceneMesh({m, objects, closedDoorIds, floorStyle={}, wallFinishe
       <mesh receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,i*0.00002,0]} userData={{maskId:i+2,walkFloor:true}}>
         <shapeGeometry args={[shape]}/><meshStandardMaterial {...floors.finishes[i]} side={T.DoubleSide}/>
       </mesh>
-      {!cutaway&&<mesh receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,room.ceilingHeightM ?? 2.8,0]} userData={{maskId:1}}>
+      {!cutaway&&room.roomType!=="balcony"&&<mesh receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,room.ceilingHeightM ?? 2.8,0]} userData={{maskId:1}}>
         <shapeGeometry args={[shape]}/><meshStandardMaterial color="#f1efea" side={T.BackSide}/>
       </mesh>}
     </group>)}

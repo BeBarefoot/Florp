@@ -16,10 +16,9 @@ def case_directories(root):
 
 
 def score_case(source, reference):
-    from .plan_reconstruct import reconstruct
     from .workspace_worker import build
 
-    return score(reconstruct(build(source), reference.id), reference)
+    return score(build(source, plan_id=reference.id), reference)
 
 
 def threshold_violations(case, result):
