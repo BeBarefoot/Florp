@@ -52,7 +52,7 @@
 .tour-shell:has(.showcase-player) .tour-mast{display:none}
 /* Keep the camera frame stable while the tour tools scroll independently. */
 .tour-shell .showcase-player{
-  position:relative;height:100dvh;width:100%;max-width:none;margin:0;padding:0;
+  position:fixed;inset:0;width:100%;max-width:none;margin:0;padding:0;
   overflow:hidden;background:#d8d9cb;
 }
 .show-stage,.show-render{position:absolute;inset:0}
@@ -62,21 +62,27 @@
 .show-panel{
   position:absolute;z-index:3;
   inset:auto max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));
-  display:flex;flex-direction:column;align-items:stretch;gap:8px;
+  display:flex;flex-direction:column;align-items:flex-start;gap:8px;
   pointer-events:none;
 }
+.show-current-view {position:absolute;width:1px;height:1px;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.show-dock {display:flex;align-items:flex-end;gap:8px;width:100%;order:3;pointer-events:none}
+.show-dock .show-menu-button {
+  flex:0 0 50px;width:50px;height:50px;padding:0;display:grid;place-items:center;
+  pointer-events:auto;border-radius:15px;border:1px solid #ffffff59;box-shadow:0 3px 16px #282d293d;
+}
+.show-list[hidden] {display:none}
 .show-heading,.show-panel [role=status],.show-scale-warning,.show-list{
   color:var(--ink);background:var(--surface);border:1px solid var(--line);
   border-radius:16px;box-shadow:0 3px 16px #282d291a;
 }
 .show-heading{width:fit-content;max-width:min(24rem,100%);padding:10px 14px;overflow-wrap:anywhere}
 .show-heading small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12px}
-.show-heading h1{font:normal 24px/1.15 Georgia,serif;margin:2px 0}
 .show-heading p,.show-panel [role=status],.show-scale-warning{font-size:13px;line-height:1.4;margin:0}
 .show-panel [role=status],.show-scale-warning{align-self:flex-start;padding:8px 12px}
 .show-list{
-  order:3;pointer-events:auto;
-  width:100%;overflow-x:auto;overflow-y:hidden;
+  pointer-events:auto;
+  min-width:0;max-width:calc(100% - 58px);overflow-x:auto;overflow-y:hidden;
   overscroll-behavior-x:contain;touch-action:pan-x;scrollbar-width:thin;
   display:flex;flex-direction:row;gap:4px;padding:5px;
 }

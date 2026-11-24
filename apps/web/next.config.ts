@@ -1,8 +1,8 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  // Keep the development indicator from covering app controls during browser tests.
-  devIndicators: process.env.FLORP_BROWSER_TEST === '1' ? false : undefined,
+  // Keep development tools clear of the phone tour's bottom-left dock.
+  devIndicators: process.env.FLORP_BROWSER_TEST === '1' ? false : { position: 'top-right' },
 };
 
 export default nextConfig;

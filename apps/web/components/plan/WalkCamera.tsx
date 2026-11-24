@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef } from "react";
 import { useThree } from "@react-three/fiber";
-import { MathUtils, Vector3 } from "three";
+import { MathUtils, Raycaster, Vector2, Vector3 } from "three";
 import type { Pt } from "../../lib/plan/model";
 import type { Frame, View } from "../../lib/plan/scene";
 import { makeCamera } from "./SceneMesh";
@@ -10,8 +10,8 @@ const movementKeys = new Map([
   ["a",[0,-1]], ["arrowleft",[0,-1]], ["d",[0,1]], ["arrowright",[0,1]],
 ]);
 
-export function WalkCamera({view, scale, frame, canMove, pose, keyboard}: {
-  keyboard?: boolean;
+export function WalkCamera({view, scale, frame, canMove, pose, keyboard, tapToWalk=false}: {
+  keyboard?: boolean; tapToWalk?: boolean;
   pose: {current: View|null}; view: View; scale: number; frame: Frame; canMove: (p: Pt) => boolean;
 }) {
   const camera = useMemo(() => makeCamera(view, scale, frame), [view, scale, frame]);
@@ -25,6 +25,9 @@ export function WalkCamera({view, scale, frame, canMove, pose, keyboard}: {
     const canvas = gl.domElement;
     const pointers = new Map<number, Pt>();
     const target = new Vector3();
+    const ray = new Raycaster();
+    let tap: {id:number; origin:Pt}|null = null;
+    let destination: Pt|null = null;
     let yaw = MathUtils.degToRad(view.yaw);
     let pitch = MathUtils.degToRad(view.pitch);
 
@@ -42,18 +45,23 @@ export function WalkCamera({view, scale, frame, canMove, pose, keyboard}: {
       invalidate();
     }
 
-    function step(forward:number, side:number) {
+    function travel(dx:number,dz:number,slide=false) {
       // Short collision steps also catch thin walls during fast drags.
-      const steps = Math.ceil(Math.hypot(forward,side) / .05);
-      if (!steps) return;
-      const dx = (Math.cos(yaw)*forward - Math.sin(yaw)*side) / steps;
-      const dz = (Math.sin(yaw)*forward + Math.cos(yaw)*side) / steps;
-      for (let i=0;i<steps;i++) {
-        const x=camera.position.x+dx, z=camera.position.z+dz;
-        if (!walkable.current({x:x/scale,y:z/scale})) break;
-        camera.position.x=x;
-        camera.position.z=z;
+      const steps = Math.ceil(Math.hypot(dx,dz) / .05);
+      if (!steps) return false;
+      dx/=steps;dz/=steps;
+      const clear=(nextX:number,nextZ:number)=>walkable.current({x:nextX/scale,y:nextZ/scale});
+      for(let i=0;i<steps;i++){
+        const x=camera.position.x+dx,z=camera.position.z+dz;
+        if(clear(x,z)){camera.position.x=x;camera.position.z=z;}
+        else if(slide&&Math.abs(dx)>1e-8&&clear(x,camera.position.z))camera.position.x=x;
+        else if(slide&&Math.abs(dz)>1e-8&&clear(camera.position.x,z))camera.position.z=z;
+        else return false;
       }
+      return true;
+    }
+    function step(forward:number,side:number){
+      travel(Math.cos(yaw)*forward-Math.sin(yaw)*side,Math.sin(yaw)*forward+Math.cos(yaw)*side,tapToWalk);
     }
 
     const keys=new Set<string>();
@@ -66,10 +74,17 @@ export function WalkCamera({view, scale, frame, canMove, pose, keyboard}: {
         forward+=f;side+=s;
       }
       const magnitude=Math.hypot(forward,side);
-      if(!magnitude){last=0;return;}
-      const distance=Math.min((now-(last||now))/1000,.05)*1.8/magnitude;
+      if(!magnitude&&!destination){last=0;return;}
+      const seconds=Math.min((now-(last||now))/1000,.05);
       last=now;
-      step(forward*distance,side*distance);
+      if(magnitude){
+        const distance=seconds*1.8/magnitude;
+        step(forward*distance,side*distance);
+      }else if(destination&&seconds){
+        const dx=destination.x-camera.position.x,dz=destination.y-camera.position.z;
+        const distance=Math.hypot(dx,dz), stepSize=Math.min(distance,seconds*2.2);
+        if(!distance||!travel(dx*stepSize/distance,dz*stepSize/distance)||stepSize>=distance)destination=null;
+      }
       remember();
       invalidate();
       animation=requestAnimationFrame(tick);
@@ -80,12 +95,15 @@ export function WalkCamera({view, scale, frame, canMove, pose, keyboard}: {
         (event.target instanceof HTMLElement&&event.target.closest("input,textarea,select,[contenteditable]")))return;
       const key=event.key.toLowerCase();
       if(!movementKeys.has(key))return;
+      if(key.startsWith("arrow")&&event.target instanceof HTMLElement&&event.target.closest("[data-tour-tools]"))return;
       event.preventDefault();
+      destination=null;
       keys.add(key);wake();
     }
     function keyUp(event:KeyboardEvent){keys.delete(event.key.toLowerCase());wake();}
     function release(){
       keys.clear();
+      destination=null;
     }
     if(keyboard){
       window.addEventListener("keydown",keyDown);
@@ -95,7 +113,10 @@ export function WalkCamera({view, scale, frame, canMove, pose, keyboard}: {
 
     function down(event: PointerEvent) {
       if (event.button !== 0 || pointers.size === 2) return;
-      pointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
+      const origin={x:event.clientX,y:event.clientY};
+      destination=null;
+      tap=tapToWalk&&!pointers.size?{id:event.pointerId,origin}:null;
+      pointers.set(event.pointerId,origin);
       canvas.setPointerCapture(event.pointerId);
     }
 
@@ -111,6 +132,10 @@ export function WalkCamera({view, scale, frame, canMove, pose, keyboard}: {
         if (initial > 0 && distance > 0) zoom(distance / initial);
         return;
       }
+      if(tap?.id===event.pointerId){
+        if(Math.hypot(after.x-tap.origin.x,after.y-tap.origin.y)<6)return;
+        tap=null;
+      }
       yaw += (after.x - before.x) * .007;
       const vertical = before.y - after.y;
       const looking = keyboard && event.shiftKey;
@@ -125,6 +150,20 @@ export function WalkCamera({view, scale, frame, canMove, pose, keyboard}: {
 
     function end(event: PointerEvent) {
       pointers.delete(event.pointerId);
+      if(tap?.id!==event.pointerId)return;
+      const origin=tap.origin;
+      tap=null;
+      if(event.type!=="pointerup"||Math.hypot(event.clientX-origin.x,event.clientY-origin.y)>=6)return;
+      const bounds=canvas.getBoundingClientRect();
+      ray.setFromCamera(new Vector2(
+        2*(event.clientX-bounds.left)/bounds.width-1,
+        1-2*(event.clientY-bounds.top)/bounds.height,
+      ),camera);
+      const surface=ray.intersectObjects(get().scene.children).find(hit=>!hit.object.userData.glass);
+      if(surface?.object.userData.walkFloor){
+        destination={x:surface.point.x,y:surface.point.z};
+        wake();
+      }
     }
 
     function wheel(event: WheelEvent) {
@@ -155,6 +194,6 @@ export function WalkCamera({view, scale, frame, canMove, pose, keyboard}: {
       pointers.forEach((_, id) => { if (canvas.hasPointerCapture(id)) canvas.releasePointerCapture(id); });
       set({camera: previous});
     };
-  }, [camera, get, gl, keyboard, invalidate, pose, scale, set, view]);
+  }, [camera, get, gl, keyboard, invalidate, pose, scale, set, tapToWalk, view]);
   return null;
 }

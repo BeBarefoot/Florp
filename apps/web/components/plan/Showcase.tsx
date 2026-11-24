@@ -5,7 +5,7 @@ import {Canvas,useThree} from "@react-three/fiber";
 import {Html,OrbitControls} from "@react-three/drei";
 import {DoubleSide,Shape,Vector2,Vector3} from "three";
 import Link from "next/link";
-import {Maximize2,Minimize2,Box,MapPin,Pause,Play,SkipBack,SkipForward,Image as ImageIcon,FileDown,ImageDown,Bookmark,MapPinPlus,X,PencilRuler,Layers,Armchair} from "lucide-react";
+import {Maximize2,LayoutGrid,Box,MapPin,Pause,Play,SkipBack,SkipForward,Image as ImageIcon,FileDown,ImageDown,Bookmark,MapPinPlus,X,PencilRuler,Layers,Armchair} from "lucide-react";
 import {downloadPrompt,renderPrompt} from "../../lib/plan/renderPrompt";
 import {SceneMesh} from "./SceneMesh";
 import {metersPerPixel,scaleCheck} from "../../lib/plan/derive";
@@ -99,7 +99,7 @@ function ShowcaseWalk({plan,scene,view,sample,pose,onFrame,keyboard}:{
   const scale=metersPerPixel(plan)!;
   const space=useMemo(()=>walkSpace(plan,scale,scene,view.eyeHeight),[plan,scene,scale,view.eyeHeight]);
   const frame=useMemo<Frame>(()=>({width:size.width,height:Math.max(1,size.height),configured:false,model:"",provider:""}),[size.width,size.height]);
-  return <WalkCamera view={view} scale={scale} frame={frame} pose={pose} keyboard={keyboard}
+  return <WalkCamera view={view} scale={scale} frame={frame} pose={pose} keyboard={keyboard} tapToWalk={keyboard}
     canMove={p=>space.validCamera(p,true)&&(!sample||clearSampleFloor(p,scale))}/>;
 
 }
@@ -218,7 +218,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     return start?[{id:"walk-start",name:"Walkthrough",...wideView,...start}]:[];
   },[plan,scene.views,localViews,scale,canFrame]);
   const [playing,setPlaying]=useState(false),[notice,setNotice]=useState("");
-  const [rendered,setRendered]=useState(false),[immersive,setImmersive]=useState(false);
+  const [rendered,setRendered]=useState(false),[toolsOpen,setToolsOpen]=useState(false);
   const stop=selectedId==="overview"?-1:selectedId===null?(views.length?0:-1):views.findIndex(v=>v.id===selectedId);
   const openingView=useMemo(()=>{
     const first=views[0];
@@ -305,7 +305,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     setNotice("");
     setFreeView({id:"free-walk",name:"Walkthrough",...wideView,...corner});
   }
-  return <main className="showcase-player" data-immersive={immersive} data-furnishing={furnishing&&canFurnish} aria-label="3D showcase">
+  return <main className="showcase-player" data-furnishing={furnishing&&canFurnish} aria-label="3D showcase">
     <div className="show-stage"><Canvas shadows frameloop="demand" dpr={[1,1.6]} camera={{near:.005,far:2000}} fallback={<p>Enable WebGL to view this tour.</p>}>
       <color attach="background" args={[sample&&view?"#cfdfdf":"#d8d9cb"]}/>
       <SceneMesh m={plan} objects={objects} closedDoorIds={scene.closedDoorIds} floorStyle={styledScene}
@@ -357,19 +357,28 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
       onClose={()=>{setFinishesOpen(false);setFinishDraft(null);setFinishNotice("");}}
       onSave={()=>void applyFinishes()}
       reviewHref={needsFinishReview&&edit?edit+"?setup=finishes":undefined}/>:
-    <section className="show-panel" aria-label="Tour controls">
-      <div className="show-heading" hidden={immersive}>
-        <small>{sample?"Sample tour · ":""}{title}{approximate?" · Approximate scale":""}</small>
-        <h1>{view?.name??"Dollhouse view"}</h1>
-        <p>{pickingRoom?"Tap a room’s floor to choose it.":adding?"Tap a room to add a wide corner view.":rendered?"Saved design render":view?"Drag to walk and turn. Pinch or scroll to zoom.":"Tap the floor to walk there. Drag to orbit."}</p>
-      </div>
-      <div className="show-list" role="group" aria-label="Tour actions">
-        {pickingRoom?<button onClick={()=>{setPickingRoom(false);setFinishesOpen(true);}}><X/>Cancel room selection</button>:<>
-        <button aria-label={immersive?"Show tour controls":"Hide tour controls"} aria-pressed={immersive}
-          onClick={()=>setImmersive(!immersive)}>
-          {immersive?<Minimize2/>:<Maximize2/>}<span>{immersive?"Show controls":"Expand view"}</span>
+    <section className="show-panel" aria-label="Tour controls" data-tour-tools onKeyDown={event=>{
+      if(event.key==="Escape"&&toolsOpen&&!pickingRoom){
+        setToolsOpen(false);
+        event.currentTarget.querySelector<HTMLButtonElement>(".show-menu-button")?.focus();
+      }
+    }}>
+      <h1 className="show-current-view">{view?.name??"Dollhouse view"}</h1>
+      {(toolsOpen||adding||pickingRoom)&&<div className="show-heading">
+        <small>{approximate?"Approximate scale · ":""}{title}</small>
+        <p>{pickingRoom?"Tap a room’s floor to choose it.":adding?"Tap a room to add a wide corner view.":rendered?"Saved design render":view?"Tap the floor to walk. Drag to turn or move. Pinch to zoom.":"Tap the floor to start walking. Drag to orbit."}</p>
+      </div>}
+      <div className="show-dock">
+        <button type="button" className="show-menu-button" aria-label={toolsOpen?"Close tour tools":"Open tour tools"}
+          aria-expanded={toolsOpen||pickingRoom} aria-controls="show-tour-actions"
+          onClick={()=>{
+            if(pickingRoom){setPickingRoom(false);setFinishesOpen(true);}
+            else setToolsOpen(!toolsOpen);
+          }}>
+          {toolsOpen||pickingRoom?<X/>:<LayoutGrid/>}
         </button>
-        {!immersive&&<>
+        <div id="show-tour-actions" className="show-list" role="group" aria-label="Tour actions" hidden={!toolsOpen&&!pickingRoom}>
+          {pickingRoom?<button onClick={()=>{setPickingRoom(false);setFinishesOpen(true);}}><X/>Cancel room selection</button>:<>
           <button aria-pressed={!view} onClick={()=>select(-1)}><Box/>Overview</button>
           {hasFloor&&<button disabled={saving} onClick={()=>{
             setPlaying(false);setRendered(false);setAdding(false);setFinishesOpen(true);
@@ -407,11 +416,11 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
             }}><ImageDown/>Download view image</button>
           </>}
           {!hasFloor&&edit&&<Link href={edit+"?setup=floor"}><PencilRuler/>Mark a walkable floor in the editor</Link>}
-        </>}
-        </>}
+          </>}
+        </div>
       </div>
-      {!immersive&&(!hasFloor||notice||needsFinishReview)&&<p role="status">{notice||(!hasFloor?"No walkable floor was found.":"Some saved floor finishes need review. Open Finishes.")}</p>}
-      {!immersive&&check?.mismatch&&<p role="alert" className="show-scale-warning">Scale measurements differ by {(check.difference*100).toFixed(1)}%. Check scale in Edit floor.</p>}
+      {(toolsOpen||adding||pickingRoom)&&(!hasFloor||notice||needsFinishReview)&&<p role="status">{notice||(!hasFloor?"No walkable floor was found.":"Some saved floor finishes need review. Open Finishes.")}</p>}
+      {toolsOpen&&check?.mismatch&&<p role="alert" className="show-scale-warning">Scale measurements differ by {(check.difference*100).toFixed(1)}%. Check scale in Edit floor.</p>}
     </section>}
   </main>;
 }
