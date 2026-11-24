@@ -238,3 +238,74 @@ test("saving from the starting camera preserves both numbered pins after reload"
     await page.getByRole("button",{name:"Overview",exact:true}).click();
   }
 });
+
+test("phone furnishing places metric objects, updates fit warnings and saves through reload",async({browser})=>{
+  test.setTimeout(75000);
+  const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true});
+  try{
+    const page=await context.newPage();
+    const {PerspectiveCamera,Vector3}=await import("three");
+    let config:Scene={...sampleScene,objects:[]};
+    let revision=1;
+    const model={...samplePlan,id:"f",openings:samplePlan.openings.map(o=>
+      o.kind==="door"?{...o,swing:"right" as const}:o)};
+    await page.route("**/blueprints/f/*",async route=>{
+      const endpoint=new URL(route.request().url()).pathname.split("/").pop();
+      if(endpoint==="scene"&&route.request().method()==="PUT"){
+        const body=route.request().postDataJSON();
+        expect(body.expectedRevision).toBe(revision);
+        expect(body.planRevision).toBe(1);
+        config=body.config;
+        revision++;
+      }
+      return route.fulfill({json:endpoint==="plan"?{revision:1,model}:
+        endpoint==="scene"?{revision,planRevision:1,config}:endpoint==="renders"?[]:
+        {id:"f",filename:"Owner floor",project_id:"p"}});
+    });
+    await page.goto("/phone/showcase/f");
+    await page.getByRole("button",{name:"Furnish",exact:true}).click();
+    const sheet=page.getByRole("region",{name:"Furnish",exact:true});
+    await expect(sheet).toBeVisible();
+    const canvas=page.locator("canvas");
+    async function tapFloor(x:number,z:number){
+      const box=(await canvas.boundingBox())!;
+      const aspect=box.width/box.height;
+      const target=new Vector3(5,.65,3.4);
+      const camera=new PerspectiveCamera(42,aspect,.005,2000);
+      camera.position.copy(target).addScaledVector(new Vector3(.82,1.1,1.22).normalize(),18.5/Math.min(1,aspect));
+      camera.lookAt(target);
+      camera.updateMatrixWorld();
+      const point=new Vector3(x,0,z).project(camera);
+      await page.touchscreen.tap(box.x+(point.x+1)*box.width/2,box.y+(1-point.y)*box.height/2);
+    }
+    await sheet.getByRole("button",{name:"Sofa 220 × 92 cm"}).click();
+    await tapFloor(.3,2.2);
+    await expect(sheet.getByText("Choose a position where the whole object fits inside one room.")).toBeVisible();
+    await tapFloor(2.4,2.2);
+    await expect(sheet.getByLabel("Width (cm)")).toHaveValue("220");
+    await sheet.getByLabel("Width (cm)").fill("210");
+    await sheet.getByRole("button",{name:"Rotate right 15 degrees"}).click();
+    await sheet.getByRole("button",{name:"Move",exact:true}).click();
+    await tapFloor(3.3,3.1);
+    await expect(sheet.getByLabel("Width (cm)")).toHaveValue("210");
+    await sheet.getByRole("button",{name:"Table 140 × 80 cm"}).click();
+    await tapFloor(3.3,3.1);
+    await expect(sheet.getByText("Overlaps another object.")).toBeVisible();
+    await sheet.getByRole("button",{name:"Move",exact:true}).click();
+    await tapFloor(7.2,4.35);
+    await expect(sheet.getByLabel("Width (cm)")).toHaveValue("140");
+    await expect(sheet.getByText("Blocks a door swing.")).toBeVisible();
+    await expect(sheet.getByText(/Obstructs the 60 cm/)).toBeVisible();
+    await sheet.getByRole("button",{name:"Save furniture"}).click();
+    await expect(sheet.getByText("Furniture saved")).toBeVisible();
+    expect(config.objects[0]).toMatchObject({kind:"sofa",width:2.1,depth:.92,rotation:15});
+    expect(config.objects[0].position.x).toBeCloseTo(330,-1);
+    expect(config.objects[0].position.y).toBeCloseTo(310,-1);
+    expect(config.objects[1].kind).toBe("table");
+    expect(config.views).toEqual(sampleScene.views);
+    await page.reload();
+    await page.getByRole("button",{name:"Furnish",exact:true}).click();
+    await sheet.getByLabel("Placed objects").selectOption(config.objects[0].id);
+    await expect(sheet.getByLabel("Width (cm)")).toHaveValue("210");
+  }finally{await context.close();}
+});

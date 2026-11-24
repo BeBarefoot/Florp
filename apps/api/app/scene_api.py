@@ -45,7 +45,7 @@ class View(Data):
 
 class SceneObject(Data):
     id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,80}$")
-    kind: Literal["bed", "wardrobe", "toilet", "vanity", "shower", "bathtub"]
+    kind: Literal["bed", "wardrobe", "toilet", "vanity", "shower", "bathtub", "sofa", "table"]
     position: Pt
     rotation: float = Field(ge=-360, le=360)
     width: float = Field(gt=0.05, le=8)

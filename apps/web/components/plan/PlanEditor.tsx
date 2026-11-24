@@ -62,7 +62,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
   useEffect(() => {
     if (!loaded) return;
     const setup = new URLSearchParams(window.location.search).get("setup");
-    if (setup !== "floor" && setup !== "finishes") return;
+    if (setup !== "floor" && setup !== "finishes" && setup !== "furniture") return;
     if (calibrated) setDisplay("3d");
     else {
       setView("original");

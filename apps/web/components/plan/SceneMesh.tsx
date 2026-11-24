@@ -131,7 +131,7 @@ export function SceneMesh({m, objects, closedDoorIds, floorStyle={}, wallFinishe
       <extrudeGeometry args={[step.shape,{depth:step.height,bevelEnabled:false}]}/><meshStandardMaterial color="#a9b9b2"/>
     </mesh>)}</group>)}
     {objects.map((o,i)=><group key={o.id} position={[o.position.x*scale,0,o.position.y*scale]} rotation={[0,-o.rotation*Math.PI/180,0]}>
-      {blocks(o).map((b,j)=><mesh key={j} castShadow={presentation} receiveShadow={presentation} position={b.position} userData={{maskId:1000+i}}>
+      {blocks(o).map((b,j)=><mesh key={j} castShadow={presentation} receiveShadow={presentation} position={b.position} userData={{maskId:1000+i,furnitureId:o.id}}>
         <boxGeometry args={b.size}/><meshStandardMaterial color={b.color}/>
       </mesh>)}
     </group>)}

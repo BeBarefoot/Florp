@@ -271,6 +271,24 @@ def test_room_context_survives_reextraction(client, monkeypatch):
     assert model["roomZones"][0]["roomType"] == "corridor"
 
 
+def test_save_furniture_catalog_items_preserves_metric_dimensions(client):
+    c, bid = client
+    path = f"/blueprints/{bid}"
+    assert c.put(path + "/plan", json={"expectedRevision": 0, "model": plan(scale=reference())}).status_code == 200
+    objects = [
+        {"id": "sofa", "kind": "sofa", "position": {"x": 270, "y": 200},
+         "width": 2.1, "depth": .92, "height": .85, "rotation": 15},
+        {"id": "table", "kind": "table", "position": {"x": 470, "y": 260},
+         "width": 1.4, "depth": .8, "height": .75, "rotation": 0},
+    ]
+    response = c.put(path + "/scene", json={
+        "expectedRevision": 0, "planRevision": 1, "config": {"objects": objects},
+    })
+    assert response.status_code == 200, response.text
+    saved = c.get(path + "/scene").json()["config"]["objects"]
+    assert [{key: item[key] for key in source} for item, source in zip(saved, objects)] == objects
+
+
 def test_fixture_review_scan_does_not_edit_scene(client, monkeypatch):
     import app.fixture_detection as detector
     from app.fixture_detection import Hit

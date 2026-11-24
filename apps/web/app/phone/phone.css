@@ -144,3 +144,23 @@
 .phone-plan-footer {flex-wrap:wrap;gap:0 10px;font-size:12px}
 .phone-plan-footer :is(button,a) {display:inline-flex;align-items:center;min-height:44px;padding:0;border:0;background:none;color:var(--pine);font-size:12px;text-decoration:underline}
 .phone-plan-footer span {margin-left:auto}
+
+.furnish-catalog,.furnish-dimensions,.furnish-actions {display:grid;gap:8px}
+.furnish-catalog,.furnish-actions {grid-template-columns:repeat(4,minmax(0,1fr))}
+.furnish-dimensions {grid-template-columns:repeat(3,minmax(0,1fr))}
+.furnish-catalog button {display:grid;gap:3px;justify-items:center;min-height:52px}
+.furnish-catalog span {font-size:11px;white-space:nowrap}
+.furnish-dimensions label,.furnish-select {display:grid;gap:4px;font-size:13px;min-width:0}
+.furnish-dimensions input,.furnish-select select {width:100%;min-width:0;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--pine);font:inherit}
+.furnish-actions button {min-height:44px;display:flex;align-items:center;justify-content:center;gap:4px}
+.furnish-issues {margin:0;padding:8px 24px;color:#8b3927;background:#f7eae4;border-radius:8px;font-size:13px}
+.showcase-player[data-furnishing="true"] .show-stage {bottom:min(42dvh,350px)}
+.furnish-sheet {max-height:min(42dvh,350px)}
+.furnish-dimensions input,.furnish-select select {min-height:44px;font-size:16px}
+@media (orientation:landscape) and (max-height:520px) {
+  .showcase-player[data-furnishing="true"] .show-stage {bottom:0;right:min(46%,450px)}
+  .furnish-sheet {max-height:100dvh}
+}
+@media (max-width:360px) {
+  .furnish-catalog {grid-template-columns:repeat(2,minmax(0,1fr))}
+}

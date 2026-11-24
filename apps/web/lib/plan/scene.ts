@@ -3,7 +3,7 @@ import type { Pt } from "./model";
 
 export type View = { id: string; name: string; position: Pt; yaw: number; pitch: number;
   horizontalFov: number; eyeHeight: number };
-export type ObjectKind = "bed" | "wardrobe" | "toilet" | "vanity" | "shower" | "bathtub";
+export type ObjectKind = "bed" | "wardrobe" | "toilet" | "vanity" | "shower" | "bathtub" | "sofa" | "table";
 export type Item = { id: string; kind: ObjectKind; position: Pt; rotation: number;
   width: number; depth: number; height: number; mattressWidth?: number | null; mattressDepth?: number | null };
 export const floorFinishes = {
@@ -32,6 +32,7 @@ export type Capture = { preview: string; depth: string; mask: string; coverage: 
 
 export const catalog: Record<ObjectKind, [number, number, number]> = {
   bed: [1.9, 2.12, .9], toilet: [.38, .68, .8], shower: [.9, .9, 2],
+  sofa: [2.2, .92, .85], table: [1.4, .8, .75],
   bathtub: [.75, 1.7, .56], wardrobe: [1.8, .62, 2.2], vanity: [.8, .5, .86],
 };
 export function newItem(kind: ObjectKind, position: Pt): Item {
@@ -46,6 +47,15 @@ export function blocks(o: Item): Block[] {
   const part = (x: number, y: number, z: number, a: number, b: number, c: number, color: string): Block =>
     ({ position: [x*w,y*h,z*d], size: [a*w,b*h,c*d], color });
   switch (o.kind) {
+    case "sofa": return [
+      part(0,.3,0,1,.48,1,"#827d62"),part(0,.69,-.4,1,.62,.2,"#827d62"),
+      ...[-.45,.45].map(x=>part(x,.5,.05,.1,.5,.9,"#827d62")),
+      ...[-.2,.2].map(x=>part(x,.55,.08,.39,.16,.76,"#a39b7e")),
+    ];
+    case "table": return [
+      part(0,.96,0,1,.08,1,"#b08560"),
+      ...[-.43,.43].flatMap(x=>[-.41,.41].map(z=>part(x,.46,z,.07,.92,.09,"#8c6648"))),
+    ];
     case "bed": return [
       part(0,.16,0,1,.32,1,"#87694f"), part(0,.5,-.48,1,1,.04,"#87694f"),
       part(0,.46,.02,(o.mattressWidth ?? w)/w,.28,(o.mattressDepth ?? d*.95)/d,"#eee7d4"),

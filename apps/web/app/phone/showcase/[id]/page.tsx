@@ -72,19 +72,23 @@ export default function ShowcasePage(){
     const currentScene=!approximate&&data[1].planRevision===plan.revision;
     const {floorFinish,floorMaterial,roomFloorMaterials,wallFinishes}=data[1].config;
     const scene=currentScene?data[1].config:{...emptyScene,floorFinish,floorMaterial,roomFloorMaterials,wallFinishes};
+    const priorScene=data[1], planRevision=plan.revision;
+    const canSave=!approximate&&(!priorScene.revision||currentScene);
+    async function saveDesign(change:Pick<Scene,"floorMaterial"|"roomFloorMaterials">|Pick<Scene,"objects">){
+      const saved=await request<Saved>("/blueprints/"+encodeURIComponent(id)+"/scene",{
+        method:"PUT",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({expectedRevision:priorScene.revision,planRevision,
+          config:{...priorScene.config,...change}}),
+      });
+      setRenders({});
+      setData(current=>current?.[2].id===id?[current[0],saved,current[2]]:current);
+    }
     return <Player key={id} plan={plan} scene={scene}
       approximate={approximate} renders={currentScene?renders:undefined} title={data[2].filename}
       edit={"/plan/"+id}
-      saveFinishes={!approximate&&(!data[1].revision||currentScene)?async finishes=>{
-        const saved=await request<Saved>("/blueprints/"+encodeURIComponent(id)+"/scene",{
-          method:"PUT",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({expectedRevision:data[1].revision,planRevision:plan.revision,
-            config:{...data[1].config,...finishes}}),
-        });
-        setRenders({});
-        setData(current=>current?.[2].id===id?[current[0],saved,current[2]]:current);
-      }:undefined}
-      saveView={!approximate&&(!data[1].revision||currentScene)?async (view,initial)=>{
+      saveFinishes={canSave?saveDesign:undefined}
+      saveFurniture={canSave?objects=>saveDesign({objects}):undefined}
+      saveView={canSave?async (view,initial)=>{
         const path="/blueprints/"+encodeURIComponent(id)+"/scene";
         const latest=await request<Saved>(path);
         if(latest.revision && latest.planRevision!==plan.revision)

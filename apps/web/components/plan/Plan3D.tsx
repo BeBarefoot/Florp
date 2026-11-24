@@ -27,7 +27,7 @@ const wrap = (angle:number) => ((angle+180)%360+360)%360-180;
 const points = (poly:Pt[]) => poly.map(p=>`${p.x},${p.y}`).join(" ");
 const sleepPollMs=3000;
 const fixtureName = (o: Item) => ({bed:"Bed", wardrobe:"Closet", toilet:"Toilet", shower:"Shower",
-  bathtub:"Bathtub", vanity:"Vanity"})[o.kind];
+  bathtub:"Bathtub", vanity:"Vanity", sofa:"Sofa", table:"Table"})[o.kind];
 
 export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, savePlan}:{
   model:PlanModel;phone?:boolean;dirty?:boolean;onPlanEdit?:(m:PlanModel)=>void;savePlan?:()=>Promise<PlanModel|null>;
