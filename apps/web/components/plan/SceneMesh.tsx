@@ -1,7 +1,8 @@
 "use client";
-import { useEffect, useLayoutEffect, useMemo } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useThree } from "@react-three/fiber";
 import * as T from "three";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { PlanModel } from "../../lib/plan/model";
 import { metersPerPixel, openingEnds } from "../../lib/plan/derive";
 import { wallPieces } from "../../lib/plan/mesh";
@@ -10,7 +11,7 @@ import {yardShapes} from "../../lib/plan/yard";
 import { stairPieces } from "../../lib/plan/stairs";
 import { savedPose } from "../../lib/plan/camera";
 import { floorFinishes, blocks, type Capture, type Frame, type Item, type Scene, type View } from "../../lib/plan/scene";
-import { floorMaterialFor, floorTexture } from "../../lib/plan/floorMaterials";
+import { floorMaterialFor, floorSurface, floorTexture, loadFloorPhotos } from "../../lib/plan/floorMaterials";
 import { wallChunkGeometry, wallSurfaceMaterials } from "../../lib/plan/wallMaterials";
 import type { Chunk, WallPiece } from "../../lib/plan/mesh";
 
@@ -38,6 +39,37 @@ export function EyeCamera({view, scale, frame}: {view: View; scale: number; fram
 
 
 type FloorStyle = Pick<Scene,"floorFinish"|"floorMaterial"|"roomFloorMaterials">;
+type LoadedFloorPhotos = Awaited<ReturnType<typeof loadFloorPhotos>>;
+
+function useFloorPhotos(kind: "wood" | "marble", enabled: boolean) {
+  const [photos, setPhotos] = useState<LoadedFloorPhotos>(null);
+  useEffect(()=>{
+    if (!enabled) return;
+    let active = true;
+    void loadFloorPhotos(kind).then(images=>{if (active) setPhotos(images);});
+    return ()=>{active=false;};
+  },[kind,enabled]);
+  return photos;
+}
+
+function useFloorEnvironment(enabled: boolean) {
+  const renderer = useThree(state=>state.gl);
+  const [texture, setTexture] = useState<T.Texture | null>(null);
+  useEffect(()=>{
+    if (!enabled) return;
+    const generator = new T.PMREMGenerator(renderer);
+    const room = new RoomEnvironment();
+    const environment = generator.fromScene(room, .045);
+    generator.dispose();
+    room.dispose();
+    setTexture(environment.texture);
+    return ()=>{
+      setTexture(null);
+      environment.dispose();
+    };
+  },[renderer,enabled]);
+  return texture;
+}
 
 function WallChunk({piece,chunk,wallIndex,presentation,finishes,tileMap}:{
   piece:WallPiece;chunk:Chunk;wallIndex:number;presentation:boolean;
@@ -63,7 +95,7 @@ export function SceneMesh({m, objects, closedDoorIds, floorStyle={}, wallFinishe
   const shadowSize=Math.max(4,width,depth)*.8;
   const walls = useMemo(()=>wallPieces(m),[m]);
   const tiled=Object.values(wallFinishes??{}).some(({a,b})=>a?.kind==="tile"||b?.kind==="tile");
-  const wallTiles=useMemo(()=>tiled?floorTexture({kind:"tile",color:"#ffffff",widthM:.6,lengthM:.6}):null,[tiled]);
+  const wallTiles=useMemo(()=>tiled?floorTexture({kind:"tile",widthM:.6,lengthM:.6}):null,[tiled]);
   useEffect(()=>()=>wallTiles?.dispose(),[wallTiles]);
   const yards=useMemo(()=>yardShapes(m),[m]);
   const stairs = useMemo(()=>stairPieces(m),[m]);
@@ -71,19 +103,33 @@ export function SceneMesh({m, objects, closedDoorIds, floorStyle={}, wallFinishe
     const shape = new T.Shape(r.polygon.map(p=>new T.Vector2(p.x*scale,-p.y*scale)));
     return {room:r, shape};
   }),[m,scale]);
+  const materials = useMemo(()=>rooms.map(({room})=>
+    floorMaterialFor({floorFinish,floorMaterial,roomFloorMaterials},room.id)
+  ),[rooms,floorFinish,floorMaterial,roomFloorMaterials]);
+  const wood = useFloorPhotos("wood", materials.some(material=>material?.kind==="wood"));
+  const marble = useFloorPhotos("marble", materials.some(material=>material?.kind==="marble"));
   const floors = useMemo(()=>{
-    const textures = new Map<string,T.Texture>();
-    const finishes = rooms.map(({room})=>{
-      const material = floorMaterialFor({floorFinish,floorMaterial,roomFloorMaterials},room.id);
-      if (!material) return {...floorFinishes[floorFinish], map:null};
+    const surfaces = new Map<string,ReturnType<typeof floorSurface>>();
+    const finishes = materials.map(material=>{
+      if (!material) return floorFinishes[floorFinish];
       const {kind,widthM,lengthM,color}=material;
       const key = JSON.stringify([kind,widthM,lengthM]);
-      if (!textures.has(key)) textures.set(key,floorTexture(material));
-      return {color, roughness:kind==="marble"?.4:.75, map:textures.get(key)};
+      let surface = surfaces.get(key);
+      if (!surface) {
+        const photos = kind==="wood" ? wood : kind==="marble" ? marble : null;
+        surface = floorSurface(material, photos);
+        surfaces.set(key,surface);
+      }
+      return {color,...surface};
     });
-    return {textures,finishes};
-  },[rooms,floorFinish,floorMaterial,roomFloorMaterials]);
-  useEffect(()=>()=>floors.textures.forEach(texture=>texture.dispose()),[floors]);
+    return {surfaces,finishes};
+  },[materials,floorFinish,wood,marble]);
+  useEffect(()=>()=>floors.surfaces.forEach(({map,normalMap,roughnessMap})=>{
+    map.dispose();
+    normalMap?.dispose();
+    roughnessMap?.dispose();
+  }),[floors]);
+  const floorEnvironment = useFloorEnvironment(presentation && floors.finishes.some(finish=>"normalMap" in finish && !!finish.normalMap));
   return <>
     {presentation?<><hemisphereLight color="#fff3df" groundColor="#9b9b8f" intensity={1.45}/>
       <primitive object={sunTarget}/>
@@ -95,14 +141,20 @@ export function SceneMesh({m, objects, closedDoorIds, floorStyle={}, wallFinishe
     {yards.map((shape,i)=><mesh key={"yard"+i} rotation={[-Math.PI/2,0,0]} position={[0,-.01,0]} receiveShadow userData={{maskId:1}}>
       <shapeGeometry args={[shape]}/><meshStandardMaterial color="#839768" side={T.DoubleSide}/>
     </mesh>)}
-    {rooms.map(({room,shape}, i)=><group key={room.id}>
-      <mesh receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,i*0.00002,0]} userData={{maskId:i+2,walkFloor:true}}>
-        <shapeGeometry args={[shape]}/><meshStandardMaterial {...floors.finishes[i]} side={T.DoubleSide}/>
-      </mesh>
-      {!cutaway&&room.roomType!=="balcony"&&<mesh receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,room.ceilingHeightM ?? 2.8,0]} userData={{maskId:1}}>
-        <shapeGeometry args={[shape]}/><meshStandardMaterial color="#f1efea" side={T.BackSide}/>
-      </mesh>}
-    </group>)}
+    {rooms.map(({room,shape}, i)=>{
+      const finish = floors.finishes[i];
+      const photoFloor = "normalMap" in finish && !!finish.normalMap;
+      return <group key={room.id}>
+        <mesh receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,i*0.00002,0]} userData={{maskId:i+2,walkFloor:true}}>
+          <shapeGeometry args={[shape]}/>
+          <meshStandardMaterial key={photoFloor?"photo":"map" in finish?"pattern":"solid"} {...finish}
+            envMap={photoFloor?floorEnvironment:null} envMapIntensity={.42} side={T.DoubleSide}/>
+        </mesh>
+        {!cutaway&&room.roomType!=="balcony"&&<mesh receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,room.ceilingHeightM ?? 2.8,0]} userData={{maskId:1}}>
+          <shapeGeometry args={[shape]}/><meshStandardMaterial color="#f1efea" side={T.BackSide}/>
+        </mesh>}
+      </group>;
+    })}
     {walls.map((p,wallIndex)=><group key={p.id} position={[p.centre[0],0,p.centre[1]]} rotation={[0,p.angle,0]}>
       {p.chunks.map((chunk,i)=><WallChunk key={i} piece={p} chunk={chunk} wallIndex={wallIndex}
         presentation={presentation} finishes={wallFinishes} tileMap={wallTiles}/>)}

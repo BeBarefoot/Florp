@@ -5,7 +5,7 @@ import { metersPerPixel } from "./plan/derive";
 import { floorOutlines, wallPieces } from "./plan/mesh";
 import {yardShapes} from "./plan/yard";
 import { stairPieces } from "./plan/stairs";
-import { floorMaterialFor, floorTexture } from "./plan/floorMaterials";
+import { floorMaterialFor, floorSurface, floorTexture, loadFloorPhotos } from "./plan/floorMaterials";
 import { floorFinishes, type Scene } from "./plan/scene";
 import { wallChunkGeometry, wallSurfaceMaterials } from "./plan/wallMaterials";
 
@@ -37,7 +37,7 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
     const sides=[front,back].map(finish=>{
       if(!finish)return base;
       if(finish.kind==="tile"&&!wallTile){
-        wallTile=floorTexture({kind:"tile",color:"#ffffff",widthM:.6,lengthM:.6});
+        wallTile=floorTexture({kind:"tile",widthM:.6,lengthM:.6});
         textures.push(wallTile);
       }
       return new THREE.MeshStandardMaterial({color:finish.color,map:finish.kind==="tile"?wallTile:null});
@@ -63,18 +63,32 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
   const rooms = [...floorOutlines(m), ...(m.roomZones??[]).map(room=>({
     id:room.id,label:room.label,points:room.polygon.map(p=>({x:p.x*scale,y:p.y*scale})),
   }))];
-  for (const r of rooms) {
+  const finishes = rooms.map(room=>config && floorMaterialFor(config,room.id));
+  const kinds = [...new Set(finishes.flatMap(finish=>finish ? [finish.kind] : []))];
+  const photos = new Map(await Promise.all(kinds.map(async kind=>[kind,await loadFloorPhotos(kind)] as const)));
+  const surfaces = new Map<string,ReturnType<typeof floorSurface>>();
+  for (const [index,r] of rooms.entries()) {
     const shape = new THREE.Shape();
     r.points.forEach((p, i) => (i ? shape.lineTo(p.x, -p.y) : shape.moveTo(p.x, -p.y)));
     shape.closePath();
-    const finish = config && floorMaterialFor(config,r.id);
-    const map = finish ? floorTexture(finish) : null;
-    if(map) textures.push(map);
+    const finish = finishes[index];
+    let surface;
+    if (finish) {
+      const key = JSON.stringify([finish.kind,finish.widthM,finish.lengthM]);
+      surface = surfaces.get(key);
+      if (!surface) {
+        surface = floorSurface(finish,photos.get(finish.kind));
+        surfaces.set(key,surface);
+        textures.push(surface.map);
+        if (surface.normalMap) textures.push(surface.normalMap);
+        if (surface.roughnessMap) textures.push(surface.roughnessMap);
+      }
+    }
     const base = config && floorFinishes[config.floorFinish??"default"];
     const mesh = new THREE.Mesh(
       new THREE.ShapeGeometry(shape),
       new THREE.MeshStandardMaterial({color:finish?.color??base?.color??"#e2e6e2",
-        roughness:finish?(finish.kind==="marble"?.4:.75):base?.roughness, map, side:THREE.DoubleSide}),
+        roughness:base?.roughness, ...surface, side:THREE.DoubleSide}),
     );
     mesh.name = r.id;
     mesh.userData = { kind:"room", id:r.id, label:r.label, ...(config?{floorFinish:finish??config.floorFinish??"default"}:{}) };

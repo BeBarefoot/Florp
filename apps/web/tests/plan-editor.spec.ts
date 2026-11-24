@@ -138,11 +138,12 @@ test("phone editor adds and removes openings and walls with undo",async({page})=
   expect(puts.at(-1)?.openings).toHaveLength(2);
 });
 
-test("shared wall sides keep separate finishes in the saved scene and GLB",async({page})=>{
+test("GLB keeps separate wall finishes and metric marble material maps",async({page})=>{
   test.setTimeout(75_000);
   const model=setReference(fixture({openings:[]}),{x:100,y:100},{x:500,y:100},4);
-  let config={views:[],objects:[],style:"",wallFinishes:{}};
-  let revision=0;
+  let config={views:[],objects:[],style:"",wallFinishes:{},
+    floorMaterial:{kind:"marble",color:"#e4dac6",widthM:.6,lengthM:.8}};
+  let revision=1;
   await setup(page,{model});
   await page.route("**/blueprints/p/scene**",route=>{
     const path=new URL(route.request().url()).pathname;
@@ -175,6 +176,12 @@ test("shared wall sides keep separate finishes in the saved scene and GLB",async
   const [front,back]=mesh.primitives.slice(-2).map(({material}:{material:number})=>gltf.materials[material].pbrMetallicRoughness);
   expect(front.baseColorTexture).toBeUndefined();
   expect(back.baseColorTexture).toBeDefined();
+  const room=gltf.nodes.find((node:{extras?:{kind:string}})=>node.extras?.kind==="room");
+  const floor=gltf.materials[gltf.meshes[room.mesh].primitives[0].material];
+  const textures=[floor.normalTexture,floor.pbrMetallicRoughness.baseColorTexture,floor.pbrMetallicRoughness.metallicRoughnessTexture];
+  for (const texture of textures) {
+    expect(texture.extensions.KHR_texture_transform.scale).toEqual([1/(4*.8),1/(4*.6)]);
+  }
 });
 
 test("a conflicting second distance is saved and shown without changing the plan scale",async({page})=>{

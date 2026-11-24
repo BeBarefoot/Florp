@@ -1,4 +1,4 @@
-import { CanvasTexture, RepeatWrapping, SRGBColorSpace } from "three";
+import { CanvasTexture, ImageLoader, RepeatWrapping, SRGBColorSpace, Texture } from "three";
 import type { FloorMaterial, Scene } from "./scene";
 
 export function unmatchedFloorFinishes(scene: Pick<Scene,"roomFloorMaterials">, rooms: {id:string}[]) {
@@ -19,8 +19,54 @@ export function floorMaterialFor(scene: Pick<Scene,"floorFinish"|"floorMaterial"
   return scene.floorMaterial ?? (scene.floorFinish === "oak" ? materialDefaults.wood : null);
 }
 
+const photoRepeats = {wood: [4, 8], marble: [4, 4]} as const;
+type PhotoFloor = keyof typeof photoRepeats;
+type PhotoMaps = Texture[];
+const photoLoads = new Map<PhotoFloor, Promise<PhotoMaps | null>>();
+
+export function loadFloorPhotos(kind: FloorMaterial["kind"]) {
+  if (kind !== "wood" && kind !== "marble") return Promise.resolve(null);
+  const pending = photoLoads.get(kind);
+  if (pending) return pending;
+
+  const loader = new ImageLoader();
+  const load = Promise.all([
+    loader.loadAsync(`/materials/floors/${kind}-color.webp`),
+    loader.loadAsync(`/materials/floors/${kind}-normal.webp`),
+    loader.loadAsync(`/materials/floors/${kind}-roughness.webp`),
+  ]).then(images=>images.map(image=>new Texture(image))).catch(() => {
+    photoLoads.delete(kind);
+    return null;
+  });
+  photoLoads.set(kind, load);
+  return load;
+}
+
+export function floorSurface({kind, widthM, lengthM}: FloorMaterial, photos: PhotoMaps | null = null) {
+  const material = {kind, widthM, lengthM};
+  if (!photos || (kind !== "wood" && kind !== "marble")) {
+    return {
+      map: floorTexture(material),
+      normalMap: null,
+      roughnessMap: null,
+      roughness: kind === "marble" ? .4 : .75,
+    };
+  }
+  const [columns, rows] = photoRepeats[kind];
+  const [map, normalMap, roughnessMap] = photos.map(source => {
+    const texture = source.clone();
+    texture.wrapS = texture.wrapT = RepeatWrapping;
+    texture.repeat.set(1 / (columns * lengthM), 1 / (rows * widthM));
+    texture.anisotropy = 8;
+    texture.needsUpdate = true;
+    return texture;
+  });
+  map.colorSpace = SRGBColorSpace;
+  return {map, normalMap, roughnessMap, roughness: 1};
+}
+
 // Floor shape UVs are in metres. One image spans the specified tile or a pair of staggered planks.
-export function floorTexture({kind,widthM,lengthM}: FloorMaterial) {
+export function floorTexture({kind,widthM,lengthM}: Omit<FloorMaterial, "color">) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 128;
   const ctx = canvas.getContext("2d")!;
