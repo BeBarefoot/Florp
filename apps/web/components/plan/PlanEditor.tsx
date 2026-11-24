@@ -58,7 +58,9 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
   const calibrated = !!model && !!metersPerPixel(model);
   const loaded = !!model;
   useEffect(() => {
-    if (!loaded || new URLSearchParams(window.location.search).get("setup") !== "floor") return;
+    if (!loaded) return;
+    const setup = new URLSearchParams(window.location.search).get("setup");
+    if (setup !== "floor" && setup !== "finishes") return;
     if (calibrated) setDisplay("3d");
     else {
       setView("original");
@@ -557,7 +559,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
             request<Saved>(`/blueprints/${id}/scene`),
           ]);
           const { exportPlan3D } = await import("../../lib/exportPlan3D");
-          await exportPlan3D(snapshot.model, review, scene.planRevision===snapshot.revision?scene.config:undefined);
+          await exportPlan3D(snapshot.model, review, scene.revision?scene.config:undefined);
         })().catch((e) => setError(String(e)))}
       />
       <ToolRail

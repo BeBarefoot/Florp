@@ -70,7 +70,9 @@ export default function ShowcasePage(){
   if(data&&data[2].id===id&&plan&&metersPerPixel(plan)&&plan.walls.length){
     const approximate=plan!==original;
     const currentScene=!approximate&&data[1].planRevision===plan.revision;
-    return <Player key={id} plan={plan} scene={currentScene?data[1].config:emptyScene}
+    const {floorFinish,floorMaterial,roomFloorMaterials}=data[1].config;
+    const scene=currentScene?data[1].config:{...emptyScene,floorFinish,floorMaterial,roomFloorMaterials};
+    return <Player key={id} plan={plan} scene={scene}
       approximate={approximate} renders={currentScene?renders:undefined} title={data[2].filename}
       edit={"/plan/"+id}
       saveFinishes={!approximate&&(!data[1].revision||currentScene)?async finishes=>{

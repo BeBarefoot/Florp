@@ -1,4 +1,5 @@
 import { X } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { Room } from "../../lib/plan/model";
 import type { FloorMaterial } from "../../lib/plan/scene";
@@ -22,11 +23,11 @@ function DimensionField({label,metres,onChange}:{label:string;metres:number;onCh
     }}/></label>;
 }
 
-export default function FinishSheet({rooms,scope,selectScope,material,change,onPick,onClose,onSave,onReset,saving,dirty,notice,canPersist}:{
+export default function FinishSheet({rooms,scope,selectScope,material,change,onPick,onClose,onSave,onReset,saving,dirty,notice,canPersist,reviewHref}:{
   rooms:Pick<Room,"id"|"label">[]; scope:string; selectScope:(id:string)=>void;
   material:FloorMaterial; change:(material:FloorMaterial)=>void;
   onPick:()=>void; onClose:()=>void; onSave:()=>void; onReset?:()=>void;
-  saving:boolean; dirty:boolean; notice:string; canPersist:boolean;
+  saving:boolean; dirty:boolean; notice:string; canPersist:boolean; reviewHref?:string;
 }){
   return <section className="finish-sheet" aria-label="Floor finishes">
     <div className="finish-heading">
@@ -69,6 +70,7 @@ export default function FinishSheet({rooms,scope,selectScope,material,change,onP
         </div>
       </form>
     </fieldset>
+    {reviewHref&&<p><Link href={reviewHref}>Review finishes from the previous layout</Link></p>}
     {notice&&<p role="status">{notice}</p>}
   </section>;
 }

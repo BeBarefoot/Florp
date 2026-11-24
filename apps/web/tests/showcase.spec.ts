@@ -42,6 +42,50 @@ test("phone finishes keep room overrides when the whole-floor preset changes",as
   await expect(page.getByLabel("Tile width (cm)")).toHaveValue("45");
 });
 
+test("walkthrough keeps matching finishes after a plan edit and links to finish recovery",async({page})=>{
+  test.setTimeout(75_000);
+  const tile={kind:"tile",color:"#c8bca7",widthM:.45,lengthM:.6} as const;
+  const wood={kind:"wood",color:"#bf946d",widthM:.18,lengthM:1.2} as const;
+  let config:Scene={...sampleScene,roomFloorMaterials:{living:wood,"previous-room":tile}};
+  let revision=1;
+  let planRevision=1;
+  const model={...samplePlan,id:"f",revision:2};
+  await page.setViewportSize({width:390,height:844});
+  await page.route("**/blueprints/f/*",route=>{
+    const endpoint=new URL(route.request().url()).pathname.split("/").pop();
+    if(endpoint==="plan")return route.fulfill({json:{revision:2,model}});
+    if(endpoint==="info")return route.fulfill({json:{id:"f",filename:"Owner floor",project_id:"p",width:1000,height:680}});
+    if(endpoint==="renders"||endpoint==="history")return route.fulfill({json:[]});
+    if(endpoint==="review")return route.fulfill({json:{revision:2,status:"draft",blockers:[]}});
+    if(endpoint==="render-settings")return route.fulfill({json:{width:1024,height:768,configured:false,model:"",provider:""}});
+    if(route.request().method()==="PUT"){
+      const body=route.request().postDataJSON();
+      expect(body.expectedRevision).toBe(revision);
+      expect(body.planRevision).toBe(2);
+      config=body.config;
+      planRevision=body.planRevision;
+      revision++;
+    }
+    return route.fulfill({json:{revision,planRevision,config}});
+  });
+  await page.goto("/phone/showcase/f");
+  await expect(page.getByText("Some saved floor finishes need review. Open Finishes.")).toBeVisible({timeout:20_000});
+  await page.getByRole("button",{name:"Finishes",exact:true}).click();
+  await page.getByLabel("Apply to").selectOption("living");
+  await expect(page.getByRole("button",{name:"Use whole-floor finish"})).toBeVisible();
+  await page.getByRole("link",{name:"Review finishes from the previous layout"}).click();
+  const recovery=page.getByRole("region",{name:"Floor finishes to review"});
+  await expect(recovery).toBeVisible({timeout:20_000});
+  await recovery.getByRole("combobox",{name:/Move finish/}).selectOption("bedroom");
+  await expect(recovery).toHaveCount(0);
+  await page.getByRole("button",{name:"Save scene",exact:true}).filter({visible:true}).first().click();
+  await expect.poll(()=>config.roomFloorMaterials).toEqual({living:wood,bedroom:tile});
+  await page.goto("/phone/showcase/f");
+  await page.getByRole("button",{name:"Finishes",exact:true}).click();
+  await page.getByLabel("Apply to").selectOption("bedroom");
+  await expect(page.getByLabel("Tile width (cm)")).toHaveValue("45");
+});
+
 test("sample tour works without a project and supports dollhouse stops and playback",async({page})=>{
   test.setTimeout(75000);
   await page.setViewportSize({width:390,height:844});

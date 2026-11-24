@@ -144,7 +144,8 @@ def save(bid: str, body: Save):
                 409,
                 "A newer revision exists. Reload before saving; local changes are retained.",
             )
-        return store(s, bid, derive(body.model), current + 1)
+        previous = PlanModel.model_validate(row.model).rooms if row else []
+        return store(s, bid, derive(body.model, identity_source=previous), current + 1)
 
 
 @router.post("/blueprints/{bid}/plan/restore-bundle")

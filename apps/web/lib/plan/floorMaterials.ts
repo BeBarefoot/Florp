@@ -1,6 +1,11 @@
 import { CanvasTexture, RepeatWrapping, SRGBColorSpace } from "three";
 import type { FloorMaterial, Scene } from "./scene";
 
+export function unmatchedFloorFinishes(scene: Pick<Scene,"roomFloorMaterials">, rooms: {id:string}[]) {
+  const ids = new Set(rooms.map(room=>room.id));
+  return Object.entries(scene.roomFloorMaterials??{}).filter(([id])=>!ids.has(id));
+}
+
 export const materialDefaults: Record<FloorMaterial["kind"], FloorMaterial> = {
   wood: {kind:"wood", color:"#bf946d", widthM:.18, lengthM:1.2},
   concrete: {kind:"concrete", color:"#a9a6a0", widthM:1, lengthM:1},

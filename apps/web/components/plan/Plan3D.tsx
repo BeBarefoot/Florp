@@ -14,6 +14,7 @@ import {renderPrompt, downloadPrompt} from "../../lib/plan/renderPrompt";
 import { CaptureBridge, EyeCamera, SceneMesh } from "./SceneMesh";
 import { roomsOf, walkSpace } from "../../lib/plan/walkSpace";
 import { WalkCamera } from "./WalkCamera";
+import { unmatchedFloorFinishes } from "../../lib/plan/floorMaterials";
 
 type Mode = "camera" | "aim" | "sight" | "object" | "move" | "zone" | null;
 type CaptureFn = (v: View, s: number, f: Frame, key: string) => Capture;
@@ -58,6 +59,13 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
   const view=scene.views.find(v=>v.id===viewId)??scene.views[0];
   const item=scene.objects.find(o=>o.id===itemId);
   const rooms=useMemo(()=>roomsOf(m),[m]);
+  const unmatchedFinishes=unmatchedFloorFinishes(scene,rooms);
+  function resolveFinish(previousRoom:string, destination?:string) {
+    const materials={...scene.roomFloorMaterials};
+    if(destination) materials[destination]=materials[previousRoom];
+    delete materials[previousRoom];
+    change({...scene,roomFloorMaterials:materials});
+  }
   const room=rooms.find(r=>r.id===roomId);
   const pieces=useMemo(()=>wallPieces(m),[m]);
   const nodeMap=useMemo(()=>new Map(m.nodes.map(n=>[n.id,n])),[m.nodes]);
@@ -350,6 +358,19 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
         {scene.floorMaterial&&<option value="custom" disabled>Custom walkthrough finish</option>}
         {Object.entries(floorFinishes).map(([key,finish])=><option key={key} value={key}>{finish.name}</option>)}
       </select></label>
+      {!!unmatchedFinishes.length&&<section aria-label="Floor finishes to review">
+        <h3>Floor finishes to review</h3>
+        <p>{dirty?"Save the plan to confirm room matches.":"These finishes belong to rooms from an earlier layout. Reassign them or remove them, then save the scene."}</p>
+        {!dirty&&unmatchedFinishes.map(([id,finish],index)=><div className="scene-actions" key={id}>
+          <span>{index+1}. {finish.kind} · {finish.color}{finish.kind!=="concrete"?` · ${Math.round(finish.widthM*100)} × ${Math.round(finish.lengthM*100)} cm`:""}</span>
+          <label>Move finish {index+1} to <select value="" onChange={e=>resolveFinish(id,e.target.value)}>
+            <option value="" disabled>Choose a room</option>
+            {rooms.map((room,i)=>!Object.hasOwn(scene.roomFloorMaterials??{},room.id)&&
+              <option key={room.id} value={room.id}>{room.label||`Room ${i+1}`}</option>)}
+          </select></label>
+          <button onClick={()=>resolveFinish(id)}>Remove finish {index+1}</button>
+        </div>)}
+      </section>}
       {message&&<p role="status">{message}</p>}
       {saved?.planRevision&&saved.planRevision!==m.revision&&<p>Plan updated. Review camera and furniture clearances, then save the scene against this revision.</p>}
       <div className="scene-layout">

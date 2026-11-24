@@ -14,7 +14,7 @@ import {findRoomView,findWalkStart,roomsOf,walkSpace} from "../../lib/plan/walkS
 import {FloorPicker} from "./FloorPicker";
 import {newUuid} from "../../lib/uuid";
 import FinishSheet from "./FinishSheet";
-import { floorMaterialFor, materialDefaults } from "../../lib/plan/floorMaterials";
+import { floorMaterialFor, materialDefaults, unmatchedFloorFinishes } from "../../lib/plan/floorMaterials";
 import { contains } from "../../lib/plan/scene";
 import type {PlanModel,Pt} from "../../lib/plan/model";
 import type {FloorMaterial,Frame,Scene,View} from "../../lib/plan/scene";
@@ -119,6 +119,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   const [sessionFinishes,setSessionFinishes]=useState<FloorStyles|null>(null);
   const [finishNotice,setFinishNotice]=useState("");
   const styledScene={...scene,...sessionFinishes,...finishDraft};
+  const needsFinishReview=unmatchedFloorFinishes(styledScene,rooms).length>0;
   const material=floorMaterialFor(styledScene,finishScope)??materialDefaults.wood;
   function changeFinish(next:FloorMaterial){
     setFinishDraft(finishScope ?
@@ -265,7 +266,8 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
       }:undefined}
       onPick={()=>{select(-1);setPickingRoom(true);setFinishesOpen(false);}}
       onClose={()=>{setFinishesOpen(false);setFinishDraft(null);setFinishNotice("");}}
-      onSave={()=>void applyFinishes()}/>:
+      onSave={()=>void applyFinishes()}
+      reviewHref={needsFinishReview&&edit?edit+"?setup=finishes":undefined}/>:
     <section className="show-panel" aria-label="Tour controls">
       <div className="show-heading" hidden={immersive}>
         <small>{sample?"Sample tour · ":""}{title}{approximate?" · Approximate scale":""}</small>
@@ -318,7 +320,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
         </>}
         </>}
       </div>
-      {!immersive&&(!hasFloor||notice)&&<p role="status">{notice||"No walkable floor was found."}</p>}
+      {!immersive&&(!hasFloor||notice||needsFinishReview)&&<p role="status">{notice||(!hasFloor?"No walkable floor was found.":"Some saved floor finishes need review. Open Finishes.")}</p>}
     </section>}
   </main>;
 }

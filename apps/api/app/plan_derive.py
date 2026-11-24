@@ -8,6 +8,9 @@ from __future__ import annotations
 import hashlib
 import math
 from statistics import median
+from shapely import make_valid
+from shapely.geometry import Polygon
+from shapely.strtree import STRtree
 from .plan_model import PlanModel, Room, Finding, Pt
 
 MIN_ROOM_PX2 = 400.0
@@ -274,8 +277,61 @@ def findings(model: PlanModel, counters: dict | None = None) -> list[Finding]:
     ]
 
 
-def derive(model: PlanModel, counters: dict | None = None) -> PlanModel:
+def retain_room_ids(current: list[Room], previous: list[Room], zone_ids: set[str]) -> None:
+    """Reuse committed IDs for unchanged boundaries and clear one-to-one matches."""
+    by_boundary = {tuple(sorted(room.wall_ids)): room for room in previous}
+    matched = {
+        index: by_boundary[tuple(room.wall_ids)]
+        for index, room in enumerate(current) if tuple(room.wall_ids) in by_boundary
+    }
+    matched_ids = {room.id for room in matched.values()}
+    old_rooms = [room for room in previous if room.id not in matched_ids and len(room.polygon) >= 3]
+    old_shapes = [make_valid(Polygon([(p.x, p.y) for p in room.polygon])) for room in old_rooms]
+    tree = STRtree(old_shapes)
+    links = {}
+    old_counts: dict[int, int] = {}
+    for index, room in enumerate(current):
+        if index in matched or not old_rooms:
+            continue
+        shape = make_valid(Polygon([(p.x, p.y) for p in room.polygon]))
+        candidates = []
+        for old_index in tree.query(shape, predicate="intersects"):
+            prior = old_shapes[old_index]
+            overlap = shape.intersection(prior).area
+            if overlap > 0 and overlap >= .5 * min(shape.area, prior.area):
+                candidates.append((old_index, overlap >= .5 * max(shape.area, prior.area)))
+                old_counts[old_index] = old_counts.get(old_index, 0) + 1
+        links[index] = candidates
+    for index, candidates in links.items():
+        if len(candidates) == 1:
+            old_index, comparable = candidates[0]
+            if comparable and old_counts[old_index] == 1:
+                matched[index] = old_rooms[old_index]
+
+    reserved = zone_ids | {room.id for room in previous}
+    used = set(zone_ids)
+    retained = set()
+    for index, room in enumerate(current):
+        old = matched.get(index)
+        if old and old.id not in used:
+            room.id = old.id
+            used.add(room.id)
+            retained.add(index)
+    for index, room in enumerate(current):
+        if index in retained:
+            continue
+        base = room.id
+        suffix = 1
+        while room.id in reserved or room.id in used:
+            room.id = f"{base}-{suffix}"
+            suffix += 1
+        used.add(room.id)
+
+
+def derive(model: PlanModel, counters: dict | None = None, *, identity_source: list[Room] | None = None) -> PlanModel:
     model = model.model_copy(deep=True)
+    previous = model.rooms if identity_source is None else identity_source
     model.rooms = rooms(model)
+    retain_room_ids(model.rooms, previous, {zone.id for zone in model.room_zones})
     model.findings = findings(model, counters)
     return PlanModel.model_validate(model.dump())

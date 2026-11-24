@@ -12,18 +12,75 @@ from test_plan_api import client, plan, reference  # noqa: F401
 def test_floor_material_overrides_round_trip(client):
     c, bid = client
     path = f"/blueprints/{bid}"
-    assert c.put(path + "/plan", json={"expectedRevision": 0, "model": plan(scale=reference())}).status_code == 200
+    saved_plan = c.put(path + "/plan", json={"expectedRevision": 0, "model": plan(scale=reference())})
+    assert saved_plan.status_code == 200
+    room_id = saved_plan.json()["model"]["rooms"][0]["id"]
     tile = {"kind": "tile", "color": "#c8bca7", "widthM": .45, "lengthM": .6}
-    config = {"floorFinish": "oak", "roomFloorMaterials": {"bathroom": tile}}
+    config = {"floorFinish": "oak", "roomFloorMaterials": {room_id: tile}}
     first = c.put(path + "/scene", json={"expectedRevision": 0, "planRevision": 1, "config": config})
     assert first.status_code == 200, first.text
     config = first.json()["config"]
     config["floorMaterial"] = {"kind": "concrete", "color": "#a9a6a0", "widthM": 1, "lengthM": 1}
     request = {"expectedRevision": 1, "planRevision": 1, "config": config}
     assert c.put(path + "/scene", json=request).status_code == 200
-    assert c.get(path + "/scene").json()["config"]["roomFloorMaterials"] == {"bathroom": tile}
+    assert c.get(path + "/scene").json()["config"]["roomFloorMaterials"] == {room_id: tile}
     config["floorMaterial"]["widthM"] = 0
     assert c.put(path + "/scene", json={**request, "expectedRevision": 2}).status_code == 422
+
+
+def test_room_finish_survives_wall_segment_split_and_can_be_reassigned_after_room_split(client):
+    c, bid = client
+    path = f"/blueprints/{bid}"
+    model = c.put(path + "/plan", json={"expectedRevision": 0, "model": plan(scale=reference())}).json()["model"]
+    room_id = model["rooms"][0]["id"]
+    tile = {"kind": "tile", "color": "#c8bca7", "widthM": .45, "lengthM": .6}
+    assignment = {room_id: tile}
+    config = {"roomFloorMaterials": {"unknown-room": tile}}
+    payload = {"expectedRevision": 0, "planRevision": 1, "config": config}
+    assert c.put(path + "/scene", json=payload).status_code == 422
+    config["roomFloorMaterials"] = assignment
+    assert c.put(path + "/scene", json=payload).status_code == 200
+
+    # A collinear segment changes the wall IDs without changing the room.
+    model["nodes"].append({"id": "top", "x": 400, "y": 100})
+    wall = model["walls"][0]
+    model["walls"].append({**wall, "id": "top-right", "a": "top"})
+    wall["b"] = "top"
+    model["rooms"][0]["id"] = "client-preview-id"
+    result = c.put(path + "/plan", json={"expectedRevision": 1, "model": model})
+    assert result.status_code == 200, result.text
+    model = result.json()["model"]
+    assert model["rooms"][0]["id"] == room_id
+    assert c.get(path + "/plan").json()["model"]["rooms"][0]["id"] == room_id
+    assert c.get(path + "/scene").json()["config"]["roomFloorMaterials"] == assignment
+
+    # A partition splits the actual room. Keep the original assignment for review.
+    model["nodes"].append({"id": "bottom", "x": 400, "y": 500})
+    wall = model["walls"][2]
+    model["walls"].extend([
+        {**wall, "id": "bottom-left", "a": "bottom"},
+        {**wall, "id": "partition", "a": "top", "b": "bottom"},
+    ])
+    wall["b"] = "bottom"
+    result = c.put(path + "/plan", json={"expectedRevision": 2, "model": model})
+    assert result.status_code == 200, result.text
+    ids = [room["id"] for room in result.json()["model"]["rooms"]]
+    assert len(ids) == 2 and room_id not in ids
+    payload.update(expectedRevision=1, planRevision=3)
+    assert c.put(path + "/scene", json=payload).status_code == 200
+    assert c.get(path + "/scene").json()["config"]["roomFloorMaterials"] == assignment
+    payload["expectedRevision"] = 2
+    config["roomFloorMaterials"] = {ids[0]: tile}
+    assert c.put(path + "/scene", json=payload).status_code == 200
+    assert c.get(path + "/scene").json()["config"]["roomFloorMaterials"] == {ids[0]: tile}
+
+    model = result.json()["model"]
+    model["walls"] = [wall for wall in model["walls"] if wall["id"] != "partition"]
+    result = c.put(path + "/plan", json={"expectedRevision": 3, "model": model})
+    assert result.status_code == 200, result.text
+    merged_rooms = result.json()["model"]["rooms"]
+    assert len(merged_rooms) == 1 and merged_rooms[0]["id"] not in ids
+    assert c.get(path + "/scene").json()["config"]["roomFloorMaterials"] == {ids[0]: tile}
 
 
 @pytest.mark.parametrize('provider', ['fal', 'comfy', 'local-comfy', 'masked-local'])

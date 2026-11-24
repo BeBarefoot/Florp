@@ -228,6 +228,13 @@ export function rooms(m: PlanModel): Room[] {
   result.forEach((r, i) => {
     const old = matches[i][0];
     if (old && matches[i].length === 1 && matches.filter((group) => group.includes(old)).length === 1) {
+      // The server resolves identity against the saved geometry. Keep the old
+      // ID locally when the shape is nearly identical and the boundary was subdivided.
+      if (!previousByBoundary.has(JSON.stringify(r.wallIds)) &&
+        Math.abs(r.areaPx2 - old.areaPx2) <= .05 * old.areaPx2 &&
+        !result.some(other => other.id === old.id) && !m.roomZones?.some(zone=>zone.id===old.id)) {
+        r.id = old.id;
+      }
       Object.assign(r, { label: old.label, roomType: old.roomType, ceilingHeightM: old.ceilingHeightM,
         needsSemanticReview: old.needsSemanticReview });
     } else if (matches[i].some((o) => o.label || o.roomType || o.ceilingHeightM || o.needsSemanticReview)) {

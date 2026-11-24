@@ -107,6 +107,11 @@ def save_scene(bid: str, body: SaveScene):
         old = current(s, bid)
         if (old.revision if old else 0) != body.expected_revision:
             raise HTTPException(409, "The scene has changed. Reload it before saving.")
+        room_ids = {room["id"] for key in ("rooms", "roomZones") for room in plan.model.get(key, [])}
+        old_floors = old.config.get("roomFloorMaterials", {}) if old else {}
+        for room_id, material in body.config.room_floor_materials.items():
+            if room_id not in room_ids and old_floors.get(room_id) != material.model_dump(by_alias=True):
+                raise HTTPException(422, "Assign the floor finish to a room on the current plan.")
         for items in (body.config.views, body.config.objects):
             if len({item.id for item in items}) != len(items) or any(
                 not (0 <= item.position.x <= bp.width and 0 <= item.position.y <= bp.height) for item in items
