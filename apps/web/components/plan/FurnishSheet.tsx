@@ -1,17 +1,26 @@
-import {Move,RotateCcw,RotateCw,Trash2,X} from "lucide-react";
+import {Armchair,Bath,BedDouble,CookingPot,Move,RotateCcw,RotateCw,Trash2,TreePine,X} from "lucide-react";
 import Link from "next/link";
-import {catalog,type Item,type ObjectKind} from "../../lib/plan/scene";
+import {useEffect,useRef,useState} from "react";
+import {dimensions,furnitureRooms,objectName,tvInches,tvSizeRange,type ObjectKind} from "../../lib/plan/furnitureCatalog";
+import type {Item} from "../../lib/plan/scene";
 
-const furniture=["sofa","bed","table","wardrobe"] as const;
-function name(kind:ObjectKind){return kind.charAt(0).toUpperCase()+kind.slice(1);}
+const roomIcons=[Armchair,BedDouble,Bath,CookingPot,TreePine];
 
-export default function FurnishSheet({objects,selected,pending,previewReason,dirty,saving,message,issues,onAdd,onSelect,onMove,onRotate,onResize,onRemove,onClose,onSave,onCancelPick,edit}:{
+export default function FurnishSheet({objects,selected,pending,previewReason,dirty,saving,message,issues,onAdd,onSelect,onMove,onRotate,onResize,onScreenSize,onRemove,onClose,onSave,onCancelPick,edit}:{
   objects:Item[];selected?:Item;pending:string;previewReason?:string;dirty:boolean;saving:boolean;
   message:string;issues:string[];edit?:string;
   onAdd:(kind:ObjectKind)=>void;onSelect:(id:string)=>void;onMove:()=>void;
   onRotate:(degrees:number)=>void;onResize:(key:"width"|"depth"|"height",value:number)=>void;
+  onScreenSize:(inches:number)=>void;
   onRemove:()=>void;onCancelPick:()=>void;onClose:()=>void;onSave:()=>void;
 }){
+  const [roomIndex,setRoomIndex]=useState(0);
+  const room=furnitureRooms[roomIndex];
+  const editFields=useRef<HTMLFieldSetElement>(null);
+  const selectedId=selected?.id;
+  useEffect(()=>{
+    if(selectedId)editFields.current?.scrollIntoView({block:"nearest"});
+  },[selectedId]);
   return <section className="finish-sheet furnish-sheet" aria-label="Furnish">
     <div className="finish-heading">
       <h2>Furnish</h2>
@@ -19,26 +28,61 @@ export default function FurnishSheet({objects,selected,pending,previewReason,dir
     </div>
     {previewReason&&<p className="furnish-preview">{previewReason} {edit&&<Link href={edit+"?setup=furniture"}>Open the plan editor to enable saving.</Link>}</p>}
     <fieldset disabled={saving}>
-      <div className="furnish-catalog" aria-label="Furniture catalog">
-        {furniture.map(kind=><button key={kind} type="button" disabled={objects.length>=100} onClick={()=>onAdd(kind)}>
-          <strong>{name(kind)}</strong><span>{catalog[kind].slice(0,2).map(m=>Math.round(m*100)).join(" × ")} cm</span>
-        </button>)}
+      <div className="furnish-rooms" role="group" aria-label="Furniture rooms">
+        {furnitureRooms.map(({name},index)=>{
+          const Icon=roomIcons[index];
+          return <button key={name} type="button" aria-pressed={index===roomIndex} onClick={()=>setRoomIndex(index)}>
+            <Icon size={17} aria-hidden/>{name}
+          </button>;
+        })}
       </div>
+      {pending&&<div className="furnish-pending finish-fields"><p role="status">{pending}</p><button type="button" onClick={onCancelPick}>Cancel pick</button></div>}
+      {room.groups.map(group=><section key={group.name} className="furnish-group" aria-label={group.name}>
+        <h3>{group.name}</h3>
+        <div className="furnish-catalog">
+          {group.items.map(kind=>{
+            const {width,depth}=dimensions(kind);
+            return <button key={kind} type="button" disabled={objects.length>=100} onClick={()=>onAdd(kind)}>
+              <strong>{objectName(kind)}</strong>
+              <span>{kind==="tv"?"55″ default":`${Math.round(width*100)} × ${Math.round(depth*100)} cm`}</span>
+            </button>;
+          })}
+        </div>
+      </section>)}
+      <p className="furnish-tip">{room.tip}</p>
       {objects.length>0&&<label className="furnish-select">Placed objects
         <select value={selected?.id??""} onChange={e=>onSelect(e.target.value)}>
           <option value="">Choose an object</option>
-          {objects.map((item,i)=><option key={item.id} value={item.id}>{name(item.kind)} {i+1}</option>)}
+          {objects.map((item,i)=><option key={item.id} value={item.id}>{objectName(item.kind)} {i+1}</option>)}
         </select>
       </label>}
-      {selected&&<fieldset disabled={!!pending}>
+      {selected&&<fieldset ref={editFields} disabled={!!pending}>
         <div className="furnish-dimensions">
-          {(["width","depth","height"] as const).map(key=><label key={key}>{key.charAt(0).toUpperCase()+key.slice(1)} (cm)
-            <input key={selected.id+selected[key]} type="number" min={6} max={key==="height"?500:800} step={1}
-              defaultValue={Math.round(selected[key]*100)} onBlur={e=>{
-                const cm=e.target.valueAsNumber;
-                if(e.target.validity.valid&&Number.isFinite(cm)&&cm!==Math.round(selected[key]*100))onResize(key,cm/100);
-                e.target.value=String(Math.round(selected[key]*100));
-              }}/></label>)}
+          {selected.kind==="tv"&&<label>Screen diagonal (inches)
+            <input key={selected.id+selected.width} type="number" {...tvSizeRange} step={1}
+              defaultValue={tvInches(selected.width,selected.height)}
+              onKeyDown={event=>{if(event.key==="Enter")event.currentTarget.blur();}}
+              onBlur={event=>{
+                const inches=event.currentTarget.valueAsNumber;
+                const previous=tvInches(selected.width,selected.height);
+                if(event.currentTarget.validity.valid&&Number.isFinite(inches)&&inches!==previous)onScreenSize(inches);
+                event.currentTarget.value=String(previous);
+              }}/>
+          </label>}
+          {(selected.kind==="tv"?["depth"] as const:["width","depth","height"] as const).map(key=>{
+            const thin=selected.kind==="rug"&&key==="height";
+            const precision=thin?10:1;
+            const cm=Math.round(selected[key]*100*precision)/precision;
+            return <label key={key}>{key.charAt(0).toUpperCase()+key.slice(1)} (cm)
+            <input key={selected.id+selected[key]} type="number" min={thin?.6:6}
+              max={key==="height"?500:800} step={thin?.1:1}
+              onKeyDown={event=>{if(event.key==="Enter")event.currentTarget.blur();}}
+              defaultValue={cm} onBlur={e=>{
+                const value=e.target.valueAsNumber;
+                if(e.target.validity.valid&&Number.isFinite(value)&&value!==cm)onResize(key,value/100);
+                e.target.value=String(cm);
+              }}/></label>;
+          })}
         </div>
         <div className="furnish-actions">
           <button onClick={onMove}><Move size={16}/>Move</button>
@@ -47,7 +91,6 @@ export default function FurnishSheet({objects,selected,pending,previewReason,dir
           <button aria-label="Remove object" onClick={onRemove}><Trash2 size={18}/></button>
         </div>
       </fieldset>}
-      {pending&&<div className="finish-fields"><p role="status">{pending}</p><button type="button" onClick={onCancelPick}>Cancel pick</button></div>}
       {message&&<p role="status">{message}</p>}
       {issues.length>0&&<ul className="furnish-issues" aria-label="Fit warnings">{issues.map(issue=><li key={issue}>{issue}</li>)}</ul>}
       <button type="button" className="finish-save" disabled={!dirty||!!pending} onClick={onSave}>{previewReason?"Keep preview":"Save furniture"}</button>

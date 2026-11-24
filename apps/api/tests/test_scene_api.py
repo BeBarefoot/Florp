@@ -1,5 +1,6 @@
 import base64
 import io
+import math
 import pytest
 
 from PIL import Image
@@ -275,11 +276,18 @@ def test_save_furniture_catalog_items_preserves_metric_dimensions(client):
     c, bid = client
     path = f"/blueprints/{bid}"
     assert c.put(path + "/plan", json={"expectedRevision": 0, "model": plan(scale=reference())}).status_code == 200
+    tv_unit = 77 * .0254 / math.hypot(16, 9)
     objects = [
         {"id": "sofa", "kind": "sofa", "position": {"x": 270, "y": 200},
          "width": 2.1, "depth": .92, "height": .85, "rotation": 15},
         {"id": "table", "kind": "table", "position": {"x": 470, "y": 260},
          "width": 1.4, "depth": .8, "height": .75, "rotation": 0},
+        {"id": "screen", "kind": "tv", "position": {"x": 600, "y": 260},
+         "width": 16 * tv_unit, "depth": .07, "height": 9 * tv_unit, "rotation": 0},
+        {"id": "carpet", "kind": "rug", "position": {"x": 470, "y": 260},
+         "width": 2, "depth": 1.4, "height": .018, "rotation": 0},
+        {"id": "dining-set", "kind": "dining_8", "position": {"x": 470, "y": 260},
+         "width": 3.22, "depth": 2, "height": .86, "rotation": 0},
     ]
     view = {
         "id": "corner", "name": "Corner view", "position": {"x": 150, "y": 120},
@@ -292,6 +300,10 @@ def test_save_furniture_catalog_items_preserves_metric_dimensions(client):
     saved = c.get(path + "/scene").json()["config"]
     assert saved["views"] == [view]
     assert [{key: item[key] for key in source} for item, source in zip(saved["objects"], objects)] == objects
+    objects[2]["width"] = 2
+    assert c.put(path + "/scene", json={
+        "expectedRevision": 1, "planRevision": 1, "config": {"objects": objects, "views": [view]},
+    }).status_code == 422
 
 
 def test_fixture_review_scan_does_not_edit_scene(client, monkeypatch):

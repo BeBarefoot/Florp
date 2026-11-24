@@ -17,6 +17,7 @@ import {newUuid} from "../../lib/uuid";
 import FinishSheet from "./FinishSheet";
 import FurnishSheet from "./FurnishSheet";
 import {fitsFloor,furnitureFit} from "../../lib/plan/furnitureFit";
+import {objectName,tvDimensions,yardKinds} from "../../lib/plan/furnitureCatalog";
 import { floorMaterialFor, materialDefaults, unmatchedFloorFinishes } from "../../lib/plan/floorMaterials";
 import { contains, footprint, newItem } from "../../lib/plan/scene";
 import type {PlanModel,Pt} from "../../lib/plan/model";
@@ -185,7 +186,9 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   }
   function updateFurniture(item:Item){
     if(!fitsFloor(plan,item,scale)){
-      setFurnitureNotice("Choose a position where the whole object fits inside one room.");
+      setFurnitureNotice(yardKinds.has(item.kind)
+        ?"Choose a position where the whole object fits in a yard or balcony."
+        :"Choose a position where the whole object fits inside one room.");
       return false;
     }
     setFurnitureDraft(objects.some(other=>other.id===item.id)
@@ -341,7 +344,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     </div>
     {view&&rendered&&renders[view.id]&&<div className="show-render"><img src={renders[view.id]} alt={"Saved design render for "+view.name}/></div>}
     {furnishing?<FurnishSheet objects={objects} selected={selectedFurniture} previewReason={previewReason}
-      pending={placement?"kind" in placement?"Tap the floor to place the "+placement.kind+".":"Tap the floor to move this object.":""}
+      pending={placement?"kind" in placement?`Tap ${yardKinds.has(placement.kind)?"a yard or balcony":"the floor"} to place the ${objectName(placement.kind).toLowerCase()}.`:"Tap the ground to move this object.":""}
       dirty={!!furnitureDraft} saving={saving} message={furnitureNotice} issues={fitWarnings}
       edit={edit&&"/phone/edit/"+encodeURIComponent(plan.id)}
       onAdd={kind=>{setPlacement({kind});setFurnitureId("");setFurnitureNotice("");}}
@@ -352,9 +355,10 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
         if(!selectedFurniture)return;
         const item={...selectedFurniture,[key]:value};
         if(key==="width"&&item.mattressWidth!=null)item.mattressWidth=Math.min(value,item.mattressWidth);
-        if(key==="depth"&&item.mattressDepth!=null)item.mattressDepth=Math.min(value,item.mattressDepth);
+        if(key==="depth"&&item.mattressDepth!=null)item.mattressDepth=Math.min(value*.96,item.mattressDepth);
         updateFurniture(item);
       }}
+      onScreenSize={inches=>{if(selectedFurniture?.kind==="tv")updateFurniture({...selectedFurniture,...tvDimensions(inches)});}}
       onRemove={()=>{setFurnitureDraft(objects.filter(item=>item.id!==furnitureId));setFurnitureId("");setFurnitureNotice("");}}
       onCancelPick={()=>{setPlacement(null);setFurnitureNotice("");}} onClose={closeFurnish} onSave={()=>void applyFurniture()}/>:
     finishesOpen?<FinishSheet rooms={rooms} scope={finishScope} selectScope={setFinishScope} material={material}
@@ -395,7 +399,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
           {hasFloor&&<button disabled={saving} onClick={()=>{
             setPlaying(false);setRendered(false);setAdding(false);setFinishesOpen(true);
           }}><Layers/>Finishes</button>}
-          {hasFloor&&!sample&&<button disabled={saving} onClick={openFurnish}><Armchair/>Furnish</button>}
+          {(hasFloor||!!plan.gardens?.length)&&!sample&&<button disabled={saving} onClick={openFurnish}><Armchair/>Furnish</button>}
           {views.map((v,i)=><button key={v.id} aria-pressed={view===v} onClick={()=>select(i)}><MapPin/>{v.name}</button>)}
           {view&&renders[view.id]&&<button aria-pressed={rendered} onClick={()=>{setPlaying(false);setRendered(!rendered);}}>
             {rendered?<Box/>:<ImageIcon/>}{rendered?"Return to 3D":"Show saved design"}

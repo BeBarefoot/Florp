@@ -4,7 +4,8 @@ import { rooms, withDerived, metersPerPixel, wallEndReaches } from "../lib/plan/
 import { addWall, moveNode, setReference, decideOpening } from "../lib/plan/ops";
 import { wallPieces } from "../lib/plan/mesh";
 import { eyeLevelPose, savedPose, verticalFov } from "../lib/plan/camera";
-import { blocks, promptFor } from "../lib/plan/scene";
+import { promptFor } from "../lib/plan/scene";
+import { furnitureParts } from "../lib/plan/furnitureModels";
 
 function fixture(extra: Partial<PlanModel> = {}): PlanModel {
   const pts = [
@@ -138,10 +139,11 @@ test("phone editor adds and removes openings and walls with undo",async({page})=
   expect(puts.at(-1)?.openings).toHaveLength(2);
 });
 
-test("GLB keeps separate wall finishes and metric marble material maps",async({page})=>{
+test("GLB keeps wall finishes, metric marble maps and furniture",async({page})=>{
   test.setTimeout(75_000);
   const model=setReference(fixture({openings:[]}),{x:100,y:100},{x:500,y:100},4);
-  let config={views:[],objects:[],style:"",wallFinishes:{},
+  let config={views:[],objects:[{id:"scene-planter",kind:"planter",position:{x:340,y:290},
+    width:.55,depth:.55,height:.98,rotation:0}],style:"",wallFinishes:{},
     floorMaterial:{kind:"marble",color:"#e4dac6",widthM:.6,lengthM:.8}};
   let revision=1;
   await setup(page,{model});
@@ -182,6 +184,12 @@ test("GLB keeps separate wall finishes and metric marble material maps",async({p
   for (const texture of textures) {
     expect(texture.extensions.KHR_texture_transform.scale).toEqual([1/(4*.8),1/(4*.6)]);
   }
+  const furniture=gltf.nodes.find((node:{extras?:{id:string}})=>node.extras?.id==="scene-planter");
+  expect(furniture.extras).toMatchObject({kind:"furniture",product:"planter"});
+  expect(furniture.matrix[12]).toBeCloseTo(3.4);
+  expect(furniture.matrix[13]).toBe(0);
+  expect(furniture.matrix[14]).toBeCloseTo(2.9);
+  expect(furniture.children.length).toBeGreaterThan(3);
 });
 
 test("a conflicting second distance is saved and shown without changing the plan scale",async({page})=>{
@@ -471,10 +479,12 @@ test("saved camera converts horizontal FOV, pitch and pixel origin",()=>{
 test("bed mesh keeps the specified mattress and prompt separates style from geometry",()=>{
   const position={x:200,y:250};
   const view={id:"v",name:"Bedroom",position,yaw:0,pitch:-10,horizontalFov:90,eyeHeight:1.6};
-  const parts=blocks({id:"b",kind:"bed",position,rotation:0,width:1.9,depth:2.12,height:.9,
+  const parts=furnitureParts({id:"b",kind:"bed",position,rotation:0,width:1.9,depth:2.12,height:.9,
     mattressWidth:1.8,mattressDepth:2});
-  expect(parts[2].size[0]).toBeCloseTo(1.8);
-  expect(parts[2].size[2]).toBeCloseTo(2);
+  const mattress=parts.filter(part=>part.finish==="linen").reduce((longest,part)=>
+    part.size[2]>longest.size[2]?part:longest);
+  expect(mattress.size[0]).toBeCloseTo(1.8);
+  expect(mattress.size[2]).toBeCloseTo(2);
   expect(promptFor(view,["Space type: bedroom."],"Oak")).toBe([
     "Scene facts: Photorealistic interior from the supplied camera view.",
     "Eye height 1.60 m; horizontal field of view 90 degrees.",
@@ -525,11 +535,11 @@ test("fixture scan requires an individual insert or dismiss before saving", asyn
   expect(scene.config.objects.map(o => o.id)).toEqual(["fixture-bed"]);
   expect(scene.config.dismissedFixtureIds).toEqual(["fixture-toilet"]);
   const objects=page.getByRole("region",{name:"Objects in this scene"});
-  await expect(objects.getByRole("button",{name:"1. bed"})).toBeVisible();
+  await expect(objects.getByRole("button",{name:"1. Bed"})).toBeVisible();
   await objects.getByRole("button",{name:"Remove bed 1"}).click();
   await expect(objects.getByText("No objects yet.",{exact:false})).toBeVisible();
   await page.getByRole("button",{name:"Undo scene"}).click();
-  await expect(objects.getByRole("button",{name:"1. bed"})).toBeVisible();
+  await expect(objects.getByRole("button",{name:"1. Bed"})).toBeVisible();
   await scan.click();
   await expect(page.getByText("Review the outlined suggestions. Nothing has been inserted.")).toBeVisible();
   await expect(outlines).toHaveCount(0);

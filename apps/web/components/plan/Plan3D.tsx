@@ -8,8 +8,9 @@ import { metersPerPixel, openingEnds, scaleCheck } from "../../lib/plan/derive";
 import { meshSignature, wallPieces } from "../../lib/plan/mesh";
 import { API, request } from "../../lib/api";
 import { newUuid } from "../../lib/uuid";
-import { floorFinishes, type FloorFinish, catalog, contains, footprint, intersects, newItem, type Capture, type Frame, type Item,
+import { floorFinishes, type FloorFinish, contains, footprint, intersects, newItem, type Capture, type Frame, type Item,
   type Job, type ObjectKind, type Saved, type Scene, type View, type WallMaterial, type WallSide } from "../../lib/plan/scene";
+import {objectKinds,objectName,tvDimensions,tvInches,tvSizeRange} from "../../lib/plan/furnitureCatalog";
 import {renderPrompt, downloadPrompt} from "../../lib/plan/renderPrompt";
 import { CaptureBridge, EyeCamera, SceneMesh } from "./SceneMesh";
 import { roomsOf, walkSpace } from "../../lib/plan/walkSpace";
@@ -26,8 +27,7 @@ const json = (method: string, body: unknown) => ({method,headers:{"Content-Type"
 const wrap = (angle:number) => ((angle+180)%360+360)%360-180;
 const points = (poly:Pt[]) => poly.map(p=>`${p.x},${p.y}`).join(" ");
 const sleepPollMs=3000;
-const fixtureName = (o: Item) => ({bed:"Bed", wardrobe:"Closet", toilet:"Toilet", shower:"Shower",
-  bathtub:"Bathtub", vanity:"Vanity", sofa:"Sofa", table:"Table"})[o.kind];
+const fixtureName = (o: Item) => o.kind==="wardrobe"?"Closet":objectName(o.kind);
 
 export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, savePlan}:{
   model:PlanModel;phone?:boolean;dirty?:boolean;onPlanEdit?:(m:PlanModel)=>void;savePlan?:()=>Promise<PlanModel|null>;
@@ -432,7 +432,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
               e.preventDefault();
               const k=e.dataTransfer.getData("application/x-florp-furniture") as ObjectKind;
               const p=mapPoint(e.currentTarget,e.clientX,e.clientY);
-              if(Object.prototype.hasOwnProperty.call(catalog,k)&&p)placeObject(p,k);
+              if(objectKinds.includes(k)&&p)placeObject(p,k);
             }}>
             {showBlueprint&&<image href={API+path+"/preview"} width={m.imageTransform.width} height={m.imageTransform.height}/>}
             {rooms.map(r=><polygon key={r.id} points={points(r.polygon)} fill={r.id===roomId?"#b8ded5":"#e2eee7"} stroke="#b1c3bb" strokeWidth="1" opacity={showBlueprint ? .18 : 1}/>)}
@@ -515,7 +515,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
       {view&&!validCamera(view.position)&&<p>Camera needs 30 cm of wall clearance and a clear floor position.</p>}
       <div className="scene-actions">
         <label>Furniture <select aria-label="Furniture" value={kind} onChange={e=>setKind(e.target.value as ObjectKind)}>
-          {Object.keys(catalog).map(k=><option key={k}>{k}</option>)}</select></label>
+          {objectKinds.map(k=><option key={k} value={k}>{objectName(k)}</option>)}</select></label>
         <button draggable onDragStart={e=>e.dataTransfer.setData("application/x-florp-furniture",kind)}
           onClick={()=>setMode("object")} title="Drag onto the plan or click to place">Place object</button>
         <button disabled={(m.roomZones?.length??0)>=50} onClick={()=>{setMode("zone");setZoneStart(null);}}>Mark room zone</button>
@@ -549,18 +549,27 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
         <p>Choose furniture above, then click the plan to add it. Select any object here to move or resize it. Undo restores a removed object.</p>
         {!scene.objects.length&&<p>No objects yet. Add furniture or find fixtures on the original plan.</p>}
         {scene.objects.map((o,i)=><div className="scene-actions" key={o.id}>
-          <button aria-pressed={itemId===o.id} onClick={()=>{setItemId(o.id);setRoomId("");setMode(null);}}>{i+1}. {o.kind}</button>
+          <button aria-pressed={itemId===o.id} onClick={()=>{setItemId(o.id);setRoomId("");setMode(null);}}>{i+1}. {objectName(o.kind)}</button>
           <span>{o.width.toFixed(2)} × {o.depth.toFixed(2)} m</span>
           <button aria-label={`Remove ${o.kind} ${i+1}`} onClick={()=>{change({...scene,objects:scene.objects.filter(x=>x.id!==o.id)});if(itemId===o.id)setItemId("");}}>Remove</button>
         </div>)}
       </section>
       {item&&<div className="scene-actions" aria-label="Selected furniture">
-        <strong>{item.kind}</strong>
-        {(["width","depth","height",...(item.kind==="bed"?["mattressWidth","mattressDepth"]:[])] as const).map(raw=>{
+        <strong>{objectName(item.kind)}</strong>
+        {item.kind==="tv"&&<label>Screen diagonal (inches)
+          <input key={item.width} type="number" {...tvSizeRange} step="1" defaultValue={tvInches(item.width,item.height)}
+            onBlur={e=>{
+              const inches=e.target.valueAsNumber;
+              if(e.target.validity.valid&&Number.isFinite(inches))updateItem(tvDimensions(inches));
+              else e.target.value=String(tvInches(item.width,item.height));
+            }}/>
+        </label>}
+        {(item.kind==="tv"?["depth"]:["width","depth","height",...(item.kind==="bed"?["mattressWidth","mattressDepth"]:[])]).map(raw=>{
           const k=raw as "width"|"depth"|"height"|"mattressWidth"|"mattressDepth";
+          const min=item.kind==="rug"&&k==="height"?.006:.06;
           return <label key={k}>{({width:"Frame width",depth:"Frame depth",height:"Height",mattressWidth:"Mattress width",mattressDepth:"Mattress length"})[k]}
-            <input key={item.id+"-"+k+"-"+item[k]} aria-label={k} type="number" step=".01" min=".06" max={k==="height"?5:8} defaultValue={item[k]??""}
-              onBlur={e=>{const n=e.target.valueAsNumber;if(n>.05&&n<=(k==="height"?5:8))updateItem({[k]:n});else e.target.value=String(item[k]??"");}}/> m</label>;
+            <input key={item.id+"-"+k+"-"+item[k]} aria-label={k} type="number" step={min===.006?.001:.01} min={min} max={k==="height"?5:8} defaultValue={item[k]??""}
+              onBlur={e=>{const n=e.target.valueAsNumber;if(n>=min&&n<=(k==="height"?5:8))updateItem({[k]:n});else e.target.value=String(item[k]??"");}}/> m</label>;
         })}
         <button onClick={()=>setMode("move")}>Move</button>
         <button onClick={()=>updateItem({rotation:wrap(item.rotation+15)})}>Rotate 15°</button>

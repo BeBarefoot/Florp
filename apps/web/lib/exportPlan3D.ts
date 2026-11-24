@@ -7,6 +7,8 @@ import {yardShapes} from "./plan/yard";
 import { stairPieces } from "./plan/stairs";
 import { floorMaterialFor, floorSurface, floorTexture, loadFloorPhotos } from "./plan/floorMaterials";
 import { floorFinishes, type Scene } from "./plan/scene";
+import {furnitureParts,makeFurnitureResources} from "./plan/furnitureModels";
+import {objectName} from "./plan/furnitureCatalog";
 import { wallChunkGeometry, wallSurfaceMaterials } from "./plan/wallMaterials";
 
 /** Metric glTF (meters) with stable wall/room/opening IDs in node extras. */
@@ -107,7 +109,26 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
     }
     scene.add(group);
   }
-  const data = await new GLTFExporter().parseAsync(scene, { binary: true }).finally(()=>textures.forEach(texture=>texture.dispose()));
+  const furniture=makeFurnitureResources();
+  for (const item of config?.objects??[]) {
+    const group=new THREE.Group();
+    group.name=objectName(item.kind);
+    group.userData={kind:"furniture",id:item.id,product:item.kind};
+    group.position.set(item.position.x*scale,0,item.position.y*scale);
+    group.rotation.y=-item.rotation*Math.PI/180;
+    for (const part of furnitureParts(item)) {
+      const mesh=new THREE.Mesh(furniture.geometry(part.shape),furniture.material(part.finish));
+      mesh.position.set(...part.position);
+      mesh.scale.set(...part.size);
+      if(part.turn)mesh.rotation.set(...part.turn);
+      group.add(mesh);
+    }
+    scene.add(group);
+  }
+  const data = await new GLTFExporter().parseAsync(scene, { binary: true }).finally(()=>{
+    textures.forEach(texture=>texture.dispose());
+    furniture.dispose();
+  });
   const url = URL.createObjectURL(new Blob([data as ArrayBuffer], { type: "model/gltf-binary" }));
   const a = document.createElement("a");
   a.href = url;

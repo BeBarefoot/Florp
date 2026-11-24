@@ -2,14 +2,22 @@ import {Path,Shape,Vector2} from "three";
 import type {PlanModel} from "./model";
 import {metersPerPixel} from "./derive";
 
+export function yardAreas(model:PlanModel) {
+  const {width,height}=model.imageTransform;
+  const mapRing=(ring:[number,number][])=>ring.map(([x,y])=>({x:x*width,y:y*height}));
+  return (model.gardens??[]).map(region=>({
+    polygon:mapRing(region.points),
+    holes:(region.holes??[]).map(mapRing),
+  }));
+}
+
 export function yardShapes(model:PlanModel) {
   const scale=metersPerPixel(model);
   if(!scale)return [];
-  const {width,height}=model.imageTransform;
-  const vertices=(ring:[number,number][])=>ring.map(([x,z])=>new Vector2(x*width*scale,-z*height*scale));
-  return (model.gardens??[]).map(region=>{
-    const shape=new Shape(vertices(region.points));
-    shape.holes=(region.holes??[]).map(ring=>new Path(vertices(ring)));
+  const vertices=(ring:ReturnType<typeof yardAreas>[number]["polygon"])=>ring.map(({x,y})=>new Vector2(x*scale,-y*scale));
+  return yardAreas(model).map(region=>{
+    const shape=new Shape(vertices(region.polygon));
+    shape.holes=region.holes.map(ring=>new Path(vertices(ring)));
     return shape;
   });
 }

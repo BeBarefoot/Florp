@@ -4,6 +4,7 @@ import binascii
 import hashlib
 import io
 import json
+import math
 from datetime import timezone
 from pathlib import Path
 from typing import Literal
@@ -45,12 +46,17 @@ class View(Data):
 
 class SceneObject(Data):
     id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,80}$")
-    kind: Literal["bed", "wardrobe", "toilet", "vanity", "shower", "bathtub", "sofa", "table"]
+    kind: Literal[
+        "bed", "wardrobe", "toilet", "vanity", "shower", "bathtub", "sofa", "table",
+        "loveseat", "chair", "rug", "nightstand", "sink", "fridge_2", "fridge_4",
+        "dining_4", "dining_6", "dining_8", "island", "cabinets", "tv", "console_floating",
+        "console_standing", "coffee_table", "patio_set", "lounge", "planter", "grill", "parasol",
+    ]
     position: Pt
     rotation: float = Field(ge=-360, le=360)
     width: float = Field(gt=0.05, le=8)
     depth: float = Field(gt=0.05, le=8)
-    height: float = Field(gt=0.05, le=5)
+    height: float = Field(ge=0.006, le=5)
     mattress_width: float | None = Field(default=None, gt=0.05, le=8)
     mattress_depth: float | None = Field(default=None, gt=0.05, le=8)
 
@@ -115,6 +121,13 @@ def save_scene(bid: str, body: SaveScene):
             raise HTTPException(422, "Calibrate the floor plan before saving a scene")
         if any(o.kind == "bed" and ((o.mattress_width or 0) > o.width or (o.mattress_depth or 0) > o.depth * .96) for o in body.config.objects):
             raise HTTPException(422, "The mattress must fit within the bed frame")
+        for item in body.config.objects:
+            if item.kind != "rug" and item.height <= .05:
+                raise HTTPException(422, "Object height must exceed 5 cm")
+            if item.kind == "tv":
+                inches = math.hypot(item.width, item.height) / .0254
+                if not (23.99 <= inches <= 120.01 and math.isclose(item.width * 9, item.height * 16, rel_tol=.001)):
+                    raise HTTPException(422, "Choose a 16:9 TV with a screen diagonal between 24 and 120 inches")
         old = current(s, bid)
         if (old.revision if old else 0) != body.expected_revision:
             raise HTTPException(409, "The scene has changed. Reload it before saving.")

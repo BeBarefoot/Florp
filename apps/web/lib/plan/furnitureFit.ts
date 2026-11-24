@@ -1,7 +1,9 @@
 import {nodeMap,openingEnds} from "./derive";
 import type {PlanModel,Pt} from "./model";
-import {contains,footprint,intersects,type Item} from "./scene";
+import {contains,footprint,groundFootprint,intersects,itemBottom,obstructsMovement,type Item} from "./scene";
+import {yardKinds} from "./furnitureCatalog";
 import {roomsOf} from "./walkSpace";
+import {yardAreas} from "./yard";
 
 function crosses(a:Pt,b:Pt,c:Pt,d:Pt) {
   const side=(p:Pt,q:Pt,r:Pt)=>(q.x-p.x)*(r.y-p.y)-(q.y-p.y)*(r.x-p.x);
@@ -10,9 +12,13 @@ function crosses(a:Pt,b:Pt,c:Pt,d:Pt) {
 
 export function fitsFloor(plan:PlanModel,item:Item,scale:number) {
   const corners=footprint(item,scale);
-  return roomsOf(plan).some(({polygon})=>
-    corners.every(p=>contains(p,polygon)) && !corners.some((p,i)=>
-      polygon.some((q,j)=>crosses(p,corners[(i+1)%corners.length],q,polygon[(j+1)%polygon.length]))));
+  const crossesEdge=(polygon:Pt[])=>corners.some((p,i)=>
+    polygon.some((q,j)=>crosses(p,corners[(i+1)%corners.length],q,polygon[(j+1)%polygon.length])));
+  const within=(polygon:Pt[])=>corners.every(p=>contains(p,polygon))&&!crossesEdge(polygon);
+  if(!yardKinds.has(item.kind))return roomsOf(plan).some(({polygon})=>within(polygon));
+  return roomsOf(plan).some(room=>room.roomType==="balcony"&&within(room.polygon))||
+    yardAreas(plan).some(({polygon,holes})=>within(polygon)&&!holes.some(hole=>
+      corners.some(p=>contains(p,hole))||hole.some(p=>contains(p,corners))||crossesEdge(hole)));
 }
 
 function tightGaps(outline:Pt[], boundaries:{polygon:Pt[];interior:boolean}[],scale:number) {
@@ -49,9 +55,16 @@ function tightGaps(outline:Pt[], boundaries:{polygon:Pt[];interior:boolean}[],sc
 }
 
 export function furnitureFit(plan:PlanModel,item:Item,objects:Item[],scale:number) {
-  const outline=footprint(item,scale);
-  const overlaps=objects.filter(other=>other.id!==item.id&&intersects(outline,footprint(other,scale)));
+  const outline=groundFootprint(item,scale);
+  const bottom=itemBottom(item);
+  const overlaps=objects.filter(other=>{
+    const otherBottom=itemBottom(other);
+    return other.id!==item.id&&item.kind!=="rug"&&other.kind!=="rug"&&
+      bottom<otherBottom+other.height&&otherBottom<bottom+item.height&&
+      intersects(outline,groundFootprint(other,scale));
+  });
   const swing:Pt[][]=[], clearance:Pt[][]=[];
+  if(!obstructsMovement(item))return {overlaps,swing,clearance,narrow:[]};
   const nodes=nodeMap(plan);
   for(const door of plan.openings){
     if(door.kind!=="door"||door.status!=="confirmed"||!door.hostWallId||door.sillM>.02)continue;
@@ -83,8 +96,8 @@ export function furnitureFit(plan:PlanModel,item:Item,objects:Item[],scale:numbe
     if(intersects(outline,zone))clearance.push(zone);
   }
   const room=roomsOf(plan).find(({polygon})=>contains(item.position,polygon));
-  const neighbors=objects.filter(other=>other.id!==item.id&&!overlaps.includes(other))
-    .map(other=>({polygon:footprint(other,scale),interior:false}));
+  const neighbors=objects.filter(other=>other.id!==item.id&&!overlaps.includes(other)&&obstructsMovement(other))
+    .map(other=>({polygon:groundFootprint(other,scale),interior:false}));
   if(room)neighbors.push({polygon:room.polygon,interior:true});
   const narrow=tightGaps(outline,neighbors,scale);
   return {overlaps,swing,clearance,narrow};

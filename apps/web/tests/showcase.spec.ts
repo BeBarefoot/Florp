@@ -5,7 +5,7 @@ import {savedPose} from "../lib/plan/camera";
 
 async function openTools(page:Page){
   const button=page.getByRole("button",{name:/^(Open|Close) tour tools$/});
-  await expect(button).toBeVisible();
+  await expect(button).toBeVisible({timeout:15_000});
   if(await button.getAttribute("aria-expanded")==="false")await button.click();
 }
 
@@ -428,4 +428,65 @@ test("Furnish offers a session preview when scale or scene review prevents savin
   await expect(sofa).toBeEnabled();
   await expect(sheet.getByRole("button",{name:"Save furniture"})).toHaveCount(0);
   await expect(sheet.getByRole("option",{name:"Sofa 1"})).toHaveCount(0);
+});
+
+test("room catalog saves a resized TV and places a planter on the detected yard",async({page})=>{
+  test.setTimeout(75_000);
+  await page.setViewportSize({width:390,height:844});
+  const {PerspectiveCamera,Vector3}=await import("three");
+  const model={
+    ...samplePlan,id:"f",imageTransform:{...samplePlan.imageTransform,width:1400},
+    gardens:[{kind:"garden",points:[[.73,.08],[.97,.08],[.97,.92],[.73,.92]]}],
+  };
+  let config:Scene={...sampleScene,objects:[]};
+  let revision=1;
+  await page.route("**/blueprints/f/*",async route=>{
+    const endpoint=new URL(route.request().url()).pathname.split("/").pop();
+    if(endpoint==="scene"&&route.request().method()==="PUT"){
+      config=route.request().postDataJSON().config;
+      revision++;
+    }
+    return route.fulfill({json:endpoint==="plan"?{revision:1,model}:
+      endpoint==="scene"?{revision,planRevision:1,config}:endpoint==="renders"?[]:
+      {id:"f",filename:"Owner floor",project_id:"p"}});
+  });
+  await page.goto("/phone/showcase/f");
+  await openTools(page);
+  await page.getByRole("button",{name:"Furnish",exact:true}).click();
+  const sheet=page.getByRole("region",{name:"Furnish",exact:true});
+  async function tap(x:number,z:number,y=0){
+    const box=(await page.locator("canvas").boundingBox())!;
+    const aspect=box.width/box.height;
+    const target=new Vector3(7,.65,3.4);
+    const camera=new PerspectiveCamera(45,aspect,.005,2000);
+    camera.position.copy(target).addScaledVector(new Vector3(.82,1.1,1.22).normalize(),14*1.90/Math.min(1,aspect));
+    camera.lookAt(target);
+    camera.updateMatrixWorld();
+    const point=new Vector3(x,y,z).project(camera);
+    await page.mouse.click(box.x+(point.x+1)*box.width/2,box.y+(1-point.y)*box.height/2);
+  }
+  await sheet.getByRole("button",{name:"Kitchen",exact:true}).click();
+  await expect(sheet.getByRole("button",{name:/4-door fridge/})).toBeVisible();
+  await expect(sheet.getByRole("button",{name:/Dining set · 8 seats/})).toBeVisible();
+  await sheet.getByRole("button",{name:"Living room",exact:true}).click();
+  await sheet.getByRole("button",{name:/TV 55″/}).click();
+  await tap(3,3);
+  const size=sheet.getByLabel("Screen diagonal (inches)");
+  await expect(size).toHaveValue("55");
+  await size.fill("77");
+  await size.press("Enter");
+  await expect(size).toHaveValue("77");
+  await sheet.getByRole("button",{name:"Yard",exact:true}).click();
+  await sheet.getByRole("button",{name:/Planter/}).click();
+  await tap(3,3);
+  await expect(sheet.getByText(/whole object fits in a yard or balcony/)).toBeVisible();
+  await tap(12,3,-.01);
+  await sheet.getByRole("button",{name:"Save furniture"}).click();
+  await expect(sheet.getByText("Furniture saved")).toBeVisible();
+  const [tv,plant]=config.objects;
+  expect(tv.kind).toBe("tv");
+  expect(Math.hypot(tv.width,tv.height)/.0254).toBeCloseTo(77);
+  expect(tv.width/tv.height).toBeCloseTo(16/9);
+  expect(plant.kind).toBe("planter");
+  expect(plant.position.x).toBeCloseTo(1200,-1);
 });

@@ -34,11 +34,14 @@ export function FloorPicker({scale,onPick,onObject,placeOnFloor=false}:{scale:nu
         2*(event.clientX-bounds.left)/bounds.width-1,
         1-2*(event.clientY-bounds.top)/bounds.height,
       ),camera);
-      const hit=ray.intersectObjects(scene.children).find(({object})=>placeOnFloor?object.userData.walkFloor:!object.userData.glass);
+      const hit=ray.intersectObjects(scene.children).find(({object})=>placeOnFloor
+        ?object.userData.walkFloor||object.userData.furnishGround
+        :!object.userData.glass||!!(onObject&&object.userData.furnitureId));
       const id=hit?.object.userData.furnitureId;
       if(typeof id==="string"&&onObject){onObject(id);return;}
       const yaw=Math.atan2(ray.ray.direction.z,ray.ray.direction.x)*180/Math.PI;
-      onPick(hit?.object.userData.walkFloor?{x:hit.point.x/scale,y:hit.point.z/scale}:null,yaw);
+      onPick(hit&&(hit.object.userData.walkFloor||(placeOnFloor&&hit.object.userData.furnishGround))
+        ?{x:hit.point.x/scale,y:hit.point.z/scale}:null,yaw);
     }
     canvas.addEventListener("pointerdown",down);
     canvas.addEventListener("pointermove",move);

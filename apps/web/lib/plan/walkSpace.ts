@@ -1,7 +1,7 @@
 import { openingEnds } from "./derive";
 import { wallPieces } from "./mesh";
 import type { PlanModel, Pt } from "./model";
-import { contains, footprint, type Scene } from "./scene";
+import { contains, groundFootprint, obstructsMovement, type Scene } from "./scene";
 
 export const roomsOf = (m: PlanModel) => [...m.rooms, ...(m.roomZones || [])].slice(0, 990);
 
@@ -49,7 +49,7 @@ export function walkSpace(m: PlanModel, scale: number, scene: Scene, eye = 1.6,
   }
   function validCamera(p:Pt, walking=false){
     return (rooms.some(r=>contains(p,r.polygon)) || inDoorway(p)) && clearance(p,walking)>=.3 &&
-      !objects.some(o=>contains(p,footprint(o,scale)));
+      !objects.some(o=>obstructsMovement(o)&&contains(p,groundFootprint(o,scale)));
   }
   return { clearance, validCamera };
 }

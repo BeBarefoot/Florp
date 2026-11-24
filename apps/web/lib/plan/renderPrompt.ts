@@ -1,7 +1,8 @@
 import {savedPose} from "./camera";
 import {metersPerPixel, nodeMap, openingEnds, wallEnds} from "./derive";
 import type {PlanModel, Pt} from "./model";
-import {contains, floorFinishes, promptFor, type Scene, type View, type Capture} from "./scene";
+import {contains, floorFinishes, itemBottom, promptFor, type Scene, type View, type Capture} from "./scene";
+import {objectName,tvInches} from "./furnitureCatalog";
 import {roomsOf} from "./walkSpace";
 import {floorMaterialFor} from "./floorMaterials";
 
@@ -39,15 +40,20 @@ export function renderPrompt(plan:PlanModel, scene:Scene, view:View, frame:{widt
         sill:o.sillM,height:o.heightM,...(o.kind==="door"?{hinge:o.hinge,swing:o.swing,closed:scene.closedDoorIds?.includes(o.id)??false}:{})};
     }),
     stairs:plan.stairs?.map(s=>({id:s.id,risePerStep:s.riseM,treadsXZ:s.treads.map(poly=>poly.map(xz))})),
-    objects:scene.objects.map(({position,rotation,...o},i)=>({...o,
-      ...(capture?{visibleInFrame:capture.visibleRegions[1000+i]??null}:{}),centreXZ:xz(position),rotationDegreesFromXToZ:rotation})),
+    objects:scene.objects.map((object,i)=>{
+      const {position,rotation,...o}=object;
+      return {...o, name:objectName(o.kind), bottomY:itemBottom(object),
+        ...(o.kind==="tv"?{screenDiagonalInches:tvInches(o.width,o.height)}:{}),
+        ...(capture?{visibleInFrame:capture.visibleRegions[1000+i]??null}:{}),
+        centreXZ:xz(position),rotationDegreesFromXToZ:rotation};
+    }),
   };
   const framing=scene.objects.flatMap((object,i)=>{
     const region=capture?.visibleRegions[1000+i];
     if(!region)return [];
     const [left,top,right,bottom]=region.boundsXY;
     const percent=100*region.pixels/(frame.width*frame.height);
-    return [`Visible ${object.kind} occupies ${percent.toFixed(2)}% of the image, within pixels (${left}, ${top}) to (${right}, ${bottom}) from the upper left. Preserve that visible portion.`];
+    return [`Visible ${objectName(object.kind).toLowerCase()} occupies ${percent.toFixed(2)}% of the image, within pixels (${left}, ${top}) to (${right}, ${bottom}) from the upper left. Preserve that visible portion.`];
   });
   return [promptFor(view,facts,scene.style),
     `Camera eye [X,Y,Z] = [${pose.position.join(", ")}] m, looking along [${pose.direction.join(", ")}]. Frame ${frame.width} × ${frame.height} px.`,
