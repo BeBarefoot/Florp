@@ -73,6 +73,15 @@ export default function ShowcasePage(){
     return <Player key={id} plan={plan} scene={currentScene?data[1].config:emptyScene}
       approximate={approximate} renders={currentScene?renders:undefined} title={data[2].filename}
       edit={"/plan/"+id}
+      saveFinishes={!approximate&&(!data[1].revision||currentScene)?async finishes=>{
+        const saved=await request<Saved>("/blueprints/"+encodeURIComponent(id)+"/scene",{
+          method:"PUT",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({expectedRevision:data[1].revision,planRevision:plan.revision,
+            config:{...data[1].config,...finishes}}),
+        });
+        setRenders({});
+        setData(current=>current?.[2].id===id?[current[0],saved,current[2]]:current);
+      }:undefined}
       saveView={!approximate&&(!data[1].revision||currentScene)?async (view,initial)=>{
         const path="/blueprints/"+encodeURIComponent(id)+"/scene";
         const latest=await request<Saved>(path);

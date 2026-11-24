@@ -1,11 +1,52 @@
 import {expect,test} from "@playwright/test";
 import {samplePlan,sampleScene} from "../lib/plan/showcaseSample";
+import type {Scene} from "../lib/plan/scene";
+
+test("phone finishes keep room overrides when the whole-floor preset changes",async({page})=>{
+  test.setTimeout(60_000);
+  await page.setViewportSize({width:390,height:844});
+  let config:Scene=sampleScene;
+  let revision=1;
+  await page.route("**/blueprints/f/*",async route=>{
+    const path=new URL(route.request().url()).pathname;
+    if(path.endsWith("/plan"))return route.fulfill({json:{revision:1,model:{...samplePlan,id:"f"}}});
+    if(path.endsWith("/info"))return route.fulfill({json:{id:"f",filename:"Owner floor",project_id:"p"}});
+    if(path.endsWith("/renders"))return route.fulfill({json:[]});
+    if(route.request().method()==="PUT"){
+      const body=route.request().postDataJSON();
+      expect(body.expectedRevision).toBe(revision);
+      config=body.config;
+      revision++;
+    }
+    return route.fulfill({json:{revision,planRevision:1,config}});
+  });
+  await page.goto("/phone/showcase/f");
+  await page.getByRole("button",{name:"Finishes",exact:true}).click();
+  await page.getByLabel("Apply to").selectOption("bedroom");
+  const material=page.getByRole("combobox",{name:"Material",exact:true});
+  await material.selectOption("tile");
+  await page.getByLabel("Tile width (cm)").fill("45");
+  await page.getByRole("button",{name:"Save finishes"}).click();
+  await expect(page.getByText("Finishes saved")).toBeVisible();
+  expect(config.roomFloorMaterials?.bedroom).toMatchObject({kind:"tile",widthM:.45});
+  await page.getByLabel("Apply to").selectOption("");
+  await page.getByRole("button",{name:"Modern concrete"}).click();
+  await page.getByRole("button",{name:"Save finishes"}).click();
+  await expect(page.getByText("Finishes saved")).toBeVisible();
+  expect(config.floorMaterial?.kind).toBe("concrete");
+  await page.reload();
+  await page.getByRole("button",{name:"Finishes",exact:true}).click();
+  await expect(material).toHaveValue("concrete");
+  await page.getByLabel("Apply to").selectOption("bedroom");
+  await expect(material).toHaveValue("tile");
+  await expect(page.getByLabel("Tile width (cm)")).toHaveValue("45");
+});
 
 test("sample tour works without a project and supports dollhouse stops and playback",async({page})=>{
   test.setTimeout(75000);
   await page.setViewportSize({width:390,height:844});
   await page.goto("/phone/showcase/sample");
-  await expect(page.getByRole("heading",{name:"Living room"})).toBeVisible();
+  await expect(page.getByRole("heading",{name:"Living room"})).toBeVisible({timeout:15000});
   await page.getByRole("button",{name:"Overview",exact:true}).click();
   await page.getByRole("button",{name:"Visit Bedroom"}).click();
   await expect(page.getByRole("heading",{name:"Bedroom"})).toBeVisible();

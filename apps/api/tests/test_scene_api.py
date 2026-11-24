@@ -9,6 +9,23 @@ from app.config import settings
 from test_plan_api import client, plan, reference  # noqa: F401
 
 
+def test_floor_material_overrides_round_trip(client):
+    c, bid = client
+    path = f"/blueprints/{bid}"
+    assert c.put(path + "/plan", json={"expectedRevision": 0, "model": plan(scale=reference())}).status_code == 200
+    tile = {"kind": "tile", "color": "#c8bca7", "widthM": .45, "lengthM": .6}
+    config = {"floorFinish": "oak", "roomFloorMaterials": {"bathroom": tile}}
+    first = c.put(path + "/scene", json={"expectedRevision": 0, "planRevision": 1, "config": config})
+    assert first.status_code == 200, first.text
+    config = first.json()["config"]
+    config["floorMaterial"] = {"kind": "concrete", "color": "#a9a6a0", "widthM": 1, "lengthM": 1}
+    request = {"expectedRevision": 1, "planRevision": 1, "config": config}
+    assert c.put(path + "/scene", json=request).status_code == 200
+    assert c.get(path + "/scene").json()["config"]["roomFloorMaterials"] == {"bathroom": tile}
+    config["floorMaterial"]["widthM"] = 0
+    assert c.put(path + "/scene", json={**request, "expectedRevision": 2}).status_code == 422
+
+
 @pytest.mark.parametrize('provider', ['fal', 'comfy', 'local-comfy', 'masked-local'])
 def test_scene_render_is_revisioned_and_does_not_resubmit(client, monkeypatch, tmp_path, provider):
     masked = provider == 'masked-local'

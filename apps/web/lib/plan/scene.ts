@@ -13,7 +13,13 @@ export const floorFinishes = {
   limestone: {name:"Pale limestone",color:"#e4dac6",roughness:.74},
 };
 export type FloorFinish = keyof typeof floorFinishes;
-export type Scene = { floorFinish?: FloorFinish; views: View[]; objects: Item[]; style: string; closedDoorIds?: string[]; dismissedFixtureIds?: string[] };
+export type FloorMaterial = { kind: "wood" | "concrete" | "marble" | "tile"; color: string; widthM: number; lengthM: number };
+export type Scene = {
+  floorFinish?: FloorFinish;
+  floorMaterial?: FloorMaterial | null;
+  roomFloorMaterials?: Record<string, FloorMaterial>;
+  views: View[]; objects: Item[]; style: string; closedDoorIds?: string[]; dismissedFixtureIds?: string[];
+};
 export type Saved = { revision: number; planRevision: number | null; config: Scene };
 export type Frame = { width: number; height: number; configured: boolean; model: string; provider: string };
 export type Job = { id: string; viewId: string; name: string; prompt: string; model: string;

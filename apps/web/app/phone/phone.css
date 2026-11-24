@@ -102,3 +102,45 @@
 }
 
 .show-room-label { pointer-events: none; }
+
+.finish-sheet {
+  position:absolute;z-index:4;bottom:0;left:50%;transform:translateX(-50%);
+  width:min(100%,500px);max-height:54dvh;overflow:auto;overscroll-behavior:contain;
+  padding:12px max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
+  border:1px solid var(--line);border-radius:22px 22px 0 0;background:var(--surface);
+  box-shadow:0 -4px 24px #282d2922;
+}
+.finish-heading,.finish-fields,.finish-presets {display:flex;align-items:center;gap:8px}
+.finish-heading {justify-content:space-between;margin-bottom:8px}
+.finish-heading h2 {margin:0;font:normal 24px Georgia,serif}
+.finish-sheet fieldset,.finish-sheet form {display:grid;gap:8px;margin:0;padding:0;border:0;min-width:0}
+.finish-fields {align-items:end}
+.finish-fields label {display:grid;gap:3px;flex:1;min-width:0;font-size:13px}
+.finish-fields :is(select,input) {width:100%;min-height:44px;font-size:16px;border:1px solid var(--line);border-radius:8px;background:white;color:var(--ink);padding:6px}
+.finish-sheet button:not(.finish-save) {background:var(--paper);color:var(--pine);font-size:13px;padding:7px 9px}
+.finish-presets button {display:grid;justify-items:center;gap:4px;flex:1}
+.finish-presets span {width:22px;height:15px;border-radius:4px}
+.finish-save {flex:1}
+.finish-sheet p {margin:8px 0 0;font-size:13px}
+@media (orientation:landscape) and (max-height:520px) {
+  .finish-sheet {left:auto;right:0;transform:none;width:min(46%,450px);max-height:100dvh;border-radius:16px 0 0 0}
+}
+
+.tour-shell:has(.phone-plan-editor) .tour-mast {display:none}
+.tour-shell .phone-plan-editor {
+  grid-template:"top" auto "stage" minmax(0,1fr) "tools" auto / minmax(0,1fr);
+  --accent:var(--pine);--line:#d8d1c4;--ink:#282d29;background:var(--surface);
+}
+.phone-plan-header {grid-area:top;display:flex;align-items:center;justify-content:space-between;padding:max(8px,env(safe-area-inset-top)) 12px 8px}
+.phone-plan-header h1 {margin:0;font:normal 24px Georgia,serif}
+.phone-plan-header button {background:var(--pine);color:white}
+.phone-plan-editor .fe-stage {padding:0}
+.phone-plan-editor .phone-opening-target {display:inline;stroke-width:18px}
+.phone-plan-tools {grid-area:tools;padding:8px 12px max(6px,env(safe-area-inset-bottom));border-top:1px solid var(--line)}
+.phone-plan-tools p {margin:0 0 6px;font-size:13px}
+.phone-plan-actions,.phone-plan-footer {display:flex;align-items:center;gap:6px}
+.phone-plan-actions {overflow-x:auto;overscroll-behavior-x:contain}
+.phone-plan-actions button {flex:none;flex-direction:column;gap:3px;min-width:51px;padding:6px}
+.phone-plan-footer {flex-wrap:wrap;gap:0 10px;font-size:12px}
+.phone-plan-footer :is(button,a) {display:inline-flex;align-items:center;min-height:44px;padding:0;border:0;background:none;color:var(--pine);font-size:12px;text-decoration:underline}
+.phone-plan-footer span {margin-left:auto}

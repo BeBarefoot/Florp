@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
+import { BrickWall, DoorOpen, MousePointer2, PanelTop, Trash2, Undo2 } from "lucide-react";
 import { API, request, type Blueprint } from "../../lib/api";
 import type { Finding, PlanModel, PlanResponse, Pt } from "../../lib/plan/model";
 import { metersPerPixel, wallFootprint, withDerived } from "../../lib/plan/derive";
@@ -14,10 +15,11 @@ import ToolRail from "./ToolRail";
 import TopBar, { type Display } from "./TopBar";
 import MeasurePopover from "./MeasurePopover";
 import type { Focus, Selection, Tool, ViewMode } from "./types";
+import type { Saved } from "../../lib/plan/scene";
 
 const Plan3D = dynamic(() => import("./Plan3D"), { ssr: false });
 
-export default function PlanEditor({ id }: { id: string }) {
+export default function PlanEditor({ id, phone=false }: { id: string; phone?: boolean }) {
   const router = useRouter();
   const [showSite,setShowSite]=useState(true);
   const [info, setInfo] = useState<Blueprint | null>(null);
@@ -29,7 +31,7 @@ export default function PlanEditor({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [tool, setToolState] = useState<Tool>("select");
   const [selection, setSelection] = useState<Selection>(null);
-  const [view, setView] = useState<ViewMode>("clean");
+  const [view, setView] = useState<ViewMode>(phone?"overlay":"clean");
   const [display, setDisplay] = useState<Display>("2d");
   const [measure, setMeasure] = useState<Pt[]>([]);
   const [corners, setCorners] = useState<Pt[]>([]);
@@ -484,6 +486,50 @@ export default function PlanEditor({ id }: { id: string }) {
       }
     </PlanCanvas>
   );
+  async function navigateAfterSave(destination: string) {
+    if (saveDone.current) await saveDone.current;
+    const current = live.current;
+    if (!current || (JSON.stringify(current) !== saved.current && !await persist(current))) return;
+    router.push(destination);
+  }
+  const openTour=()=>navigateAfterSave("/phone/showcase/" + encodeURIComponent(id) + "?from=editor");
+  if(phone){
+    const selectedWall=selection?.type==="wall"&&m.walls.find(w=>w.id===selection.id);
+    const selectedOpening=selection?.type==="opening"?m.openings.find(o=>o.id===selection.id):undefined;
+    const selectedName=selectedWall?"Wall":selectedOpening?.kind==="door"?"Door":selectedOpening?.kind==="window"?"Window":null;
+    return <div className="fe phone-plan-editor" data-display="2d">
+      <div className="phone-plan-header">
+        <h1>Edit floor</h1>
+        <button disabled={busy} onClick={()=>void openTour()}>Done</button>
+      </div>
+      <main className="fe-stage">{canvas}</main>
+      <div className="phone-plan-tools">
+        <p role="status">{error||(tool==="select"?(selectedName?`${selectedName} selected`:"Tap a wall, door or window.") :
+          tool==="wall"?"Tap both ends of the wall.":"Tap both ends of the opening along a wall.")}</p>
+        {error&&dirty&&<button onClick={()=>live.current&&void persist(live.current)}>Retry save</button>}
+        <div className="phone-plan-actions" role="group" aria-label="Plan tools">
+          {([["select","Select",MousePointer2],["wall","Wall",BrickWall],["door","Door",DoorOpen],["window","Window",PanelTop]] as const)
+            .map(([value,label,Icon])=><button key={value} aria-pressed={tool===value}
+              onClick={()=>{setError("");setSelection(null);setTool(tool===value?"select":value);}}><Icon size={18}/>{label}</button>)}
+          <button disabled={!past.length} onClick={()=>{undo();setTool("select");setSelection(null);setError("");}}><Undo2 size={18}/>Undo</button>
+          {selectedOpening?.status==="proposed"&&<button onClick={()=>{
+            const next=decideOpening(m,selectedOpening.id,"confirm");
+            if(next)edit(next);
+          }}>Confirm {selectedName?.toLowerCase()}</button>}
+          {selectedName&&<button onClick={()=>{
+            if(selectedWall)edit(deleteWall(m,selectedWall.id));
+            if(selectedOpening)edit(deleteOpening(m,selectedOpening.id));
+            setSelection(null);setTool("select");setError("");
+          }}><Trash2 size={18}/>Remove {selectedName.toLowerCase()}</button>}
+        </div>
+        <div className="phone-plan-footer">
+          <button aria-pressed={view==="overlay"} onClick={()=>setView(view==="overlay"?"clean":"overlay")}>Original drawing</button>
+          <button onClick={()=>void navigateAfterSave("/plan/"+encodeURIComponent(id))}>Full editor</button>
+          <span>{dirty?"Unsaved changes":status}</span>
+        </div>
+      </div>
+    </div>;
+  }
   return (
     <div className="fe" data-display={display}>
       <TopBar
@@ -499,21 +545,19 @@ export default function PlanEditor({ id }: { id: string }) {
         setDisplay={setDisplay}
         scaled={!!mpp}
         walkthroughBusy={busy}
-        onWalkthrough={() => void (async () => {
-          if (saveDone.current) await saveDone.current;
-          const current = live.current;
-          if (!current || (JSON.stringify(current) !== saved.current && !await persist(current))) return;
-          router.push("/phone/showcase/" + encodeURIComponent(id) + "?from=editor");
-        })()}
+        onWalkthrough={() => void openTour()}
         exportBlocker={exportBlocker}
         exportPlanHref={`${API}/blueprints/${id}/plan/export`}
         export3D={() => void (async () => {
           const snapshot = await request<PlanResponse>(`/blueprints/${id}/plan`);
           if (!snapshot.model || snapshot.revision !== revision.current || dirty)
             throw Error("Save or reload the current plan before exporting.");
-          const review = await request<ReviewState>(`/blueprints/${id}/plan/review?revision=${snapshot.revision}`);
+          const [review, scene] = await Promise.all([
+            request<ReviewState>(`/blueprints/${id}/plan/review?revision=${snapshot.revision}`),
+            request<Saved>(`/blueprints/${id}/scene`),
+          ]);
           const { exportPlan3D } = await import("../../lib/exportPlan3D");
-          await exportPlan3D(snapshot.model, review);
+          await exportPlan3D(snapshot.model, review, scene.planRevision===snapshot.revision?scene.config:undefined);
         })().catch((e) => setError(String(e)))}
       />
       <ToolRail

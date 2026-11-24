@@ -5,10 +5,13 @@ import { metersPerPixel } from "./plan/derive";
 import { floorOutlines, wallPieces } from "./plan/mesh";
 import {yardShapes} from "./plan/yard";
 import { stairPieces } from "./plan/stairs";
+import { floorMaterialFor, floorTexture } from "./plan/floorMaterials";
+import { floorFinishes, type Scene } from "./plan/scene";
 
 /** Metric glTF (meters) with stable wall/room/opening IDs in node extras. */
-export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draft"}) {
-  if (!metersPerPixel(m)) throw Error("Set one measurement first");
+export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draft"}, config?: Scene) {
+  const scale = metersPerPixel(m);
+  if (!scale) throw Error("Set one measurement first");
   if (m.openings.some((o) => o.status === "proposed"))
     throw Error("Approve or reject every proposed door and window before exporting 3D.");
   const scene = new THREE.Scene();
@@ -44,16 +47,25 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
     yard.rotation.x=-Math.PI/2;
     scene.add(yard);
   }
-  for (const r of floorOutlines(m)) {
+  const textures: THREE.Texture[] = [];
+  const rooms = [...floorOutlines(m), ...(m.roomZones??[]).map(room=>({
+    id:room.id,label:room.label,points:room.polygon.map(p=>({x:p.x*scale,y:p.y*scale})),
+  }))];
+  for (const r of rooms) {
     const shape = new THREE.Shape();
     r.points.forEach((p, i) => (i ? shape.lineTo(p.x, -p.y) : shape.moveTo(p.x, -p.y)));
     shape.closePath();
+    const finish = config && floorMaterialFor(config,r.id);
+    const map = finish ? floorTexture(finish) : null;
+    if(map) textures.push(map);
+    const base = config && floorFinishes[config.floorFinish??"default"];
     const mesh = new THREE.Mesh(
       new THREE.ShapeGeometry(shape),
-      new THREE.MeshStandardMaterial({ color: "#e2e6e2", side: THREE.DoubleSide }),
+      new THREE.MeshStandardMaterial({color:finish?.color??base?.color??"#e2e6e2",
+        roughness:finish?(finish.kind==="marble"?.4:.75):base?.roughness, map, side:THREE.DoubleSide}),
     );
     mesh.name = r.id;
-    mesh.userData = { kind: "room", id: r.id, label: r.label };
+    mesh.userData = { kind:"room", id:r.id, label:r.label, ...(config?{floorFinish:finish??config.floorFinish??"default"}:{}) };
     mesh.rotation.x = -Math.PI / 2;
     scene.add(mesh);
   }
@@ -69,7 +81,7 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
     }
     scene.add(group);
   }
-  const data = await new GLTFExporter().parseAsync(scene, { binary: true });
+  const data = await new GLTFExporter().parseAsync(scene, { binary: true }).finally(()=>textures.forEach(texture=>texture.dispose()));
   const url = URL.createObjectURL(new Blob([data as ArrayBuffer], { type: "model/gltf-binary" }));
   const a = document.createElement("a");
   a.href = url;

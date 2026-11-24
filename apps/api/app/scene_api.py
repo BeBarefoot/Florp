@@ -55,8 +55,17 @@ class SceneObject(Data):
     mattress_depth: float | None = Field(default=None, gt=0.05, le=8)
 
 
+class FloorMaterial(Data):
+    kind: Literal["wood", "concrete", "marble", "tile"]
+    color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
+    width_m: float = Field(ge=0.05, le=5)
+    length_m: float = Field(ge=0.05, le=5)
+
+
 class Scene(Data):
     floor_finish: Literal["default", "oak", "slate", "limestone"] = "default"
+    floor_material: FloorMaterial | None = None
+    room_floor_materials: dict[str, FloorMaterial] = Field(default_factory=dict, max_length=990)
     views: list[View] = Field(default_factory=list, max_length=30)
     objects: list[SceneObject] = Field(default_factory=list, max_length=100)
     style: str = Field(default="", max_length=1200)

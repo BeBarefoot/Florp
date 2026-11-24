@@ -63,7 +63,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
   const nodeMap=useMemo(()=>new Map(m.nodes.map(n=>[n.id,n])),[m.nodes]);
   const w=m.imageTransform.width*scale, h=m.imageTransform.height*scale;
   const cameraTarget:[number,number,number]=[w/2,0,h/2];
-  const fingerprintFor=(v:View|undefined)=>JSON.stringify([m,v,scene.objects,scene.closedDoorIds,scene.floorFinish,frame.width,frame.height]);
+  const fingerprintFor=(v:View|undefined)=>JSON.stringify([m,v,scene.objects,scene.closedDoorIds,scene.floorFinish,scene.floorMaterial,scene.roomFloorMaterials,frame.width,frame.height]);
   const fingerprint=fingerprintFor(view);
   const shot=capture?.fingerprint===fingerprint?capture:null;
   const fixtureSuggestions=fixtureScan?.planRevision===m.revision&&!dirty?
@@ -239,7 +239,6 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
   const visibleIn=(capture:Capture|null,id:number)=>!!capture&&(capture.coverage[id]||0)>=Math.max(24,frame.width*frame.height*.00015);
   const visible=(id:number)=>visibleIn(shot,id);
   function factsFor(capture:Capture|null, camera=view){return [
-    ...(scene.floorFinish && scene.floorFinish!=="default" ? [`Floor finish: ${floorFinishes[scene.floorFinish].name}.`] : []),
     ...rooms.filter((r,i)=>visibleIn(capture,i+2)||(camera&&contains(camera.position,r.polygon))).flatMap(r=>r.roomType?
       [`Space type: ${r.roomType}.`]:[]),
     ...scene.objects.flatMap((o,i)=>visibleIn(capture,1000+i)?
@@ -308,7 +307,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
       maskIds:{1:"Structure",...Object.fromEntries(rooms.map((r,i)=>[i+2,r.roomType??"room"])),
         ...Object.fromEntries(scene.objects.map((o,i)=>[1000+i,o.id])),
         ...Object.fromEntries(pieces.map((p,i)=>[2000+i,p.id]))},
-      floorFinish:scene.floorFinish??"default",prompt,depth:shot.depth,mask:shot.mask,preview:shot.preview};
+      floorFinish:scene.floorMaterial??scene.floorFinish??"default",roomFloorMaterials:scene.roomFloorMaterials,prompt,depth:shot.depth,mask:shot.mask,preview:shot.preview};
     const url=URL.createObjectURL(new Blob([JSON.stringify(content)],{type:"application/json"}));
     const a=document.createElement("a");a.href=url;a.download="florp-render-inputs.json";a.click();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -346,8 +345,9 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
         <button disabled={!edited&&!dirty} onClick={()=>void save()}>Save scene</button>
         <button disabled={!undo.length} onClick={()=>{setScene(undo[undo.length-1]);setUndo(undo.slice(0,-1));}}>Undo scene edit</button>
       </div>
-      <label>Floor finish <select value={scene.floorFinish??"default"}
-        onChange={e=>change({...scene,floorFinish:e.target.value as FloorFinish})}>
+      <label>Floor finish <select value={scene.floorMaterial?"custom":scene.floorFinish??"default"}
+        onChange={e=>change({...scene,floorFinish:e.target.value as FloorFinish,floorMaterial:null})}>
+        {scene.floorMaterial&&<option value="custom" disabled>Custom walkthrough finish</option>}
         {Object.entries(floorFinishes).map(([key,finish])=><option key={key} value={key}>{finish.name}</option>)}
       </select></label>
       {message&&<p role="status">{message}</p>}
@@ -406,7 +406,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
           }} data-mode={view?cameraMode:"orbit"} style={{aspectRatio:`${frame.width}/${frame.height}`}}>
             <Canvas dpr={[1,2]} camera={{position:[w/2+w*.6,Math.max(7,h*.9),h/2+Math.max(8,h)],fov:55}}>
               <color attach="background" args={["#e9eff2"]}/>
-              <SceneMesh floorFinish={scene.floorFinish} m={m} objects={scene.objects} closedDoorIds={scene.closedDoorIds}/>
+              <SceneMesh floorStyle={scene} m={m} objects={scene.objects} closedDoorIds={scene.closedDoorIds}/>
               <CaptureBridge bind={bind}/>
               {view&&cameraMode==="walk"?<WalkCamera view={view} scale={scale} frame={frame} canMove={p=>validCamera(p,true)} pose={walkPose}/>:
                 view&&cameraMode==="preview"?<EyeCamera view={view} scale={scale} frame={frame}/>:

@@ -5,7 +5,7 @@ import {Canvas,useThree} from "@react-three/fiber";
 import {Html,OrbitControls} from "@react-three/drei";
 import {Vector3} from "three";
 import Link from "next/link";
-import {Maximize2,Minimize2,Box,MapPin,Pause,Play,SkipBack,SkipForward,Image as ImageIcon,FileDown,ImageDown,Bookmark,MapPinPlus,X,PencilRuler} from "lucide-react";
+import {Maximize2,Minimize2,Box,MapPin,Pause,Play,SkipBack,SkipForward,Image as ImageIcon,FileDown,ImageDown,Bookmark,MapPinPlus,X,PencilRuler,Layers} from "lucide-react";
 import {downloadPrompt,renderPrompt} from "../../lib/plan/renderPrompt";
 import {SceneMesh} from "./SceneMesh";
 import {metersPerPixel} from "../../lib/plan/derive";
@@ -13,17 +13,19 @@ import {WalkCamera} from "./WalkCamera";
 import {findWalkStart,roomsOf,walkSpace} from "../../lib/plan/walkSpace";
 import {FloorPicker} from "./FloorPicker";
 import {newUuid} from "../../lib/uuid";
+import FinishSheet from "./FinishSheet";
+import { floorMaterialFor, materialDefaults } from "../../lib/plan/floorMaterials";
+import { contains } from "../../lib/plan/scene";
 import type {PlanModel,Pt} from "../../lib/plan/model";
-import type {Frame,Scene,View} from "../../lib/plan/scene";
+import type {FloorMaterial,Frame,Scene,View} from "../../lib/plan/scene";
+
+type FloorStyles = Pick<Scene,"floorMaterial"|"roomFloorMaterials">;
 
 function SampleFurniture({interior}:{interior:boolean}){
   function block(x:number,y:number,z:number,w:number,h:number,d:number,color:string){
     return <mesh castShadow receiveShadow position={[x,y,z]}><boxGeometry args={[w,h,d]}/><meshStandardMaterial color={color}/></mesh>;
   }
   return <>
-    {Array.from({length:27},(_,i)=><group key={"board"+i}>
-      {block(5,.002,i*.25+.1,9.9,.002,.006,"#aa865f")}
-    </group>)}
     {[3.31,4.64,5.94].map(x=><group key={x}>{block(x,1.58,.008,.035,1.65,.08,"#756955")}</group>)}
     {block(4.625,.75,.01,2.71,.07,.17,"#99816a")}
     {block(4.625,2.4,.01,2.71,.06,.08,"#756955")}
@@ -99,7 +101,7 @@ function ShowcaseWalk({plan,scene,view,sample,pose,onFrame,keyboard}:{
 
 }
 
-export default function Showcase({plan,scene,title,edit,sample=false,approximate=false,renders={},saveView}:{plan:PlanModel;scene:Scene;title:string;edit?:string;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View,initial?:View)=>Promise<View>}){
+export default function Showcase({plan,scene,title,edit,sample=false,approximate=false,renders={},saveView,saveFinishes}:{plan:PlanModel;scene:Scene;title:string;edit?:string;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View,initial?:View)=>Promise<View>;saveFinishes?:(finishes:FloorStyles)=>Promise<void>}){
   const [localViews,setLocalViews]=useState<View[]>([]);
   const [freeView,setFreeView]=useState<View|null>(null);
   const [adding,setAdding]=useState(false);
@@ -107,7 +109,34 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   const savingRef=useRef(false);
   const [selectedId,setSelectedId]=useState<string|null>(null);
   const tags = useMemo(() => roomTags(plan), [plan]);
-  const hasFloor=roomsOf(plan).length>0;
+  const rooms=useMemo(()=>roomsOf(plan),[plan]);
+  const hasFloor=rooms.length>0;
+  const [finishesOpen,setFinishesOpen]=useState(false);
+  const [pickingRoom,setPickingRoom]=useState(false);
+  const [finishScope,setFinishScope]=useState("");
+  const [finishDraft,setFinishDraft]=useState<FloorStyles|null>(null);
+  const [sessionFinishes,setSessionFinishes]=useState<FloorStyles|null>(null);
+  const [finishNotice,setFinishNotice]=useState("");
+  const styledScene={...scene,...sessionFinishes,...finishDraft};
+  const material=floorMaterialFor(styledScene,finishScope)??materialDefaults.wood;
+  function changeFinish(next:FloorMaterial){
+    setFinishDraft(finishScope ?
+      {floorMaterial:styledScene.floorMaterial,roomFloorMaterials:{...styledScene.roomFloorMaterials,[finishScope]:next}} :
+      {floorMaterial:next,roomFloorMaterials:styledScene.roomFloorMaterials});
+    setFinishNotice("");
+  }
+  async function applyFinishes(){
+    if(!finishDraft||savingRef.current)return;
+    savingRef.current=true;
+    setSaving(true);
+    try{
+      if(saveFinishes)await saveFinishes(finishDraft);
+      else setSessionFinishes(finishDraft);
+      setFinishDraft(null);
+      setFinishNotice(saveFinishes?"Finishes saved":"Finishes applied for this session");
+    }catch(error){setFinishNotice(String(error));}
+    finally{savingRef.current=false;setSaving(false);}
+  }
   const views=useMemo(()=>{
     if(scene.views.length||localViews.length)return [...scene.views,...localViews];
     const start=findWalkStart(plan,walkSpace(plan,metersPerPixel(plan)!,scene).validCamera);
@@ -169,45 +198,69 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   },[scene.views.length,localViews.length,views,saveView]);
   const land=useCallback((point:Pt|null,yaw:number)=>{
     if(savingRef.current)return;
+    if(pickingRoom){
+      const room=point&&[...rooms].reverse().find(r=>contains(point,r.polygon));
+      if(room){
+        setFinishScope(room.id);
+        setPickingRoom(false);
+        setFinishesOpen(true);
+        setNotice("");
+      }
+      return;
+    }
     if(!point||!space.validCamera(point,true)||(sample&&!clearSampleFloor(point,scale))){
       setNotice("Choose an open spot on the floor.");
       return;
     }
     setPlaying(false);setRendered(false);setNotice("");setSelectedId("overview");
-    const start=findWalkStart(plan,walkSpace(plan,metersPerPixel(plan)!,scene).validCamera);
     const entry:View={id:"free-walk",name:"Walkthrough",position:point,yaw,pitch:-5,eyeHeight:1.6,horizontalFov:90};
     if(adding)void addView(entry);
     else setFreeView(entry);
-  },[adding,addView,space,sample,scale]);
+  },[adding,addView,space,sample,scale,pickingRoom,rooms]);
   return <main className="showcase-player" data-immersive={immersive} aria-label="3D showcase">
     <div className="show-stage"><Canvas shadows frameloop="demand" dpr={[1,1.6]} camera={{near:.005,far:2000}} fallback={<p>Enable WebGL to view this tour.</p>}>
       <color attach="background" args={[sample&&view?"#cfdfdf":"#d8d9cb"]}/>
-      <SceneMesh m={plan} objects={scene.objects} closedDoorIds={scene.closedDoorIds} floorFinish={scene.floorFinish} presentation cutaway={!view}/>
+      <SceneMesh m={plan} objects={scene.objects} closedDoorIds={scene.closedDoorIds} floorStyle={styledScene} presentation cutaway={!view}/>
       {sample&&<SampleFurniture interior={!!view}/>}
       {view?<ShowcaseWalk key={view.id} plan={plan} scene={scene} view={view} sample={sample} pose={pose} onFrame={setViewport} keyboard={!rendered}/>:<><OverviewCamera plan={plan}/><FloorPicker scale={scale} onPick={land}/></>}
       {!view&&tags.map(tag=><Html key={tag.key} center wrapperClass="show-room-label" style={{pointerEvents:"none"}}
         position={[tag.position.x*scale,.18,tag.position.y*scale]} zIndexRange={[1,0]}>
         <span className="show-room-tag">{tag.text}</span>
       </Html>)}
-      {!view&&pinGroups.map(({position,indices})=><Html key={views[indices[0]].id} center position={[position.x*scale,2,position.y*scale]} zIndexRange={[2,1]}>
+      {!view&&!pickingRoom&&pinGroups.map(({position,indices})=><Html key={views[indices[0]].id} center position={[position.x*scale,2,position.y*scale]} zIndexRange={[2,1]}>
         <div className="show-pin-group">{indices.map(i=><button key={views[i].id} className="show-pin" aria-label={"Visit "+views[i].name} onClick={()=>select(i)}>{i+1}</button>)}</div>
       </Html>)}
     </Canvas>
     </div>
     {view&&rendered&&renders[view.id]&&<div className="show-render"><img src={renders[view.id]} alt={"Saved design render for "+view.name}/></div>}
+    {finishesOpen?<FinishSheet rooms={rooms} scope={finishScope} selectScope={setFinishScope} material={material}
+      change={changeFinish} saving={saving} dirty={!!finishDraft} notice={finishNotice} canPersist={!!saveFinishes}
+      onReset={finishScope&&styledScene.roomFloorMaterials?.[finishScope]?()=>{
+        const overrides={...styledScene.roomFloorMaterials};
+        delete overrides[finishScope];
+        setFinishDraft({floorMaterial:styledScene.floorMaterial,roomFloorMaterials:overrides});
+        setFinishNotice("");
+      }:undefined}
+      onPick={()=>{select(-1);setPickingRoom(true);setFinishesOpen(false);}}
+      onClose={()=>{setFinishesOpen(false);setFinishDraft(null);setFinishNotice("");}}
+      onSave={()=>void applyFinishes()}/>:
     <section className="show-panel" aria-label="Tour controls">
       <div className="show-heading" hidden={immersive}>
         <small>{sample?"Sample tour · ":""}{title}{approximate?" · Approximate scale":""}</small>
         <h1>{view?.name??"Dollhouse view"}</h1>
-        <p>{adding?"Tap an open spot to add a view.":rendered?"Saved design render":view?"Drag to walk and turn. Pinch or scroll to zoom.":"Tap the floor to walk there. Drag to orbit."}</p>
+        <p>{pickingRoom?"Tap a room’s floor to choose it.":adding?"Tap an open spot to add a view.":rendered?"Saved design render":view?"Drag to walk and turn. Pinch or scroll to zoom.":"Tap the floor to walk there. Drag to orbit."}</p>
       </div>
       <div className="show-list" role="group" aria-label="Tour actions">
+        {pickingRoom?<button onClick={()=>{setPickingRoom(false);setFinishesOpen(true);}}><X/>Cancel room selection</button>:<>
         <button aria-label={immersive?"Show tour controls":"Hide tour controls"} aria-pressed={immersive}
           onClick={()=>setImmersive(!immersive)}>
           {immersive?<Minimize2/>:<Maximize2/>}<span>{immersive?"Show controls":"Expand view"}</span>
         </button>
         {!immersive&&<>
           <button aria-pressed={!view} onClick={()=>select(-1)}><Box/>Overview</button>
+          {hasFloor&&<button disabled={saving} onClick={()=>{
+            setPlaying(false);setRendered(false);setAdding(false);setFinishesOpen(true);
+          }}><Layers/>Finishes</button>}
           {views.map((v,i)=><button key={v.id} aria-pressed={!freeView&&stop===i} onClick={()=>select(i)}><MapPin/>{v.name}</button>)}
           {view&&renders[view.id]&&<button aria-pressed={rendered} onClick={()=>{setPlaying(false);setRendered(!rendered);}}>
             {rendered?<Box/>:<ImageIcon/>}{rendered?"Return to 3D":"Show saved design"}
@@ -226,11 +279,11 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
             setPlaying(false);
             if(pose.current?.id===view.id)void addView(pose.current);
           }}><Bookmark/>Save this view</button>}
-          {edit&&<Link href={edit}><PencilRuler/>Edit floor</Link>}
+          {edit&&<Link href={"/phone/edit/"+encodeURIComponent(plan.id)}><PencilRuler/>Edit floor</Link>}
           {view&&!rendered&&viewport?.viewId===view.id&&<>
             <button onClick={()=>{
               setPlaying(false);
-              if(pose.current?.id===view.id)downloadPrompt(renderPrompt(plan,scene,pose.current,viewport,[],approximate));
+              if(pose.current?.id===view.id)downloadPrompt(renderPrompt(plan,styledScene,pose.current,viewport,[],approximate));
             }}><FileDown/>Download view prompt</button>
             <button onClick={()=>{
               setPlaying(false);
@@ -240,8 +293,9 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
           </>}
           {!hasFloor&&edit&&<Link href={edit+"?setup=floor"}><PencilRuler/>Mark a walkable floor in the editor</Link>}
         </>}
+        </>}
       </div>
       {!immersive&&(!hasFloor||notice)&&<p role="status">{notice||"No walkable floor was found."}</p>}
-    </section>
+    </section>}
   </main>;
 }

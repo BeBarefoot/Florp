@@ -3,6 +3,7 @@ import {metersPerPixel, nodeMap, openingEnds, wallEnds} from "./derive";
 import type {PlanModel, Pt} from "./model";
 import {contains, floorFinishes, promptFor, type Scene, type View, type Capture} from "./scene";
 import {roomsOf} from "./walkSpace";
+import {floorMaterialFor} from "./floorMaterials";
 
 export function renderPrompt(plan:PlanModel, scene:Scene, view:View, frame:{width:number;height:number}, facts:string[], approximate=false, capture?:Capture|null) {
   const scale=metersPerPixel(plan);
@@ -22,8 +23,9 @@ export function renderPrompt(plan:PlanModel, scene:Scene, view:View, frame:{widt
       horizontalFovDegrees:view.horizontalFov,verticalFovDegrees:pose.verticalFovDeg,
       framePixels:[frame.width,frame.height],clipMetres:[.03,80],
       insideRooms:rooms.filter(r=>contains(view.position,r.polygon)).map(r=>r.id)},
-    floorFinish:floorFinishes[scene.floorFinish??"default"].name,
+    floorFinish:scene.floorMaterial??floorFinishes[scene.floorFinish??"default"].name,
     rooms:rooms.map(r=>({id:r.id,label:r.label,type:r.roomType,perimeterXZ:r.polygon.map(xz),
+      floorFinish:floorMaterialFor(scene,r.id)??floorFinishes[scene.floorFinish??"default"].name,
       successiveEdgeLengths:r.polygon.map((p,i)=>length(p,r.polygon[(i+1)%r.polygon.length])),
       ceilingHeight:r.ceilingHeightM??2.8,defaultCeiling:r.ceilingHeightM==null})),
     walls:plan.walls.map(w=>{
@@ -49,6 +51,7 @@ export function renderPrompt(plan:PlanModel, scene:Scene, view:View, frame:{widt
   return [promptFor(view,facts,scene.style),
     `Camera eye [X,Y,Z] = [${pose.position.join(", ")}] m, looking along [${pose.direction.join(", ")}]. Frame ${frame.width} × ${frame.height} px.`,
     ...framing,
+    "Use each room’s specified floor material, colour and pattern dimensions on its visible floor.",
     "Match the supplied frame edge for edge. Preserve occlusion, silhouettes, perspective and cropping. Keep off-camera geometry outside the frame.",
     JSON.stringify(geometry)].join("\n");
 }

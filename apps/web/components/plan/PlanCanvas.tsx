@@ -523,6 +523,8 @@ function OpeningSymbol({ m, o, px, selected, onDown }: { m: PlanModel; o: Openin
   const stroke = selected ? COLORS.selected : proposed ? "#d9480f" : o.kind === "window" ? COLORS.window : COLORS.wall;
   return (
     <g data-kind={o.kind} data-status={o.status} data-id={o.id} onPointerDown={onDown} className="fe-opening">
+      <line className="phone-opening-target" x1={p.x} y1={p.y} x2={q.x} y2={q.y}
+        stroke="transparent" vectorEffect="non-scaling-stroke" display="none"/>
       {host && <line x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke="white" strokeWidth={t + 2 * px} />}
       {o.kind === "window" ? (
         <>

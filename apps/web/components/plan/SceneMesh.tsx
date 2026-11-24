@@ -9,7 +9,8 @@ import { roomsOf } from "../../lib/plan/walkSpace";
 import {yardShapes} from "../../lib/plan/yard";
 import { stairPieces } from "../../lib/plan/stairs";
 import { savedPose } from "../../lib/plan/camera";
-import { floorFinishes, type FloorFinish, blocks, type Capture, type Frame, type Item, type View } from "../../lib/plan/scene";
+import { floorFinishes, blocks, type Capture, type Frame, type Item, type Scene, type View } from "../../lib/plan/scene";
+import { floorMaterialFor, floorTexture } from "../../lib/plan/floorMaterials";
 
 export function makeCamera(view: View, scale: number, frame: Frame) {
   const pose = savedPose(view, scale, frame.width/frame.height);
@@ -34,34 +35,11 @@ export function EyeCamera({view, scale, frame}: {view: View; scale: number; fram
 
 
 
-function oakTexture() {
-  const canvas=document.createElement("canvas");
-  canvas.width=canvas.height=256;
-  const context=canvas.getContext("2d")!;
-  const image=context.createImageData(256,256);
-  for(let y=0;y<256;y++){
-    const plank=Math.floor(y/16), joint=(plank*73)%256;
-    for(let x=0;x<256;x++){
-      const grain=Math.sin(y*2.1+Math.sin(x*.072+plank)*1.3)*7+Math.sin(y*.71+x*.04)*4;
-      const seam=y%16===0||x===joint;
-      const tone=seam?130:216+grain+(plank*19%29)-14+(x>joint?0:7);
-      const i=(y*256+x)*4;
-      image.data.set([tone,tone,tone,255],i);
-    }
-  }
-  context.putImageData(image,0,0);
-  const texture=new T.CanvasTexture(canvas);
-  texture.wrapS=texture.wrapT=T.RepeatWrapping;
-  texture.repeat.set(.28,.55);
-  texture.colorSpace=T.SRGBColorSpace;
-  texture.anisotropy=4;
-  return texture;
-}
+type FloorStyle = Pick<Scene,"floorFinish"|"floorMaterial"|"roomFloorMaterials">;
 
-export function SceneMesh({m, objects, closedDoorIds, floorFinish="default", presentation=false, cutaway=false}: {m: PlanModel; objects: Item[]; closedDoorIds?: string[]; floorFinish?:FloorFinish; presentation?:boolean; cutaway?:boolean}) {
+export function SceneMesh({m, objects, closedDoorIds, floorStyle={}, presentation=false, cutaway=false}: {m: PlanModel; objects: Item[]; closedDoorIds?: string[]; floorStyle?:FloorStyle; presentation?:boolean; cutaway?:boolean}) {
   const scale = metersPerPixel(m)!;
-  const floorMap=useMemo(()=>presentation&&floorFinish==="oak"?oakTexture():null,[presentation,floorFinish]);
-  useEffect(()=>()=>floorMap?.dispose(),[floorMap]);
+  const {floorFinish="default",floorMaterial,roomFloorMaterials}=floorStyle;
   const width=m.imageTransform.width*scale, depth=m.imageTransform.height*scale;
   const sunTarget=useMemo(()=>{const target=new T.Object3D();target.position.set(width/2,0,depth/2);return target;},[width,depth]);
   const shadowSize=Math.max(4,width,depth)*.8;
@@ -72,6 +50,19 @@ export function SceneMesh({m, objects, closedDoorIds, floorFinish="default", pre
     const shape = new T.Shape(r.polygon.map(p=>new T.Vector2(p.x*scale,-p.y*scale)));
     return {room:r, shape};
   }),[m,scale]);
+  const floors = useMemo(()=>{
+    const textures = new Map<string,T.Texture>();
+    const finishes = rooms.map(({room})=>{
+      const material = floorMaterialFor({floorFinish,floorMaterial,roomFloorMaterials},room.id);
+      if (!material) return {...floorFinishes[floorFinish], map:null};
+      const {kind,widthM,lengthM,color}=material;
+      const key = JSON.stringify([kind,widthM,lengthM]);
+      if (!textures.has(key)) textures.set(key,floorTexture(material));
+      return {color, roughness:kind==="marble"?.4:.75, map:textures.get(key)};
+    });
+    return {textures,finishes};
+  },[rooms,floorFinish,floorMaterial,roomFloorMaterials]);
+  useEffect(()=>()=>floors.textures.forEach(texture=>texture.dispose()),[floors]);
   return <>
     {presentation?<><hemisphereLight color="#fff3df" groundColor="#9b9b8f" intensity={1.45}/>
       <primitive object={sunTarget}/>
@@ -85,7 +76,7 @@ export function SceneMesh({m, objects, closedDoorIds, floorFinish="default", pre
     </mesh>)}
     {rooms.map(({room,shape}, i)=><group key={room.id}>
       <mesh receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,i*0.00002,0]} userData={{maskId:i+2,walkFloor:true}}>
-        <shapeGeometry args={[shape]}/><meshStandardMaterial map={floorMap} color={floorFinishes[floorFinish].color} roughness={floorFinishes[floorFinish].roughness} side={T.DoubleSide}/>
+        <shapeGeometry args={[shape]}/><meshStandardMaterial {...floors.finishes[i]} side={T.DoubleSide}/>
       </mesh>
       {!cutaway&&<mesh receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,room.ceilingHeightM ?? 2.8,0]} userData={{maskId:1}}>
         <shapeGeometry args={[shape]}/><meshStandardMaterial color="#f1efea" side={T.BackSide}/>

@@ -59,7 +59,7 @@ function fixture(extra: Partial<PlanModel> = {}): PlanModel {
   return withDerived(m);
 }
 
-async function setup(page: Page, opts: { empty?: boolean; model?: PlanModel } = {}) {
+async function setup(page: Page, opts: { empty?: boolean; model?: PlanModel; phone?:boolean } = {}) {
   let current: PlanModel | null = opts.empty ? null : opts.model || fixture();
   let revision = current ? 1 : 0;
   const puts: PlanModel[] = [];
@@ -89,8 +89,9 @@ async function setup(page: Page, opts: { empty?: boolean; model?: PlanModel } = 
     }
     return r.fulfill({ json: { revision, model: current } });
   });
-  await page.goto("/plan/p");
-  await expect(page.getByText("My house", { exact: true })).toBeVisible();
+  await page.goto(opts.phone?"/phone/edit/p":"/plan/p");
+  if(opts.phone)await expect(page.getByRole("heading",{name:"Edit floor"})).toBeVisible();
+  else await expect(page.getByText("My house", { exact: true })).toBeVisible();
   return { puts, extractions };
 }
 
@@ -107,6 +108,35 @@ async function clickAt(page: Page, x: number, y: number) {
   const p = await screen(page, x, y);
   await page.mouse.click(p.x, p.y);
 }
+
+test("phone editor adds and removes openings and walls with undo",async({page})=>{
+  test.setTimeout(60_000);
+  await page.setViewportSize({width:390,height:844});
+  const {puts}=await setup(page,{phone:true});
+  await page.getByRole("button",{name:"Window",exact:true}).click();
+  await clickAt(page,630,100);
+  await clickAt(page,750,100);
+  await expect(page.locator(".fe-opening[data-kind=window]")).toHaveCount(2);
+  await clickAt(page,690,100);
+  await page.getByRole("button",{name:"Remove window"}).click();
+  await expect(page.locator(".fe-opening[data-kind=window]")).toHaveCount(1);
+  await page.getByRole("button",{name:"Door",exact:true}).click();
+  await clickAt(page,500,260);
+  await clickAt(page,500,370);
+  await expect(page.locator(".fe-opening[data-kind=door]")).toHaveCount(2);
+  await clickAt(page,500,320);
+  await page.getByRole("button",{name:"Remove door"}).click();
+  await page.getByRole("button",{name:"Wall",exact:true}).click();
+  await clickAt(page,200,300);
+  await clickAt(page,380,350);
+  await expect(page.getByRole("button",{name:"Remove wall"})).toBeVisible();
+  await page.getByRole("button",{name:"Remove wall"}).click();
+  await page.getByRole("button",{name:"Undo",exact:true}).click();
+  await page.getByRole("button",{name:"Done",exact:true}).click();
+  await expect(page).toHaveURL(/\/phone\/showcase\/p/);
+  expect(puts.at(-1)?.walls).toHaveLength(8);
+  expect(puts.at(-1)?.openings).toHaveLength(2);
+});
 
 test("upload: extraction runs automatically and shows editable walls and openings", async ({ page }) => {
   await setup(page, { empty: true });
