@@ -10,7 +10,7 @@ import {downloadPrompt,renderPrompt} from "../../lib/plan/renderPrompt";
 import {SceneMesh} from "./SceneMesh";
 import {metersPerPixel} from "../../lib/plan/derive";
 import {WalkCamera} from "./WalkCamera";
-import {findWalkStart,roomsOf,walkSpace} from "../../lib/plan/walkSpace";
+import {findRoomView,findWalkStart,roomsOf,walkSpace} from "../../lib/plan/walkSpace";
 import {FloorPicker} from "./FloorPicker";
 import {newUuid} from "../../lib/uuid";
 import FinishSheet from "./FinishSheet";
@@ -20,6 +20,7 @@ import type {PlanModel,Pt} from "../../lib/plan/model";
 import type {FloorMaterial,Frame,Scene,View} from "../../lib/plan/scene";
 
 type FloorStyles = Pick<Scene,"floorMaterial"|"roomFloorMaterials">;
+const wideView = {pitch:-5, horizontalFov:110, eyeHeight:1.6};
 
 function SampleFurniture({interior}:{interior:boolean}){
   function block(x:number,y:number,z:number,w:number,h:number,d:number,color:string){
@@ -137,17 +138,29 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     }catch(error){setFinishNotice(String(error));}
     finally{savingRef.current=false;setSaving(false);}
   }
+  const scale=metersPerPixel(plan)!;
+  const space=useMemo(()=>walkSpace(plan,scale,scene),[plan,scale,scene]);
+  const canFrame=useCallback((point:Pt,walking:boolean)=>
+    space.validCamera(point,walking)&&(!sample||clearSampleFloor(point,scale)),[space,sample,scale]);
+  const cornerNear=useCallback((point:Pt)=>{
+    const room=[...rooms].reverse().find(room=>contains(point,room.polygon));
+    return room?findRoomView(room.polygon,scale,canFrame,point):undefined;
+  },[rooms,scale,canFrame]);
   const views=useMemo(()=>{
     if(scene.views.length||localViews.length)return [...scene.views,...localViews];
-    const start=findWalkStart(plan,walkSpace(plan,metersPerPixel(plan)!,scene).validCamera);
-    const entry:View={id:"walk-start",name:"Walkthrough",position:start??{x:0,y:0},yaw:0,pitch:-5,horizontalFov:90,eyeHeight:1.6};
-    return start?[entry]:[];
-  },[plan,scene,localViews]);
+    const start=findWalkStart(plan,scale,canFrame);
+    return start?[{id:"walk-start",name:"Walkthrough",...wideView,...start}]:[];
+  },[plan,scene.views,localViews,scale,canFrame]);
   const [playing,setPlaying]=useState(false),[notice,setNotice]=useState("");
   const [rendered,setRendered]=useState(false),[immersive,setImmersive]=useState(false);
-  const scale=metersPerPixel(plan)!;
   const stop=selectedId==="overview"?-1:selectedId===null?(views.length?0:-1):views.findIndex(v=>v.id===selectedId);
-  const view=freeView??views[stop];
+  const openingView=useMemo(()=>{
+    const first=views[0];
+    if(!first||first.id==="walk-start")return first;
+    const corner=cornerNear(first.position);
+    return {...first,...wideView,...corner,id:"tour-start-corner"};
+  },[views,cornerNear]);
+  const view=freeView??(selectedId===null?openingView:views[stop]);
   const pinGroups=useMemo(()=>{
     const groups:{position:Pt;indices:number[]}[]=[];
     views.forEach((v,i)=>{
@@ -159,7 +172,6 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   },[views,scale]);
   const latestViews=useRef(views);
   useEffect(()=>{latestViews.current=views;},[views]);
-  const space=useMemo(()=>walkSpace(plan,scale,scene),[plan,scale,scene]);
   const pose=useRef<View|null>(null);
   const [viewport,setViewport]=useState<WalkFrame|null>(null);
   useEffect(()=>{
@@ -208,15 +220,25 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
       }
       return;
     }
-    if(!point||!space.validCamera(point,true)||(sample&&!clearSampleFloor(point,scale))){
+    const corner=adding&&point?cornerNear(point):undefined;
+    if(!point||(!corner&&!canFrame(point,true))){
       setNotice("Choose an open spot on the floor.");
       return;
     }
     setPlaying(false);setRendered(false);setNotice("");setSelectedId("overview");
-    const entry:View={id:"free-walk",name:"Walkthrough",position:point,yaw,pitch:-5,eyeHeight:1.6,horizontalFov:90};
+    const entry:View={id:"free-walk",name:"Walkthrough",...wideView,...(corner??{position:point,yaw})};
     if(adding)void addView(entry);
     else setFreeView(entry);
-  },[adding,addView,space,sample,scale,pickingRoom,rooms]);
+  },[adding,addView,canFrame,cornerNear,pickingRoom,rooms]);
+  function openCornerView(){
+    if(!view)return;
+    const point=pose.current?.id===view.id?pose.current.position:view.position;
+    const corner=cornerNear(point);
+    setPlaying(false);
+    if(!corner){setNotice("No clear corner in this room.");return;}
+    setNotice("");
+    setFreeView({id:"free-walk",name:"Walkthrough",...wideView,...corner});
+  }
   return <main className="showcase-player" data-immersive={immersive} aria-label="3D showcase">
     <div className="show-stage"><Canvas shadows frameloop="demand" dpr={[1,1.6]} camera={{near:.005,far:2000}} fallback={<p>Enable WebGL to view this tour.</p>}>
       <color attach="background" args={[sample&&view?"#cfdfdf":"#d8d9cb"]}/>
@@ -248,7 +270,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
       <div className="show-heading" hidden={immersive}>
         <small>{sample?"Sample tour · ":""}{title}{approximate?" · Approximate scale":""}</small>
         <h1>{view?.name??"Dollhouse view"}</h1>
-        <p>{pickingRoom?"Tap a room’s floor to choose it.":adding?"Tap an open spot to add a view.":rendered?"Saved design render":view?"Drag to walk and turn. Pinch or scroll to zoom.":"Tap the floor to walk there. Drag to orbit."}</p>
+        <p>{pickingRoom?"Tap a room’s floor to choose it.":adding?"Tap a room to add a wide corner view.":rendered?"Saved design render":view?"Drag to walk and turn. Pinch or scroll to zoom.":"Tap the floor to walk there. Drag to orbit."}</p>
       </div>
       <div className="show-list" role="group" aria-label="Tour actions">
         {pickingRoom?<button onClick={()=>{setPickingRoom(false);setFinishesOpen(true);}}><X/>Cancel room selection</button>:<>
@@ -261,7 +283,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
           {hasFloor&&<button disabled={saving} onClick={()=>{
             setPlaying(false);setRendered(false);setAdding(false);setFinishesOpen(true);
           }}><Layers/>Finishes</button>}
-          {views.map((v,i)=><button key={v.id} aria-pressed={!freeView&&stop===i} onClick={()=>select(i)}><MapPin/>{v.name}</button>)}
+          {views.map((v,i)=><button key={v.id} aria-pressed={view===v} onClick={()=>select(i)}><MapPin/>{v.name}</button>)}
           {view&&renders[view.id]&&<button aria-pressed={rendered} onClick={()=>{setPlaying(false);setRendered(!rendered);}}>
             {rendered?<Box/>:<ImageIcon/>}{rendered?"Return to 3D":"Show saved design"}
           </button>}
@@ -275,6 +297,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
           {!view&&hasFloor&&<button aria-pressed={adding} disabled={saving} onClick={()=>{setPlaying(false);setNotice("");setAdding(!adding);}}>
             {adding?<X/>:<MapPinPlus/>}{adding?"Cancel adding view":"Add view"}
           </button>}
+          {view&&!rendered&&<button disabled={saving} onClick={openCornerView}><Maximize2/>Corner view</button>}
           {view&&!rendered&&<button disabled={saving} onClick={()=>{
             setPlaying(false);
             if(pose.current?.id===view.id)void addView(pose.current);

@@ -89,6 +89,9 @@ test("downloaded showcase prompt follows the live position, heading and zoom",as
     return JSON.parse((await readFile(file!,"utf8")).trim().split("\n").at(-1)!).camera;
   }
   const before=await camera();
+  expect(before.horizontalFovDegrees).toBe(110);
+  expect(before.eyeXYZ[0]).toBeGreaterThan(5.6);
+  expect(before.eyeXYZ[2]).toBeGreaterThan(6);
   await page.mouse.move(160,230);
   await page.mouse.down();
   await page.mouse.move(190,200,{steps:4});
@@ -155,8 +158,12 @@ test("dollhouse lands on the floor and saves a new view from one tap",async({pag
   await page.getByRole("button",{name:"Add view",exact:true}).click();
   await tapFloor(2.3,3.6);
   await expect(page.getByRole("heading",{name:"View 4"})).toBeVisible();
-  expect(config.views.at(-1)?.position.x).toBeCloseTo(230,0);
-  expect(config.views.at(-1)?.position.y).toBeCloseTo(360,0);
+  const saved=config.views.at(-1)!;
+  expect(saved.horizontalFov).toBe(110);
+  expect(saved.yaw).toBe(-45);
+  expect(saved.position.x).toBeGreaterThan(30);
+  expect(saved.position.x).toBeLessThan(65);
+  expect(680-saved.position.y).toBeCloseTo(saved.position.x);
   expect(config.objects).toEqual(sampleScene.objects);
   await page.goto("/phone/showcase/f#overview");
   await expect(page.getByRole("button",{name:"View 4",exact:true})).toBeVisible({timeout:15000});
