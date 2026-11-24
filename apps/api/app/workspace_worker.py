@@ -168,6 +168,7 @@ def dimension_framed_crop(strips, image):
 def build(path, roi=None, *, plan_id=None, reconstruct_config=None):
     source = decode(Path(path).read_bytes())
     image = sharpen_soft_scan(source)
+    native_image = image
     notes = ["Soft source edges detected. Applied mild sharpening before extraction."] if image is not source else []
     from .room_symbols import detect_symbols, tag_rooms
     h, w = image.shape[:2]
@@ -186,6 +187,26 @@ def build(path, roi=None, *, plan_id=None, reconstruct_config=None):
     from . import openings as gap_openings
 
     strips = wall_strips(image)
+    resize = None
+    if (
+        not roi and image is not source and max(h, w) >= 1200
+        and strips.stats.get("neutral_wall_bands")
+        and not strips.stats.get("coloured_walls")
+    ):
+        from .extraction_resize import ExtractionResize
+
+        # The native scan has wide, soft strokes. At a bounded analysis
+        # scale fixture outlines are thinner than masonry again, and rail /
+        # swing templates operate at the size they were designed for.
+        factor = 672 / max(h, w)
+        compact = cv2.resize(source, None, fx=factor, fy=factor, interpolation=cv2.INTER_AREA)
+        compact = sharpen_soft_scan(compact)
+        compact_strips = wall_strips(compact)
+        if compact_strips.stats.get("neutral_wall_bands") and not compact_strips.stats.get("coloured_walls"):
+            resize = ExtractionResize(w, h, factor)
+            image, strips = compact, compact_strips
+            h, w = image.shape[:2]
+            notes.append("Analyzed the soft scan at a reduced resolution and mapped geometry to the source.")
     stats = strips.stats
     w_wall = float(stats["w_wall"])
     framed = None
@@ -298,7 +319,13 @@ def build(path, roi=None, *, plan_id=None, reconstruct_config=None):
             ) > 0
             material_ink = (extension_ink | solid) & env_mask
         extend_dangling(objects, extension_ink & env_mask, material_ink=material_ink)
-    boxes, detector_ok = _detector_boxes(path, w, h)
+    boxes, detector_ok = _detector_boxes(path, source.shape[1], source.shape[0])
+    if resize is not None:
+        for box in boxes:
+            box.x1 *= resize.factor
+            box.x2 *= resize.factor
+            box.y1 *= resize.factor
+            box.y2 *= resize.factor
     if not detector_ok:
         notes.append(
             "Local detector unavailable; openings come from walls and drawing symbols and need review against the original. Add missing openings with two clicks."
@@ -335,7 +362,7 @@ def build(path, roi=None, *, plan_id=None, reconstruct_config=None):
     from .capped_returns import detect_returns
     from .stair_detection import detect_stairs
 
-    stairs = detect_stairs(image, np.asarray(polygon, dtype=np.float32) if roi else None)
+    stairs = detect_stairs(native_image, np.asarray(polygon, dtype=np.float32) if roi else None)
 
     doc = Document(
         width=w,
@@ -344,23 +371,37 @@ def build(path, roi=None, *, plan_id=None, reconstruct_config=None):
         envelope=[Point(x=x, y=y) for x, y in polygon] if polygon else None,
         passages=[Point(x=x, y=y) for x, y in found.passages[:500]],
         wall_returns=detect_returns(image, strips),
-        stairs=stairs,
+        stairs=stairs if resize is None else [],
         photo_wall_evidence=strips.boundary_mask is not None,
         warnings=notes
         + ["Flat, uniformly scaled source assumed. Heights use editable defaults."],
     )
 
     if plan_id is None:
+        if resize is not None:
+            doc = resize.document(doc)
+            doc.stairs = stairs
         return doc
-    model = reconstruct(doc, plan_id, reconstruct_config, strips=strips, image=image)
+    model = original = reconstruct(doc, plan_id, reconstruct_config, strips=strips, image=image)
+    if resize is not None:
+        from .compact_plan_cleanup import clean_compact_plan
+
+        model = clean_compact_plan(model)
     if not roi and stats.get("neutral_wall_bands"):
         from .balconies import recover_balconies
+
+        model = recover_balconies(model, image)
+    if model is not original:
         from .wall_closures import search_closures
 
-        updated = recover_balconies(model, image)
-        if updated is not model:
-            model = search_closures(updated, image)
-    return tag_rooms(model, detect_symbols(image, roi))
+        model = search_closures(model, image)
+    if resize is not None:
+        from .gardens import detect_gardens
+
+        model = resize.model(model)
+        model.stairs = stairs
+        model.gardens = detect_gardens(native_image)
+    return tag_rooms(model, detect_symbols(native_image, roi))
 
 
 if __name__ == "__main__":
