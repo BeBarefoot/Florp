@@ -547,6 +547,14 @@ def _photo_window_clear(colour, gap):
     return not np.any(lanes[1:] & lanes[:-1])
 
 
+def _photo_frame_confidence(ink, gap, base, colour):
+    """Corroborate a photo window using continuous, separated source rails."""
+    rails, support = _rails(ink, gap, min_separation=max(4, .2 * gap.t), reject_rungs=True)
+    if rails >= 2 and support >= .82 and _photo_window_clear(colour, gap):
+        return max(base, .85 + .04 * support)
+    return base
+
+
 def _photo_windows(edges, colour, gap, pieces):
     """Find supported window spans within an incompletely recovered wall gap.
 
@@ -1012,7 +1020,7 @@ def detect(
     result = Result()
     h, w = image.shape[:2]
     gaps = enumerate_gaps(walls, (h, w))
-    line = _line_ink(image, strips)
+    source_ink = line = _line_ink(image, strips)
     line_dil = cv2.dilate(line.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
     photographic = bool(strips.stats.get("coloured_walls") or strips.stats.get("paired_boundaries"))
     pale_swing_ink = None
@@ -1118,6 +1126,7 @@ def detect(
                         if _overlaps_opening(sub, accepted):
                             continue
                         conf = min(0.86, 0.62 + 0.12 * support)
+                        conf = _photo_frame_confidence(source_ink, sub, conf, colour)
                         result.gaps.append((sub, "window", conf))
                         result.objects.extend(_segment(sub, "window", conf, index, source_supported=True))
                         accepted.append(sub)
@@ -1128,6 +1137,8 @@ def detect(
         if rails >= 2:
             kind = "window"
             conf = 0.62 + (0.12 if rails >= 3 else 0) + (0.12 if rail_min >= 0.9 else 0)
+            if photographic:
+                conf = _photo_frame_confidence(source_ink, gap, conf, colour)
             # A coarse gap can span multiple separate tracks of frame edges.
             # Let the source-backed glazing pass place each span individually.
             if sum(_overlaps_opening(gap, [span]) for span in long_glazing) >= 2:
@@ -1142,6 +1153,11 @@ def detect(
             if door:
                 kind = "door"
                 conf = 0.5 + 0.3 * min(1.0, door[1]) + (0.1 if door[2] >= 0.6 else 0)
+                # The photographic fitter independently requires a continuous
+                # sweep and leaf. Credit a full two-jamb match when both
+                # meet the stricter thresholds as well.
+                if photographic and door[1] >= .82 and door[2] >= .77 and _material_jambs(colour, gap):
+                    conf = min(1.0, conf + .02)
             elif (
                 width >= 8 * gap.t
                 and _on_exterior(exterior, gap)
@@ -1182,9 +1198,10 @@ def detect(
         for gap in long_glazing:
             if _overlaps_opening(gap, accepted):
                 continue
-            result.gaps.append((gap, "window", 0.74))
+            conf = _photo_frame_confidence(source_ink, gap, .74, colour)
+            result.gaps.append((gap, "window", conf))
             result.objects.extend(
-                _segment(gap, "window", 0.74, index, source_supported=True)
+                _segment(gap, "window", conf, index, source_supported=True)
             )
             accepted.append(gap)
             index += 1

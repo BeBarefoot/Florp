@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import pytest
 from app.ink_layers import wall_strips
-from app.openings import Box, Gap, _photo_end_gaps, _photo_mixed_returns, _rails, detect, enumerate_gaps
+from app.openings import Box, Gap, _photo_end_gaps, _photo_frame_confidence, _photo_mixed_returns, _rails, detect, enumerate_gaps
 from app.plan_reconstruct import reconstruct
 from app.plan_workspace import Document, Point, Segment
 
@@ -218,6 +218,19 @@ def test_wide_blank_exterior_gap_is_not_invented_as_a_garage():
     found = detect(img, walls, strips, exterior=np.ones((H, W), bool))
     assert not found.objects
     assert len(found.passages) == 1
+
+
+def test_photo_frame_confirmation_requires_two_continuous_rails_and_clear_core():
+    ink = np.zeros((100, 170), dtype=bool)
+    colour = np.zeros_like(ink)
+    gap = Gap(True, 50, 30, 140, 14)
+    ink[46, 30:140] = True
+    ink[54, 30:89] = True
+    assert _photo_frame_confidence(ink, gap, .74, colour) == .74
+    ink[54, 89:140] = True
+    assert _photo_frame_confidence(ink, gap, .74, colour) > .85
+    colour[49:52, 30:140] = True
+    assert _photo_frame_confidence(ink, gap, .74, colour) == .74
 
 
 def test_half_open_diagonal_leaf_is_a_door_with_the_same_physical_gap():
