@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { Room } from "../../lib/plan/model";
 import type { FloorMaterial } from "../../lib/plan/scene";
 import { materialDefaults } from "../../lib/plan/floorMaterials";
+import {scrollTourRail} from "./scrollTourRail";
 
 const presets = [
   {name:"Warm wood", kind:"wood"},
@@ -29,12 +30,16 @@ export default function FinishSheet({rooms,scope,selectScope,material,change,onP
   onPick:()=>void; onClose:()=>void; onSave:()=>void; onReset?:()=>void;
   saving:boolean; dirty:boolean; notice:string; canPersist:boolean; reviewHref?:string;
 }){
-  return <section className="finish-sheet" aria-label="Floor finishes">
+  return <section className="finish-sheet" aria-label="Floor finishes" data-tour-tools onWheel={scrollTourRail}>
     <div className="finish-heading">
       <h2>Floor finishes</h2>
-      <button type="button" onClick={onClose} disabled={saving} aria-label="Close finishes"><X size={20}/></button>
+      <button type="button" className="finish-close" onClick={onClose} disabled={saving} aria-label="Close finishes"><X size={20}/></button>
     </div>
-    <fieldset disabled={saving}>
+    <form onSubmit={e=>{
+      e.preventDefault();
+      onSave();
+    }}>
+    <fieldset disabled={saving} className="tour-rail finish-controls">
       <div className="finish-fields">
         <label>Apply to <select value={scope} onChange={e=>selectScope(e.target.value)}>
           <option value="">Whole floor</option>
@@ -47,10 +52,6 @@ export default function FinishSheet({rooms,scope,selectScope,material,change,onP
           <span style={{background:materialDefaults[kind].color}}/>{name}
         </button>)}
       </div>
-      <form onSubmit={e=>{
-        e.preventDefault();
-        onSave();
-      }}>
         <div className="finish-fields">
           <label>Material <select value={material.kind} onChange={e=>change(materialDefaults[e.target.value as FloorMaterial["kind"]])}>
             <option value="wood">Wood</option><option value="concrete">Concrete</option>
@@ -68,9 +69,11 @@ export default function FinishSheet({rooms,scope,selectScope,material,change,onP
           {onReset&&<button type="button" onClick={onReset}>Use whole-floor finish</button>}
           <button type="submit" className="finish-save" disabled={!dirty}>{canPersist?"Save finishes":"Apply for this session"}</button>
         </div>
-      </form>
     </fieldset>
-    {reviewHref&&<p><Link href={reviewHref}>Review finishes from the previous layout</Link></p>}
-    {notice&&<p role="status">{notice}</p>}
+    </form>
+    {(reviewHref||notice)&&<div className="tour-rail finish-notes">
+      {reviewHref&&<p><Link href={reviewHref}>Review finishes from the previous layout</Link></p>}
+      {notice&&<p role="status">{notice}</p>}
+    </div>}
   </section>;
 }

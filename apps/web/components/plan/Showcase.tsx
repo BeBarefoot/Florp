@@ -17,6 +17,7 @@ import {FloorPicker} from "./FloorPicker";
 import {newUuid} from "../../lib/uuid";
 import FinishSheet from "./FinishSheet";
 import FurnishSheet from "./FurnishSheet";
+import {scrollTourRail} from "./scrollTourRail";
 import {FurniturePlacement} from "./FurniturePlacement";
 import {fitsFloor,furnitureFit} from "../../lib/plan/furnitureFit";
 import {objectName,tvDimensions,yardKinds} from "../../lib/plan/furnitureCatalog";
@@ -323,6 +324,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     setFreeView({id:"free-walk",name:"Walkthrough",...wideView,...corner});
   }
   return <main className="showcase-player" data-furnishing={furnishing} aria-label="3D showcase">
+    <h1 className="show-current-view">{view?.name??"Dollhouse view"}</h1>
     <div ref={stage} className="show-stage"><Canvas shadows frameloop="demand" dpr={[1,1.6]} camera={{near:.005,far:2000}} fallback={<p>Enable WebGL to view this tour.</p>}>
       <color attach="background" args={[view?"#d4e3e9":"#d8d9cb"]}/>
       <SceneMesh m={plan} objects={displayedObjects} closedDoorIds={scene.closedDoorIds} floorStyle={styledScene}
@@ -350,6 +352,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     </Canvas>
     </div>
     {view&&rendered&&renders[view.id]&&<div className="show-render"><img src={renders[view.id]} alt={"Saved design render for "+view.name}/></div>}
+    {view&&<button type="button" className="show-overview" data-tour-tools onClick={()=>select(-1)}><Box size={18}/>Overview</button>}
     {furnishing?<FurnishSheet objects={objects} selected={selectedFurniture} previewReason={previewReason}
       pending={placement?placingNew?`Tap or drag on ${yardKinds.has(placement.kind)?"a yard or balcony":"the floor"} to place the ${objectName(placement.kind).toLowerCase()}.`:"Tap or drag on the ground to move this object.":""}
       dirty={!!furnitureDraft} saving={saving} message={furnitureNotice} issues={fitWarnings}
@@ -388,7 +391,6 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
         event.currentTarget.querySelector<HTMLButtonElement>(".show-menu-button")?.focus();
       }
     }}>
-      <h1 className="show-current-view">{view?.name??"Dollhouse view"}</h1>
       {(toolsOpen||adding||pickingRoom)&&<div className="show-heading">
         <small>{approximate?"Approximate scale · ":""}{title}</small>
         <p>{pickingRoom?"Tap a room’s floor to choose it.":adding?"Tap a room to add a wide corner view.":rendered?"Saved design render":view?"Tap to walk. Drag two fingers to move, twist to turn, and pinch to zoom.":"Drag to orbit. Use two fingers to pan, twist, or zoom."}</p>
@@ -402,9 +404,8 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
           }}>
           {toolsOpen||pickingRoom?<X/>:<LayoutGrid/>}
         </button>
-        <div id="show-tour-actions" className="show-list" role="group" aria-label="Tour actions" hidden={!toolsOpen&&!pickingRoom}>
+        <div id="show-tour-actions" className="show-list" role="group" aria-label="Tour actions" hidden={!toolsOpen&&!pickingRoom} onWheel={scrollTourRail}>
           {pickingRoom?<button onClick={()=>{setPickingRoom(false);setFinishesOpen(true);}}><X/>Cancel room selection</button>:<>
-          <button aria-pressed={!view} onClick={()=>select(-1)}><Box/>Overview</button>
           {hasFloor&&<button disabled={saving} onClick={()=>{
             setPlaying(false);setRendered(false);setAdding(false);setFinishesOpen(true);
           }}><Layers/>Finishes</button>}

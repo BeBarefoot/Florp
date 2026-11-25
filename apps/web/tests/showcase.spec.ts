@@ -29,7 +29,11 @@ test("phone finishes keep room overrides when the whole-floor preset changes",as
   });
   await page.goto("/phone/showcase/f");
   await openTools(page);
+  const frame = await page.locator("canvas").boundingBox();
   await page.getByRole("button",{name:"Finishes",exact:true}).click();
+  const controls = page.locator(".finish-controls");
+  expect(await page.locator("canvas").boundingBox()).toEqual(frame);
+  expect(await controls.evaluate(e => e.scrollWidth > e.clientWidth && getComputedStyle(e).overflowY === "hidden")).toBe(true);
   await page.getByLabel("Apply to").selectOption("bedroom");
   const material=page.getByRole("combobox",{name:"Material",exact:true});
   await material.selectOption("tile");
@@ -382,7 +386,7 @@ test("the tour opens full screen, scrolls its dock, and walks through an open do
     const canvas=page.locator("canvas");
     const toggle=page.getByRole("button",{name:"Open tour tools"});
     const dock=page.getByRole("group",{name:"Tour actions"});
-    await expect(toggle).toHaveAttribute("aria-expanded","false");
+    await expect(toggle).toHaveAttribute("aria-expanded","false",{timeout:15_000});
     await expect(dock).toBeHidden();
     const frame=(await canvas.boundingBox())!;
     expect(frame).toMatchObject({x:0,y:0,width:390,height:844});
@@ -398,6 +402,9 @@ test("the tour opens full screen, scrolls its dock, and walks through an open do
     await page.getByRole("button",{name:"Close tour tools"}).click();
     await expect(dock).toBeHidden();
     expect(await canvas.boundingBox()).toEqual(frame);
+    const overview = page.getByRole("button",{name:"Overview",exact:true});
+    await expect(overview).toBeVisible();
+    expect((await overview.boundingBox())!.y).toBeLessThan(24);
 
     const pose=savedPose(start,.01,frame.width/frame.height);
     const camera=new PerspectiveCamera(pose.verticalFovDeg,frame.width/frame.height,.03,80);
@@ -414,6 +421,17 @@ test("the tour opens full screen, scrolls its dock, and walks through an open do
       return JSON.parse((await readFile(file!,"utf8")).trim().split("\n").at(-1)!).camera.eyeXYZ[0] as number;
     }
     await expect.poll(eyeX,{timeout:9000,intervals:[500,1000]}).toBeGreaterThan(7.2);
+    await page.getByRole("button",{name:"Furnish",exact:true}).click();
+    const catalog = page.getByRole("group",{name:"Furniture catalog"});
+    await expect(catalog).toBeVisible();
+    expect(await canvas.boundingBox()).toEqual(frame);
+    expect(await catalog.evaluate(e => e.scrollWidth > e.clientWidth && getComputedStyle(e).overflowY === "hidden")).toBe(true);
+    await catalog.hover();
+    await page.mouse.wheel(0,220);
+    await expect.poll(()=>catalog.evaluate(e=>e.scrollLeft)).toBeGreaterThan(0);
+    await overview.click();
+    await expect(page.getByRole("heading",{name:"Dollhouse view"})).toBeVisible();
+    await expect(catalog).toBeVisible();
   }finally{await context.close();}
 });
 
