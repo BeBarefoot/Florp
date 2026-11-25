@@ -212,7 +212,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
       if (!gardens.length) { setStatus("No shaded yard found on the source drawing"); return; }
       edit({...live.current,gardens});
       setShowSite(true);
-      setStatus("Yard detected");
+      setStatus(gardens.some(region=>region.surface==="paving")?"Lawn and patio detected":"Yard detected");
     } catch (e) { setError(String(e)); }
     finally { setBusy(false); }
   }
@@ -671,7 +671,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
         </section>}<button disabled={busy} onClick={()=>void detectYard()}>Detect yard</button>{info?.floor&&<section className="fe-section">
           <h3>{info.floor.level===1?"First floor":"Second floor"}</h3>
           <label><input type="checkbox" checked={showSite} onChange={e=>setShowSite(e.target.checked)}/> Garden and stair outlines</label>
-          {info.floor.regions.filter(r=>r.kind==="garden").map((r,i)=><p key={i}>Garden {i+1} · {mpp?
+          {info.floor.regions.filter(r=>r.kind==="garden").map((r,i)=><p key={i}>{r.surface==="paving"?"Patio":"Lawn"} · {mpp?
             regionArea(r,info.width,info.height,mpp).toFixed(1)+" m²":"Set a known distance to estimate area"}</p>)}
           <a href={"/plan/"+info.floor.otherId} target="_blank" rel="noopener noreferrer">Open {info.floor.level===1?"second":"first"} floor in a new tab</a>
         </section>}<PlanReview id={id} revision={m.revision} dirty={dirty}/></>}

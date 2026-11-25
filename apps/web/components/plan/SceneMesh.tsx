@@ -7,7 +7,7 @@ import type { PlanModel } from "../../lib/plan/model";
 import { metersPerPixel, openingEnds } from "../../lib/plan/derive";
 import { wallPieces } from "../../lib/plan/mesh";
 import { roomsOf } from "../../lib/plan/walkSpace";
-import {yardShapes} from "../../lib/plan/yard";
+import {yardColor,yardShapes} from "../../lib/plan/yard";
 import { roomSurfaces, stairPieces } from "../../lib/plan/stairs";
 import {stairCutouts, stairHeadroom} from "../../lib/plan/stairLevels";
 import { makeWindows } from "../../lib/plan/windowFrames";
@@ -164,8 +164,8 @@ export function SceneMesh({m, objects, closedDoorIds, floorStyle={}, wallFinishe
         shadow-camera-left={-shadowSize} shadow-camera-right={shadowSize} shadow-camera-top={shadowSize}
         shadow-camera-bottom={-shadowSize} shadow-camera-far={shadowSize*4} shadow-normalBias={.022} shadow-bias={-.0001}/>
     </>:<><ambientLight intensity={1.25}/><directionalLight position={[5,10,3]} intensity={2}/></>}
-    {yards.map((shape,i)=><mesh key={"yard"+i} rotation={[-Math.PI/2,0,0]} position={[0,-.01,0]} receiveShadow userData={{maskId:1,furnishGround:true}}>
-      <shapeGeometry args={[shape]}/><meshStandardMaterial color="#839768" side={T.DoubleSide}/>
+    {yards.map(({shape,surface},i)=><mesh key={"yard"+i} rotation={[-Math.PI/2,0,0]} position={[0,-.01,0]} receiveShadow userData={{maskId:1,furnishGround:true}}>
+      <shapeGeometry args={[shape]}/><meshStandardMaterial color={yardColor[surface]} side={T.DoubleSide}/>
     </mesh>)}
     {rooms.map(({room,surfaces,ceilings}, i)=>{
       const finish = floors.finishes[i];

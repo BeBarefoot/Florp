@@ -184,11 +184,15 @@ test("descending treads open the floor and two-way stairs have a level landing",
   expect(shape.holes).toHaveLength(1);
 });
 
-test("GLB keeps wall finishes, windows, stairs and furniture",async({page})=>{
+test("GLB keeps wall finishes, windows, stairs, furniture and outdoor surfaces",async({page})=>{
   test.setTimeout(75_000);
   const window={...fixture().openings[0],windowFrame:{material:"wood" as const,color:"#885522",widthM:.06,panes:2 as const}};
   const stair={id:"stairs",layout:"l" as const,riseM:.17,treads:rectangularTreads,direction:"down" as const};
-  const model=setReference(fixture({openings:[window],stairs:[stair]}),{x:100,y:100},{x:500,y:100},4);
+  const gardens:PlanModel["gardens"]=[
+    {kind:"garden",points:[[.02,.1],[.08,.1],[.08,.25],[.02,.25]]},
+    {kind:"garden",surface:"paving",points:[[.02,.25],[.08,.25],[.08,.4],[.02,.4]]},
+  ];
+  const model=setReference(fixture({openings:[window],stairs:[stair],gardens}),{x:100,y:100},{x:500,y:100},4);
   let config={views:[],objects:[{id:"scene-planter",kind:"planter",position:{x:340,y:290},
     width:.55,depth:.55,height:.98,rotation:0}],style:"",wallFinishes:{},
     floorMaterial:{kind:"marble",color:"#e4dac6",widthM:.6,lengthM:.8}};
@@ -220,6 +224,9 @@ test("GLB keeps wall finishes, windows, stairs and furniture",async({page})=>{
   const {readFile}=await import("node:fs/promises");
   const bytes=await readFile((await (await pending).path())!);
   const gltf=JSON.parse(bytes.subarray(20,20+bytes.readUInt32LE(12)).toString());
+  const grounds=gltf.nodes.filter((node:{extras?:{kind:string}})=>node.extras?.kind==="garden");
+  expect(grounds.map((node:{extras:{surface:string}})=>node.extras.surface)).toEqual(["lawn","paving"]);
+  expect(new Set(grounds.map((node:{mesh:number})=>gltf.meshes[node.mesh].primitives[0].material)).size).toBe(2);
   const wall=gltf.nodes.find((node:{name:string})=>node.name==="w6");
   const mesh=gltf.meshes[gltf.nodes[wall.children[0]].mesh];
   const [front,back]=mesh.primitives.slice(-2).map(({material}:{material:number})=>gltf.materials[material].pbrMetallicRoughness);

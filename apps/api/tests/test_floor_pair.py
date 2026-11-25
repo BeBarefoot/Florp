@@ -57,7 +57,31 @@ def test_faded_yard_around_patio_and_tinted_paper():
     sheet[10:265, 8:152] = (204, 217, 212)
     sheet[35:240, 48:142] = (206, 211, 228)
     regions = detect_gardens(sheet)
-    assert len(regions) == 1
+    assert len(regions) == 2
     yard = Polygon(regions[0]['points'], regions[0]['holes'])
     assert yard.contains(Point(20/700, 150/280))
     assert not yard.contains(Point(90/700, 150/280))
+    assert regions[1]["surface"] == "paving"
+    patio = Polygon(regions[1]['points'], regions[1]['holes'])
+    assert patio.contains(Point(90/700, 150/280))
+    assert patio.intersection(yard).area == 0
+
+
+def test_open_sided_patio_keeps_its_surface_and_rejects_unrelated_warm_fill():
+    import numpy as np
+    from shapely.geometry import Point, Polygon
+    from app.gardens import detect_gardens
+
+    sheet = np.full((408, 1100, 3), (174, 177, 179), np.uint8)
+    sheet[5:393, 10:240] = (153, 181, 174)
+    sheet[44:334, 75:241] = (147, 160, 176)
+    sheet[90:270, 310:700] = (147, 160, 176)  # Indoors, separated from the lawn.
+    cv2.line(sheet, (1, 120), (1000, 120), (65, 65, 65), 3)
+    cv2.line(sheet, (1, 313), (1000, 313), (65, 65, 65), 2)
+    areas = detect_gardens(sheet)
+    assert len(areas) == 2
+    patio = next(r for r in areas if r.get("surface") == "paving")
+    shape = Polygon(patio["points"], patio["holes"])
+    assert shape.contains(Point(175/1100, 250/408))
+    assert not shape.contains(Point(220/1100, 350/408))
+    assert not shape.contains(Point(450/1100, 150/408))

@@ -8,6 +8,7 @@ export function yardAreas(model:PlanModel) {
   return (model.gardens??[]).map(region=>({
     polygon:mapRing(region.points),
     holes:(region.holes??[]).map(mapRing),
+    surface:region.surface??("lawn" as const),
   }));
 }
 
@@ -18,6 +19,8 @@ export function yardShapes(model:PlanModel) {
   return yardAreas(model).map(region=>{
     const shape=new Shape(vertices(region.polygon));
     shape.holes=region.holes.map(ring=>new Path(vertices(ring)));
-    return shape;
+    return {shape,surface:region.surface};
   });
 }
+
+export const yardColor={lawn:"#839768",paving:"#b39b7c"} as const;

@@ -81,6 +81,8 @@ private network. The HTTPS gateway below requires an owner password for the app 
 
 On a fresh extraction, Florp checks for soft edges and sharpens a working copy when needed. It looks for drawn car and bed symbols before calibration. In a closed room, a car suggests **Garage** and a bed suggests **Bedroom**. Outside a detected room, the symbol keeps its own label. Look for the tags in the plan editor or the phone tour’s **Overview**. Select a tagged room in the editor to change its name or type. Faint or unfamiliar symbols can go unrecognized.
 
+**Detect yard** in the full editor refreshes the outdoor areas on an existing plan. Florp looks for shaded lawn and can trace adjacent warm-colored paving as a separate patio. Both surfaces appear in 2D, in the tour, and in GLB exports.
+
 For plans with printed centimetre dimensions, optional local Tesseract can suggest scale (install it on macOS with `brew install tesseract`). When at least three dimension lines agree across both axes, **Review detected scale** highlights a reference and a second check on the original drawing. Confirm both spans to apply them, or measure a known distance manually.
 
 For two levels, upload both files to the same project and choose **Identify floors, garden and stairs**. Confirm the suggested order and outlines, then **Save floor pair**. Each floor has its own calibrated editor and walkthrough. Select a stair to set **Up**, **Down**, or **Both** and check its rise. Stairs are rendered relative to the current floor. Open the other floor to tour it.

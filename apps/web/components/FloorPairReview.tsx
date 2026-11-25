@@ -68,7 +68,7 @@ export default function FloorPairReview({pid,plans}:{pid:string;plans:Blueprint[
       <label>First floor (garden level) <select value={pair.first} onChange={e=>setPair({...pair,first:e.target.value,second:Object.keys(pair.regions).find(k=>k!==e.target.value)!})}>
         {!pair.first&&<option value="">Choose first floor</option>}
         {plans.filter(p=>p.id===pair.first||p.id===pair.second||p.id in pair.regions).map(p=><option key={p.id} value={p.id}>{p.filename}</option>)}</select></label>
-      <p>Green marks possible garden areas. Orange marks stair footprints. Review both drawings, then save.</p>
+      <p>Green marks lawn, tan marks paving, and orange marks stair footprints. Review both drawings, then save.</p>
       {(pair.first?[pair.first,pair.second]:Object.keys(pair.regions)).map((id,i)=>{
         const plan=plans.find(p=>p.id===id);
         return plan&&<FloorMap key={id} plan={plan} level={pair.first?(i?"Second floor":"First floor"):"Unassigned drawing"} regions={pair.regions[id]??[]}

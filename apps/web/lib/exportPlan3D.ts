@@ -4,7 +4,7 @@ import type { PlanModel } from "./plan/model";
 import { metersPerPixel } from "./plan/derive";
 import { wallPieces } from "./plan/mesh";
 import { roomsOf } from "./plan/walkSpace";
-import {yardShapes} from "./plan/yard";
+import {yardColor,yardShapes} from "./plan/yard";
 import { roomSurfaces, stairPieces } from "./plan/stairs";
 import {stairCutouts} from "./plan/stairLevels";
 import { makeWindows } from "./plan/windowFrames";
@@ -57,10 +57,10 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
     }
     scene.add(group);
   }
-  for (const [i,shape] of yardShapes(m).entries()) {
-    const yard=new THREE.Mesh(new THREE.ShapeGeometry(shape),new THREE.MeshStandardMaterial({color:"#839768",side:THREE.DoubleSide}));
-    yard.name=`Yard ${i+1}`;
-    yard.userData={kind:"garden"};
+  for (const [i,{shape,surface}] of yardShapes(m).entries()) {
+    const yard=new THREE.Mesh(new THREE.ShapeGeometry(shape),new THREE.MeshStandardMaterial({color:yardColor[surface],side:THREE.DoubleSide}));
+    yard.name=`${surface==="paving"?"Patio":"Yard"} ${i+1}`;
+    yard.userData={kind:"garden",surface};
     yard.position.y=-.01;
     yard.rotation.x=-Math.PI/2;
     scene.add(yard);
