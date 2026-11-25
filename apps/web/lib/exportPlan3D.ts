@@ -11,6 +11,7 @@ import { makeWindows } from "./plan/windowFrames";
 import { floorMaterialFor, floorSurface, floorTexture, loadFloorPhotos } from "./plan/floorMaterials";
 import { floorFinishes, type Scene } from "./plan/scene";
 import {furnitureParts,makeFurnitureResources} from "./plan/furnitureModels";
+import {loadFurnitureAsset,scaledFurnitureAsset} from "./plan/furnitureAssets";
 import {objectName} from "./plan/furnitureCatalog";
 import { wallChunkGeometry, wallSurfaceMaterials } from "./plan/wallMaterials";
 
@@ -127,13 +128,19 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
   const windows=makeWindows(m);
   scene.add(windows.group);
   const furniture=makeFurnitureResources();
-  for (const item of config?.objects??[]) {
+  const items=config?.objects??[];
+  const assets=new Map(await Promise.all([...new Set(items.map(item=>item.kind))].map(async kind=>
+    [kind,await loadFurnitureAsset(kind)] as const
+  )));
+  for (const item of items) {
     const group=new THREE.Group();
     group.name=objectName(item.kind);
     group.userData={kind:"furniture",id:item.id,product:item.kind};
     group.position.set(item.position.x*scale,0,item.position.y*scale);
     group.rotation.y=-item.rotation*Math.PI/180;
-    for (const part of furnitureParts(item)) {
+    const asset=assets.get(item.kind);
+    if(asset) group.add(scaledFurnitureAsset(asset,item));
+    else for (const part of furnitureParts(item)) {
       const mesh=new THREE.Mesh(furniture.geometry(part.shape),furniture.material(part.finish));
       mesh.position.set(...part.position);
       mesh.scale.set(...part.size);

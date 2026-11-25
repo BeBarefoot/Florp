@@ -4,7 +4,7 @@ import { rooms, withDerived, metersPerPixel, wallEndReaches } from "../lib/plan/
 import { addWall, moveNode, setReference, decideOpening } from "../lib/plan/ops";
 import { wallPieces } from "../lib/plan/mesh";
 import { eyeLevelPose, savedPose, verticalFov } from "../lib/plan/camera";
-import { promptFor } from "../lib/plan/scene";
+import { promptFor, newItem, type Scene } from "../lib/plan/scene";
 import {roomSurfaces} from "../lib/plan/stairs";
 import {stairCutouts,treadLevels} from "../lib/plan/stairLevels";
 import { furnitureParts } from "../lib/plan/furnitureModels";
@@ -184,7 +184,7 @@ test("descending treads open the floor and two-way stairs have a level landing",
   expect(shape.holes).toHaveLength(1);
 });
 
-test("GLB keeps wall finishes, windows, stairs, furniture and outdoor surfaces",async({page})=>{
+test("GLB keeps floor and wall finishes, windows, stairs, metric furniture and outdoor surfaces",async({page})=>{
   test.setTimeout(75_000);
   const window={...fixture().openings[0],windowFrame:{material:"wood" as const,color:"#885522",widthM:.06,panes:2 as const}};
   const stair={id:"stairs",layout:"l" as const,riseM:.17,treads:rectangularTreads,direction:"down" as const};
@@ -193,9 +193,13 @@ test("GLB keeps wall finishes, windows, stairs, furniture and outdoor surfaces",
     {kind:"garden",surface:"paving",points:[[.02,.25],[.08,.25],[.08,.4],[.02,.4]]},
   ];
   const model=setReference(fixture({openings:[window],stairs:[stair],gardens}),{x:100,y:100},{x:500,y:100},4);
-  let config={views:[],objects:[{id:"scene-planter",kind:"planter",position:{x:340,y:290},
-    width:.55,depth:.55,height:.98,rotation:0}],style:"",wallFinishes:{},
-    floorMaterial:{kind:"marble",color:"#e4dac6",widthM:.6,lengthM:.8}};
+  const catalogItems=(["sofa","rug","console_standing","toilet","vanity","shower"] as const).map((kind,i)=>
+    ({...newItem(kind,{x:230+i*85,y:410}),id:"asset-"+kind}));
+  catalogItems[0]={...catalogItems[0],width:2.06,depth:.87,height:.93,rotation:15};
+  let config:Scene={views:[],objects:[{id:"scene-planter",kind:"planter",position:{x:340,y:290},
+    width:.55,depth:.55,height:.98,rotation:0},...catalogItems],style:"",wallFinishes:{},
+    floorMaterial:{kind:"marble",color:"#e4dac6",widthM:.6,lengthM:.8},
+    roomFloorMaterials:{[model.rooms[1].id]:{kind:"tile",color:"#c8bca7",widthM:.3,lengthM:.6}}};
   let revision=1;
   await setup(page,{model});
   await page.route("**/blueprints/p/scene**",route=>{
@@ -232,11 +236,11 @@ test("GLB keeps wall finishes, windows, stairs, furniture and outdoor surfaces",
   const [front,back]=mesh.primitives.slice(-2).map(({material}:{material:number})=>gltf.materials[material].pbrMetallicRoughness);
   expect(front.baseColorTexture).toBeUndefined();
   expect(back.baseColorTexture).toBeDefined();
-  const room=gltf.nodes.find((node:{extras?:{kind:string}})=>node.extras?.kind==="room");
-  const floor=gltf.materials[gltf.meshes[room.mesh].primitives[0].material];
-  const textures=[floor.normalTexture,floor.pbrMetallicRoughness.baseColorTexture,floor.pbrMetallicRoughness.metallicRoughnessTexture];
-  for (const texture of textures) {
-    expect(texture.extensions.KHR_texture_transform.scale).toEqual([1/(4*.8),1/(4*.6)]);
+  const floors=gltf.nodes.filter((node:{extras?:{kind:string}})=>node.extras?.kind==="room");
+  for (const [i,scale] of [[1/(4*.8),1/(4*.6)],[1/(5*.6),1/(5*.3)]].entries()) {
+    const floor=gltf.materials[gltf.meshes[floors[i].mesh].primitives[0].material];
+    const textures=[floor.normalTexture,floor.pbrMetallicRoughness.baseColorTexture,floor.pbrMetallicRoughness.metallicRoughnessTexture];
+    for (const texture of textures) expect(texture.extensions.KHR_texture_transform.scale).toEqual(scale);
   }
   const furniture=gltf.nodes.find((node:{extras?:{id:string}})=>node.extras?.id==="scene-planter");
   expect(furniture.extras).toMatchObject({kind:"furniture",product:"planter"});
@@ -244,6 +248,24 @@ test("GLB keeps wall finishes, windows, stairs, furniture and outdoor surfaces",
   expect(furniture.matrix[13]).toBe(0);
   expect(furniture.matrix[14]).toBeCloseTo(2.9);
   expect(furniture.children.length).toBeGreaterThan(3);
+  const {GLTFLoader}=await import("three/addons/loaders/GLTFLoader.js");
+  const {Box3,Texture,Vector3}=await import("three");
+  const loader=new GLTFLoader().register(()=>({name:"Skip image decoding in Node",loadTexture:async()=>new Texture()}));
+  const {scene}=await loader.parseAsync(Uint8Array.from(bytes).buffer,"");
+  for (const item of catalogItems) {
+    const object=scene.children.find(child=>child.userData.id===item.id)!;
+    expect(object.children).toHaveLength(1);
+    object.rotation.y=0;
+    const bounds=new Box3().setFromObject(object,true);
+    const size=bounds.getSize(new Vector3());
+    expect(size.x).toBeCloseTo(item.width,4);
+    expect(size.y).toBeCloseTo(item.height,4);
+    expect(size.z).toBeCloseTo(item.depth,4);
+    const center=bounds.getCenter(new Vector3());
+    expect(center.x).toBeCloseTo(item.position.x*.01,4);
+    expect(center.z).toBeCloseTo(item.position.y*.01,4);
+    expect(bounds.min.y).toBeCloseTo(0,4);
+  }
   const exportedWindow=gltf.nodes.find((node:{name:string})=>node.name==="Window win");
   expect(exportedWindow.extras.frame).toMatchObject({material:"wood",panes:2});
   expect(exportedWindow.children.filter((index:number)=>gltf.nodes[index].extras.glass)).toHaveLength(2);

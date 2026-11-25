@@ -14,7 +14,8 @@ import { makeWindows } from "../../lib/plan/windowFrames";
 import { savedPose } from "../../lib/plan/camera";
 import { floorFinishes, type Capture, type Frame, type Item, type Scene, type View } from "../../lib/plan/scene";
 import { furnitureParts, makeFurnitureResources } from "../../lib/plan/furnitureModels";
-import { floorMaterialFor, floorSurface, floorTexture, loadFloorPhotos } from "../../lib/plan/floorMaterials";
+import { loadFurnitureAsset, scaledFurnitureAsset } from "../../lib/plan/furnitureAssets";
+import { floorMaterialFor, floorSurface, floorTexture, loadFloorPhotos, type PhotoFloor } from "../../lib/plan/floorMaterials";
 import { wallChunkGeometry, wallSurfaceMaterials } from "../../lib/plan/wallMaterials";
 import type { Chunk, WallPiece } from "../../lib/plan/mesh";
 
@@ -44,7 +45,7 @@ export function EyeCamera({view, scale, frame}: {view: View; scale: number; fram
 type FloorStyle = Pick<Scene,"floorFinish"|"floorMaterial"|"roomFloorMaterials">;
 type LoadedFloorPhotos = Awaited<ReturnType<typeof loadFloorPhotos>>;
 
-function useFloorPhotos(kind: "wood" | "marble", enabled: boolean) {
+function useFloorPhotos(kind:PhotoFloor, enabled: boolean) {
   const [photos, setPhotos] = useState<LoadedFloorPhotos>(null);
   useEffect(()=>{
     if (!enabled) return;
@@ -90,17 +91,64 @@ function WallChunk({piece,chunk,wallIndex,presentation,finishes,tileMap}:{
   </mesh>;
 }
 
+type FurnitureAsset = Awaited<ReturnType<typeof loadFurnitureAsset>>;
+
+function CatalogFurniture({asset,item,maskId,presentation,environment}:{asset:NonNullable<FurnitureAsset>;item:Item;
+  maskId:number;presentation:boolean;environment:T.Texture|null}){
+  const {id,kind,width,height,depth}=item;
+  const {model,materials}=useMemo(()=>{
+    const model=scaledFurnitureAsset(asset,{kind,width,height,depth});
+    const materials=new Map<T.MeshStandardMaterial,T.MeshStandardMaterial>();
+    model.traverse(object=>{
+      if(!(object instanceof T.Mesh)) return;
+      const source=object.material as T.MeshStandardMaterial;
+      let material=materials.get(source);
+      if(!material){
+        material=source.clone();
+        material.envMap=environment;
+        material.envMapIntensity=.5;
+        materials.set(source,material);
+      }
+      const glass=material.transparent;
+      if(glass) material.depthWrite=false;
+      object.material=material;
+      object.userData={maskId,furnitureId:id,glass};
+      object.castShadow=presentation&&!glass&&kind!=="rug";
+      object.receiveShadow=presentation;
+    });
+    return {model,materials};
+  },[asset,id,kind,width,height,depth,maskId,presentation,environment]);
+  useEffect(()=>()=>materials.forEach(material=>material.dispose()),[materials]);
+  return <primitive object={model}/>;
+}
+
 function FurnitureMeshes({objects,scale,presentation,environment}:{objects:Item[];scale:number;presentation:boolean;environment:T.Texture|null}){
   const resources=useMemo(()=>makeFurnitureResources(),[]);
   useEffect(()=>()=>resources.dispose(),[resources]);
-  return objects.map((item,index)=><group key={item.id} position={[item.position.x*scale,0,item.position.y*scale]}
-    rotation={[0,-item.rotation*Math.PI/180,0]}>
-    {furnitureParts(item).map((part,i)=><mesh key={i} geometry={resources.geometry(part.shape)}
+  const [assets,setAssets]=useState<Partial<Record<Item["kind"],FurnitureAsset>>>({});
+  const kinds=[...new Set(objects.map(item=>item.kind))].sort().join(",");
+  useEffect(()=>{
+    if(!kinds) return;
+    let active=true;
+    for(const kind of kinds.split(",") as Item["kind"][]){
+      void loadFurnitureAsset(kind).then(asset=>{
+        if(active&&asset) setAssets(current=>current[kind]===asset?current:{...current,[kind]:asset});
+      });
+    }
+    return ()=>{active=false;};
+  },[kinds]);
+  return objects.map((item,index)=>{
+    const asset=assets[item.kind];
+    return <group key={item.id} position={[item.position.x*scale,0,item.position.y*scale]}
+      rotation={[0,-item.rotation*Math.PI/180,0]}>
+    {asset?<CatalogFurniture asset={asset} item={item} maskId={1000+index} presentation={presentation} environment={environment}/>:
+      furnitureParts(item).map((part,i)=><mesh key={i} geometry={resources.geometry(part.shape)}
       material={resources.material(part.finish,environment)} dispose={null}
       castShadow={presentation&&part.finish!=="glass"&&item.kind!=="rug"} receiveShadow={presentation}
       position={part.position} scale={part.size} rotation={part.turn??[0,0,0]}
       userData={{maskId:1000+index,furnitureId:item.id,glass:part.finish==="glass"}}/>)}
-  </group>);
+    </group>;
+  });
 }
 
 function Windows({plan,environment,shadows}:{plan:PlanModel;environment:T.Texture|null;shadows:boolean}){
@@ -132,7 +180,9 @@ export function SceneMesh({m, objects, closedDoorIds, floorStyle={}, wallFinishe
   ),[rooms,floorFinish,floorMaterial,roomFloorMaterials]);
   const wood = useFloorPhotos("wood", materials.some(material=>material?.kind==="wood"));
   const marble = useFloorPhotos("marble", materials.some(material=>material?.kind==="marble"));
+  const tile = useFloorPhotos("tile", materials.some(material=>material?.kind==="tile"));
   const floors = useMemo(()=>{
+    const photos = {wood,marble,tile,concrete:null};
     const surfaces = new Map<string,ReturnType<typeof floorSurface>>();
     const finishes = materials.map(material=>{
       if (!material) return floorFinishes[floorFinish];
@@ -140,14 +190,13 @@ export function SceneMesh({m, objects, closedDoorIds, floorStyle={}, wallFinishe
       const key = JSON.stringify([kind,widthM,lengthM]);
       let surface = surfaces.get(key);
       if (!surface) {
-        const photos = kind==="wood" ? wood : kind==="marble" ? marble : null;
-        surface = floorSurface(material, photos);
+        surface = floorSurface(material, photos[kind]);
         surfaces.set(key,surface);
       }
       return {color,...surface};
     });
     return {surfaces,finishes};
-  },[materials,floorFinish,wood,marble]);
+  },[materials,floorFinish,wood,marble,tile]);
   useEffect(()=>()=>floors.surfaces.forEach(({map,normalMap,roughnessMap})=>{
     map.dispose();
     normalMap?.dispose();

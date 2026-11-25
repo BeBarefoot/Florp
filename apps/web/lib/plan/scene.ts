@@ -38,7 +38,7 @@ export function newItem(kind: ObjectKind, position: Pt): Item {
     mattressWidth:kind==="bed"?1.8:null, mattressDepth:kind==="bed"?2:null };
 }
 
-export function itemBottom(item: Item) {
+export function itemBottom(item: Pick<Item,"kind"|"height">) {
   if (item.kind==="tv") return 1.27-item.height/2;
   if (item.kind==="console_floating") return .26;
   return 0;

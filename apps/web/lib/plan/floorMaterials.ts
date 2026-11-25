@@ -19,13 +19,17 @@ export function floorMaterialFor(scene: Pick<Scene,"floorFinish"|"floorMaterial"
   return scene.floorMaterial ?? (scene.floorFinish === "oak" ? materialDefaults.wood : null);
 }
 
-const photoRepeats = {wood: [4, 8], marble: [4, 4]} as const;
-type PhotoFloor = keyof typeof photoRepeats;
+const photoRepeats = {wood: [4, 8], marble: [4, 4], tile: [5, 5]} as const;
+export type PhotoFloor = keyof typeof photoRepeats;
 type PhotoMaps = Texture[];
 const photoLoads = new Map<PhotoFloor, Promise<PhotoMaps | null>>();
 
+function hasFloorPhotos(kind:FloorMaterial["kind"]):kind is PhotoFloor {
+  return Object.hasOwn(photoRepeats,kind);
+}
+
 export function loadFloorPhotos(kind: FloorMaterial["kind"]) {
-  if (kind !== "wood" && kind !== "marble") return Promise.resolve(null);
+  if (!hasFloorPhotos(kind)) return Promise.resolve(null);
   const pending = photoLoads.get(kind);
   if (pending) return pending;
 
@@ -44,7 +48,7 @@ export function loadFloorPhotos(kind: FloorMaterial["kind"]) {
 
 export function floorSurface({kind, widthM, lengthM}: FloorMaterial, photos: PhotoMaps | null = null) {
   const material = {kind, widthM, lengthM};
-  if (!photos || (kind !== "wood" && kind !== "marble")) {
+  if (!photos || !hasFloorPhotos(kind)) {
     return {
       map: floorTexture(material),
       normalMap: null,
