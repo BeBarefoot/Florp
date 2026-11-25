@@ -70,7 +70,12 @@ export type PlanModel = {
   id: string;
   revision: number;
   imageTransform: { width: number; height: number; rotation: number };
-  scale: { metersPerPixel: number | null; reference: Reference | null; checkReference?: Reference | null };
+  scale: {
+    metersPerPixel: number | null;
+    reference: Reference | null;
+    checkReference?: Reference | null;
+    proposal?: { reference: Reference; checkReference: Reference; evidenceCount: number };
+  };
   nodes: Node[];
   walls: Wall[];
   openings: Opening[];

@@ -165,7 +165,7 @@ def dimension_framed_crop(strips, image):
     return [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
 
 
-def build(path, roi=None, *, plan_id=None, reconstruct_config=None):
+def build(path, roi=None, *, plan_id=None, reconstruct_config=None, detect_scale=False):
     source = decode(Path(path).read_bytes())
     image = sharpen_soft_scan(source)
     native_image = image
@@ -180,7 +180,10 @@ def build(path, roi=None, *, plan_id=None, reconstruct_config=None):
 
         doc = semantic_build(image)
         doc.warnings.extend(notes)
-        return tag_rooms(reconstruct(doc, plan_id, reconstruct_config), detect_symbols(image, roi)) if plan_id is not None else doc
+        if plan_id is None:
+            return doc
+        model = tag_rooms(reconstruct(doc, plan_id, reconstruct_config), detect_symbols(image, roi))
+        return with_scale_proposal(model, source) if detect_scale else model
     from .ink_layers import wall_strips
     from .envelope import building_envelope, mask_from_polygon
     from .structural_runs import structural_runs, join_intersections
@@ -401,7 +404,15 @@ def build(path, roi=None, *, plan_id=None, reconstruct_config=None):
         model = resize.model(model)
         model.stairs = stairs
         model.gardens = detect_gardens(native_image)
-    return tag_rooms(model, detect_symbols(native_image, roi))
+    model = tag_rooms(model, detect_symbols(native_image, roi))
+    return with_scale_proposal(model, source) if detect_scale else model
+
+
+def with_scale_proposal(model, source):
+    from .plan_scale_proposal import propose_scale
+
+    model.scale.proposal = propose_scale(source)
+    return model
 
 
 if __name__ == "__main__":
@@ -411,6 +422,7 @@ if __name__ == "__main__":
     parser.add_argument("output", type=Path)
     parser.add_argument("roi", type=Path, nargs="?")
     parser.add_argument("--plan-id")
+    parser.add_argument("--detect-scale", action="store_true")
     args = parser.parse_args()
     roi = json.loads(args.roi.read_text()) if args.roi else None
-    args.output.write_text(build(args.path, roi, plan_id=args.plan_id).model_dump_json())
+    args.output.write_text(build(args.path, roi, plan_id=args.plan_id, detect_scale=args.detect_scale).model_dump_json())

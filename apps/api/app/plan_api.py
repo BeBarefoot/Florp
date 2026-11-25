@@ -85,6 +85,7 @@ async def run_worker(path: str, roi=None, *, plan_id: str) -> PlanModel:
             *extra,
             "--plan-id",
             plan_id,
+            *([] if roi else ["--detect-scale"]),
             env=env,
             start_new_session=True,
             stderr=asyncio.subprocess.PIPE,
@@ -262,7 +263,10 @@ async def extract(bid: str, expected_revision: int = 0, body: Extract | None = N
         raise HTTPException(503,'Opening approval profile is unavailable or invalid; saved geometry is unchanged') from exc
     model = await run_worker(path, body.envelope if body else None, plan_id=bid)
     if previous:
+        proposal = model.scale.proposal
         model.scale = previous.scale.model_copy(deep=True)
+        if not model.scale.reference and proposal:
+            model.scale.proposal = proposal
         model.rooms = previous.rooms
         model.room_zones = previous.room_zones
         model = derive(model)

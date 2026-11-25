@@ -28,6 +28,7 @@ export default function PlanCanvas(props: {
   tool: Tool;
   setTool: (t: Tool) => void;
   selection: Selection;
+  showScaleProposal?: boolean;
   select: (s: Selection) => void;
   activeFinding: Finding | null;
   measure: Pt[];
@@ -438,6 +439,14 @@ export default function PlanCanvas(props: {
             pointerEvents="none"
           />
         )}
+        {props.showScaleProposal && m.scale.proposal && [m.scale.proposal.reference, m.scale.proposal.checkReference].map((span, i) => (
+          <g key={i} pointerEvents="none" stroke={i ? "#723cb2" : "#00748b"} strokeWidth={2.5 * px}
+            data-testid="proposed-scale-span">
+            <line x1={span.p1.x} y1={span.p1.y} x2={span.p2.x} y2={span.p2.y} strokeDasharray={`${6 * px} ${4 * px}`}/>
+            <circle cx={span.p1.x} cy={span.p1.y} r={3 * px} fill="white"/>
+            <circle cx={span.p2.x} cy={span.p2.y} r={3 * px} fill="white"/>
+          </g>
+        ))}
         {m.scale.reference && tool !== "measure" && (
           <line
             x1={m.scale.reference.p1.x}

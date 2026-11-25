@@ -50,10 +50,17 @@ class Reference(Base):
     length_meters: float = Field(gt=0, le=1000)
 
 
+class ScaleProposal(Base):
+    reference: Reference
+    check_reference: Reference
+    evidence_count: int = Field(ge=3)
+
+
 class Scale(Base):
     meters_per_pixel: float | None = None
     reference: Reference | None = None
     check_reference: Reference | None = None
+    proposal: ScaleProposal | None = None
 
     @model_serializer(mode="wrap")
     def serialize_reference_check(self, serialize):
@@ -61,6 +68,8 @@ class Scale(Base):
         if self.check_reference is None:
             data.pop("check_reference", None)
             data.pop("checkReference", None)
+        if self.proposal is None:
+            data.pop("proposal", None)
         return data
 
 
@@ -258,6 +267,14 @@ class PlanModel(Base):
 
         ref = self.scale.reference
         check = self.scale.check_reference
+        proposal = self.scale.proposal
+        if proposal:
+            a, b = proposal.reference, proposal.check_reference
+            a_scale, b_scale = a.length_meters / reference_pixels(a), b.length_meters / reference_pixels(b)
+            def horizontal(line):
+                return abs(line.p2.x - line.p1.x) > abs(line.p2.y - line.p1.y)
+            if horizontal(a) == horizontal(b) or abs(a_scale / b_scale - 1) > .02 + 1e-9:
+                raise ValueError("Scale proposals need agreeing horizontal and vertical spans")
         if check:
             if not ref:
                 raise ValueError("Set the scale reference before adding a check")

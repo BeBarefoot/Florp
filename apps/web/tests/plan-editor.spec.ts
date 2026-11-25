@@ -290,6 +290,23 @@ test("set measurement: two clicks + 2.9 m sets scale without moving geometry", a
   await expect(page.getByTestId("room-row-area").first()).toContainText("m²");
 });
 
+for (const phone of [false,true]) {
+  test(`printed scale requires confirmation in the ${phone?"phone":"web"} editor`, async ({ page }) => {
+    const reference = {p1:{x:100,y:70},p2:{x:900,y:70},lengthMeters:8};
+    const checkReference = {p1:{x:950,y:100},p2:{x:950,y:600},lengthMeters:5};
+    const model = fixture({scale:{metersPerPixel:null,reference:null,proposal:{reference,checkReference,evidenceCount:3}}});
+    const {puts} = await setup(page,{model,phone});
+    await expect(page.getByRole("button",{name:"Use these measurements"})).toHaveCount(0);
+    await page.getByRole("button",{name:"Review detected scale"}).click();
+    await expect(page.getByTestId("proposed-scale-span")).toHaveCount(2);
+    expect(puts).toHaveLength(0);
+    await page.getByRole("button",{name:"Use these measurements"}).click();
+    await expect.poll(()=>puts.length).toBeGreaterThan(0);
+    expect(puts.at(-1)?.scale).toMatchObject({metersPerPixel:.01,reference,checkReference});
+    expect(puts.at(-1)?.nodes).toEqual(model.nodes);
+  });
+}
+
 test("dragging a shared corner updates 3D meshes and room areas immediately", async ({ page }) => {
   const scaled = setReference(fixture(), { x: 100, y: 100 }, { x: 500, y: 100 }, 4);
   await setup(page, { model: scaled });
