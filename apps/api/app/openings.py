@@ -597,9 +597,9 @@ def _photo_windows(edges, colour, gap, pieces):
     return best
 
 
-def _dashes(line, gap: Gap):
+def _dashes(line, gap: Gap, *, band_factor=1.5):
     """Sparse thin ink along an overhead-door gap: present but not a continuous rail."""
-    half = int(math.ceil(gap.t * 1.5))
+    half = int(math.ceil(gap.t * band_factor))
     lo, hi = int(gap.lo), int(gap.hi)
     c = int(round(gap.cross))
     h, w = line.shape
@@ -1191,7 +1191,8 @@ def detect(
         if framed_site:
             for g in _photo_end_gaps(walls, (h, w)):
                 # A wide opening between exposed ends of two concrete walls.
-                # Require structural ink beside both ends and a dashed edge.
+                # Require structural ink beside both ends and an on-axis
+                # dashed edge. An offset parking guide is not a door.
                 if g.hi - g.lo < 10 * g.t or _overlaps_opening(g, accepted):
                     continue
                 blue = strips.blue if g.horizontal else strips.blue.T
@@ -1209,7 +1210,7 @@ def detect(
                     )
 
                 if not (
-                    concrete_end(g.lo) and concrete_end(g.hi) and _dashes(line, g) > 0
+                    concrete_end(g.lo) and concrete_end(g.hi) and _dashes(line, g, band_factor=.5) > 0
                 ):
                     continue
                 # An interior span has material on both sides in its middle third.

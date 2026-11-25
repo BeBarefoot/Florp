@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import type {PlanModel} from '../lib/plan/model';
-import {withDerived,metersPerPixel,wallFootprint} from '../lib/plan/derive';
+import {withDerived,metersPerPixel,wallFootprint,inset} from '../lib/plan/derive';
 import {wallPieces} from '../lib/plan/mesh';
 import {moveNode,deleteWall,addWall} from '../lib/plan/ops';
 const cases=JSON.parse(readFileSync(resolve(process.cwd(),'../../tests/fixtures/geometry-contract.json'),'utf8')) as {name:string;model:PlanModel;expectedAreasPx2:number[];expectedBoundsPx:number[][]}[];
@@ -41,4 +41,15 @@ test('scale check detects a compressed footprint and respects recalibration',()=
  expect(wallFootprint(model,null)).toBeNull();
  expect(wallFootprint(model,.001)?.unusuallySmall).toBe(true);
  expect(wallFootprint(model,.05)?.unusuallySmall).toBe(false);
+});
+
+test('nearly parallel walls of different thickness bevel the room inset',()=>{
+ const fixture=JSON.parse(readFileSync(resolve(process.cwd(),'../../tests/fixtures/room-inset-contract.json'),'utf8'));
+ const outline=inset(fixture.points,fixture.thickness);
+ expect(outline).toHaveLength(6);
+ const area=outline.reduce((sum,p,i)=>{
+  const q=outline[(i+1)%outline.length];
+  return sum+(p.x*q.y-q.x*p.y)/2;
+ },0);
+ expect(area).toBeCloseTo(fixture.expectedAreaPx2,7);
 });

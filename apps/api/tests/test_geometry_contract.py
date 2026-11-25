@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from shapely.geometry import Polygon, box
 from app.plan_model import PlanModel
-from app.plan_derive import derive
+from app.plan_derive import derive, inset
 
 CASES = json.loads((Path(__file__).parents[3] / 'tests/fixtures/geometry-contract.json').read_text())
 
@@ -37,3 +37,12 @@ def test_room_merge_clears_ambiguous_semantics():
     assert len(merged.rooms) == 1
     assert merged.rooms[0].needs_semantic_review
     assert merged.rooms[0].label is None and merged.rooms[0].room_type is None
+
+
+def test_nearly_parallel_walls_of_different_thickness_bevel_the_room_inset():
+    case = json.loads((Path(__file__).parents[3] / 'tests/fixtures/room-inset-contract.json').read_text())
+    points = [(p["x"], p["y"]) for p in case["points"]]
+    outline = inset(points, case["thickness"])
+    room = Polygon(outline)
+    assert room.is_valid and len(outline) == 6
+    assert room.area == pytest.approx(case["expectedAreaPx2"])

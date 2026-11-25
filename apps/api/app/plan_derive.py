@@ -83,7 +83,7 @@ def inset(points, thickness):
         lines.append(((p[0] + nx * off, p[1] + ny * off), (dx / length, dy / length), (nx, ny), off))
     result = []
     for i in range(n):
-        (p1, d1, _, _), (p2, d2, n2, off2) = lines[i - 1], lines[i]
+        (p1, d1, n1, off1), (p2, d2, n2, off2) = lines[i - 1], lines[i]
         det = d1[0] * d2[1] - d1[1] * d2[0]
         if abs(det) < 1e-6:
             v = points[i]
@@ -91,7 +91,15 @@ def inset(points, thickness):
             continue
         rx, ry = p2[0] - p1[0], p2[1] - p1[1]
         t = (rx * d2[1] - ry * d2[0]) / det
-        result.append((p1[0] + t * d1[0], p1[1] + t * d1[1]))
+        joint = (p1[0] + t * d1[0], p1[1] + t * d1[1])
+        v = points[i]
+        if math.dist(joint, v) > 4 * max(off1, off2):
+            # Nearly parallel fitted walls of different thickness can place
+            # their offset intersection far away, across the room polygon.
+            result.extend(((v[0] + n1[0] * off1, v[1] + n1[1] * off1),
+                           (v[0] + n2[0] * off2, v[1] + n2[1] * off2)))
+        else:
+            result.append(joint)
     return result
 
 

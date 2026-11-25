@@ -386,6 +386,10 @@ def build(path, roi=None, *, plan_id=None, reconstruct_config=None, detect_scale
             doc.stairs = stairs
         return doc
     model = original = reconstruct(doc, plan_id, reconstruct_config, strips=strips, image=image)
+    if strips.boundary_mask is not None:
+        from .photo_boundary_repair import recover_photo_boundaries
+
+        model = recover_photo_boundaries(model, image, strips)
     if resize is not None:
         from .compact_plan_cleanup import clean_compact_plan
 

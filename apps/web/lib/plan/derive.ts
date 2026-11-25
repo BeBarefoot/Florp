@@ -174,7 +174,7 @@ export function inset(points: Pt[], thickness: number[]): Pt[] {
     const off = thickness[i] / 2;
     return { p: { x: p.x + nrm.x * off, y: p.y + nrm.y * off }, d, nrm, off };
   });
-  return points.map((v, i) => {
+  return points.flatMap((v, i) => {
     const l1 = lines[(i - 1 + n) % n],
       l2 = lines[i];
     const det = l1.d.x * l2.d.y - l1.d.y * l2.d.x;
@@ -182,7 +182,11 @@ export function inset(points: Pt[], thickness: number[]): Pt[] {
     const rx = l2.p.x - l1.p.x,
       ry = l2.p.y - l1.p.y;
     const t = (rx * l2.d.y - ry * l2.d.x) / det;
-    return { x: l1.p.x + t * l1.d.x, y: l1.p.y + t * l1.d.y };
+    const joint = { x: l1.p.x + t * l1.d.x, y: l1.p.y + t * l1.d.y };
+    if (Math.hypot(joint.x - v.x, joint.y - v.y) > 4 * Math.max(l1.off, l2.off)) {
+      return [l1, l2].map(({nrm, off}) => ({x:v.x+nrm.x*off,y:v.y+nrm.y*off}));
+    }
+    return joint;
   });
 }
 
