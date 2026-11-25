@@ -1,4 +1,5 @@
 "use client";
+import { StairFields, WindowFields } from "./OpeningAndStairFields";
 import { useState } from "react";
 import type { Finding, FindingCategory, PlanModel, Pt } from "../../lib/plan/model";
 import { FINDING_LABELS, ROOM_TYPES } from "../../lib/plan/model";
@@ -211,16 +212,11 @@ export default function Inspector(p: Props) {
         <section className="fe-card" data-testid="selection">
           <small className="fe-eyebrow">{selOpening.kind.toUpperCase()} · {selOpening.status}</small>
           <h3>{len(selOpening.widthPx)} wide</h3>
-          <label>
-            Height (m)
-            <input type="number" min="0.3" step="0.05" value={selOpening.heightM} onChange={(e) => Number(e.target.value) > 0 && p.edit(patchOpening(m, selOpening.id, { heightM: Number(e.target.value) }))} />
-          </label>
-          {selOpening.kind === "window" && (
-            <label>
-              Sill height (m)
-              <input type="number" min="0" step="0.05" value={selOpening.sillM} onChange={(e) => p.edit(patchOpening(m, selOpening.id, { sillM: Math.max(0, Number(e.target.value)) }))} />
-            </label>
-          )}
+          {selOpening.kind === "window"
+            ? <WindowFields model={m} opening={selOpening} onPatch={patch=>p.edit(patchOpening(m,selOpening.id,patch))}/>
+            : <label>Height (m)
+              <input type="number" min="0.3" step="0.05" value={selOpening.heightM} onChange={(e) => Number(e.target.value) > 0 && p.edit(patchOpening(m, selOpening.id, { heightM: Number(e.target.value) }))} />
+            </label>}
           {selOpening.kind === "door" && (
             <>
               <button onClick={() => p.edit(patchOpening(m, selOpening.id, { swing: selOpening.swing === "right" ? "left" : "right" }))}>Flip swing</button>
@@ -264,20 +260,9 @@ export default function Inspector(p: Props) {
         {selStair ? (
           <>
             <p>{selStair.layout.toUpperCase()}-shaped stair · {selStair.treads.length} treads</p>
-            <label>
-              Rise per step (m)
-              <input type="number" min="0.08" max="0.3" step="0.005" key={`${selStair.id}:${selStair.riseM}`}
-                defaultValue={selStair.riseM}
-                onBlur={(e) => {
-                  const riseM = Number(e.target.value);
-                  if (riseM >= 0.08 && riseM <= 0.3 && riseM !== selStair.riseM)
-                    p.edit({ ...m, stairs: m.stairs?.map((s) => s.id === selStair.id ? { ...s, riseM } : s) });
-                  else e.target.value = String(selStair.riseM);
-                }} />
-            </label>
-            <p className="fe-muted">The 3D preview estimates the rise and direction. Check them against the plan.</p>
-            <button onClick={() => p.edit({ ...m, stairs: m.stairs?.map((s) =>
-              s.id === selStair.id ? { ...s, treads: [...s.treads].reverse() } : s) })}>Reverse direction</button>
+            <StairFields key={selStair.id} stair={selStair} onPatch={patch=>p.edit({...m,stairs:m.stairs?.map(s=>
+              s.id===selStair.id?{...s,...patch}:s)})}/>
+            <p className="fe-muted">Check the estimated rise and direction against the plan.</p>
             <button className="fe-danger" onClick={() => {
               p.edit({ ...m, stairs: m.stairs?.filter((s) => s.id !== selStair.id) });
               p.select(null);

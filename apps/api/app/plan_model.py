@@ -82,6 +82,13 @@ class Wall(Base):
     source: Literal["extracted", "user"] = "extracted"
 
 
+class WindowFrame(Base):
+    material: Literal["wood", "aluminium", "vinyl"]
+    color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
+    width_m: float = Field(ge=0.02, le=0.15)
+    panes: Literal[1, 2] = 1
+
+
 class Opening(Base):
     id: str = Field(max_length=120)
     kind: Literal["door", "window", "garage"]
@@ -95,6 +102,7 @@ class Opening(Base):
     hinge: Literal["start", "end"] = "start"
     confidence: float = Field(default=1.0, ge=0, le=1)
     status: Literal["proposed", "confirmed", "rejected"] = "proposed"
+    window_frame: WindowFrame | None = None
 
 
 class RoomSymbol(Base):
@@ -122,11 +130,19 @@ class RoomZone(Base):
 
 
 class Stair(Base):
-    """Tread polygons in ascending order; rise is an editable estimate."""
+    """Treads run from the start of a flight, or bottom to top for both directions."""
     id: str = Field(max_length=120)
     layout: Literal["l", "u"]
     treads: list[list[Pt]] = Field(min_length=3, max_length=80)
     rise_m: float = Field(default=0.17, ge=0.08, le=0.3)
+    direction: Literal["up", "down", "both"] = "up"
+    treads_below: int | None = Field(default=None, ge=1, le=78)
+
+    @model_validator(mode="after")
+    def validate_landing(self):
+        if self.direction == "both" and (self.treads_below is None or self.treads_below >= len(self.treads) - 1):
+            raise ValueError("Choose a landing with at least one tread above and below")
+        return self
 
 
 class ClosureEvidence(Base):

@@ -13,6 +13,7 @@ export type Wall = {
   source: "extracted" | "user";
 };
 export type OpeningStatus = "proposed" | "confirmed" | "rejected";
+export type WindowFrame = { material: "wood" | "aluminium" | "vinyl"; color: string; widthM: number; panes: 1 | 2 };
 export type Opening = {
   id: string;
   kind: "door" | "window" | "garage";
@@ -26,6 +27,7 @@ export type Opening = {
   hinge: "start" | "end";
   confidence: number;
   status: OpeningStatus;
+  windowFrame?: WindowFrame | null;
 };
 export type RoomType = "bedroom" | "garage" | "bathroom" | "kitchen" | "corridor" | "balcony" | "other";
 export const ROOM_TYPES: RoomType[] = ["bedroom", "garage", "bathroom", "kitchen", "corridor", "balcony", "other"];
@@ -39,7 +41,9 @@ export type Room = {
   ceilingHeightM?: number | null;
   needsSemanticReview?: boolean;
 };
-export type Stair = { id: string; layout: "l" | "u"; treads: Pt[][]; riseM: number };
+export type StairDirection = "up" | "down" | "both";
+export type Stair = { id: string; layout: "l" | "u"; treads: Pt[][]; riseM: number;
+  direction?: StairDirection; treadsBelow?: number | null };
 export type FindingCategory =
   | "opening_needs_approval"
   | "suggested_closure"

@@ -23,13 +23,7 @@ To update, stop Florp, run `git pull --ff-only` from a clean local `main` checko
 Start Florp on your Mac using the steps above. Open **Your walkthroughs** at `/phone`. Try **Explore sample tour**, or select **New space** and use **Upload plans** or **Take photo**. Tap a floor to extract and open it. From the web plan editor, **Phone walkthrough** saves pending plan edits and opens the same tour.
 
 - **On your Mac:** open `http://localhost:3000/phone` in Chrome. Use the browser's install option to open Florp in its own window.
-- **Android over USB:** enable USB debugging and connect the phone. With Android Platform Tools installed, run the commands below, then open `http://localhost:3000/phone` in Android Chrome and choose **Install app** or **Add to Home screen**.
-
-  ```bash
-  adb reverse tcp:3000 tcp:3000
-  adb reverse tcp:8000 tcp:8000
-  ```
-
+- **Android over USB:** use the [physical Android debugging guide](docs/ANDROID_DEBUG.md) to run Florp in Chrome and inspect it from your computer.
 - **iPhone Simulator:** open `http://localhost:3000/phone` in the simulator's Safari. For a physical iPhone, use the HTTPS setup below.
 
 Uploads and edits are stored on the Mac. Keep Florp running and connected while using the phone app. A shared tour link needs access to the same Florp host.
@@ -80,14 +74,14 @@ private network. The HTTPS gateway below requires an owner password for the app 
 ## Upload, correct and walk
 
 1. **Upload.** Use PNG, JPEG, WebP or PDF. Florp imports the first page of each PDF, so export additional pages as separate files. The default limits are 20 MiB per upload and 45 megapixels after decoding.
-2. **Check and correct.** Open **Edit floor** from the tour. Tap an existing wall, door or window to remove it, or choose a tool and tap both ends to add one. Use **Undo** to reverse an edit and **Done** to save and return to the tour. Open **Full editor** for calibration and architecture review. The phone tour labels an uncalibrated draft **Approximate scale**. Review fixture suggestions individually before adding them.
+2. **Check and correct.** Open **Edit floor** from the tour. Tap an existing wall, door or window to remove it, or choose a tool and tap both ends to add one. Use **Undo** to reverse an edit and **Done** to save and return to the tour. Select a window to set its measured width, height, sill, frame material, colour and pane count. Open **Full editor** for plan calibration and architecture review. The phone tour labels an uncalibrated draft **Approximate scale**. Review fixture suggestions individually before adding them.
 3. **Recover a missing floor.** If no closed rooms were found, choose **Mark a walkable floor in the editor** from the tour. Select two opposite corners of a clear area on the source drawing. Place and aim a camera, then choose **Save scene** to save the floor area and view. For a three-sided room, open **Align walls** to search the original drawing for a faint fourth wall. Under **Suggested wall closures**, select a finding to see the proposed span. Choose **Add closing wall** or dismiss it. To draw a diagonal wall or door, tap its two ends. A hosted door stretches along its wall when you drag an end handle.
-4. **Walk and save a view.** The phone tour opens at a clear room corner at full zoom-out when space allows. Drag to walk and turn, use WASD to move, and pinch or scroll to zoom. Hold Shift while dragging to look up or down. Choose **Corner view** to reset the framing in your current room. In **Overview**, tap the floor to land there, or choose **Add view** and tap a room to save a wide corner view. **Save this view** saves the current camera on a calibrated plan. Sample and approximate-scale tours keep new stops for the session. If the plan changed since the scene was saved, review and save the scene against the latest plan before saving permanent stops.
+4. **Walk and save a view.** The phone tour opens at a clear room corner at full zoom-out when space allows. Drag to walk and turn, or move with two fingers, twist to turn, and pinch to zoom. On desktop, use WASD to move, swipe sideways on the trackpad to turn, or hold Shift while scrolling or dragging to look up or down. Choose **Corner view** to reset the framing in your current room. In **Overview**, swipe on a desktop trackpad to orbit or pinch to zoom. Tap the floor to land there, or choose **Add view** and tap a room to save a wide corner view. **Save this view** saves the current camera on a calibrated plan. Sample and approximate-scale tours keep new stops for the session. If the plan changed since the scene was saved, review and save the scene against the latest plan before saving permanent stops.
 5. **Furnish and design.** In the phone tour, open **Finishes** to preview a floor material for the whole floor or an individual room. Choose a palette, set a colour and enter plank or tile dimensions. Saving a whole-floor finish keeps room overrides. In the full editor, place furniture and save the scene. **Capture view** and **Export render inputs** provide a camera-aligned preview, depth map and object mask. **Download view image** and **Download view prompt** export the phone view for an external image generator.
 
 On a fresh extraction, Florp checks for soft edges and sharpens a working copy when needed. It looks for drawn car and bed symbols before calibration. In a closed room, a car suggests **Garage** and a bed suggests **Bedroom**. Outside a detected room, the symbol keeps its own label. Look for the tags in the plan editor or the phone tour’s **Overview**. Select a tagged room in the editor to change its name or type. Faint or unfamiliar symbols can go unrecognized.
 
-For two levels, upload both files to the same project and choose **Identify floors, garden and stairs**. Confirm the suggested order and outlines, then **Save floor pair**. Each floor has its own calibrated editor and walkthrough. Continuous stair travel is planned.
+For two levels, upload both files to the same project and choose **Identify floors, garden and stairs**. Confirm the suggested order and outlines, then **Save floor pair**. Each floor has its own calibrated editor and walkthrough. Select a stair to set **Up**, **Down**, or **Both** and check its rise. Stairs are rendered relative to the current floor. Open the other floor to tour it.
 
 ## Image generation
 

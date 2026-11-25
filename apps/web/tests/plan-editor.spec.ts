@@ -5,6 +5,8 @@ import { addWall, moveNode, setReference, decideOpening } from "../lib/plan/ops"
 import { wallPieces } from "../lib/plan/mesh";
 import { eyeLevelPose, savedPose, verticalFov } from "../lib/plan/camera";
 import { promptFor } from "../lib/plan/scene";
+import {roomSurfaces} from "../lib/plan/stairs";
+import {stairCutouts,treadLevels} from "../lib/plan/stairLevels";
 import { furnitureParts } from "../lib/plan/furnitureModels";
 
 function fixture(extra: Partial<PlanModel> = {}): PlanModel {
@@ -139,9 +141,54 @@ test("phone editor adds and removes openings and walls with undo",async({page})=
   expect(puts.at(-1)?.openings).toHaveLength(2);
 });
 
-test("GLB keeps wall finishes, metric marble maps and furniture",async({page})=>{
+const rectangularTreads=[300,326,352,378,404].map(y=>[
+  {x:290,y},{x:382,y},{x:382,y:y+26},{x:290,y:y+26},
+]);
+
+test("phone inspector saves window calibration and a two-way stair",async({page})=>{
+  test.setTimeout(60_000);
+  await page.setViewportSize({width:390,height:844});
+  const stair={id:"stair",layout:"l" as const,riseM:.17,treads:rectangularTreads};
+  const model=setReference(fixture({stairs:[stair]}),{x:100,y:100},{x:500,y:100},4);
+  const {puts}=await setup(page,{model,phone:true});
+  await clickAt(page,260,100);
+  await page.getByText("Window dimensions and frame",{exact:true}).click();
+  const width=page.getByLabel("Window width (m)");
+  await width.fill("1.4");
+  await width.press("Enter");
+  await page.getByLabel("Frame material").selectOption("wood");
+  await page.getByLabel("Glass panes").selectOption("2");
+  await clickAt(page,332,355);
+  await page.getByText("Stair direction and rise",{exact:true}).click();
+  await page.getByLabel("Stair direction").selectOption("both");
+  const landing=page.getByLabel("Treads below the landing");
+  await landing.fill("1");
+  await landing.press("Enter");
+  await page.getByRole("button",{name:"Done",exact:true}).click();
+  await expect(page).toHaveURL(/\/phone\/showcase\/p/);
+  expect(puts.at(-1)?.openings.find(o=>o.id==="win")).toMatchObject({
+    offsetPx:90,widthPx:140,windowFrame:{material:"wood",color:"#a77852",panes:2},
+  });
+  expect(puts.at(-1)?.stairs?.[0]).toMatchObject({direction:"both",treadsBelow:1});
+});
+
+test("descending treads open the floor and two-way stairs have a level landing",()=>{
+  const stair={id:"stair",layout:"l" as const,riseM:.17,treads:rectangularTreads};
+  expect(treadLevels(stair)[0].elevation).toBeCloseTo(.17);
+  expect(treadLevels({...stair,direction:"down"})[0].elevation).toBeCloseTo(-.17);
+  const both={...stair,direction:"both" as const,treadsBelow:2};
+  const model=fixture({stairs:[both]});
+  expect(treadLevels(both).map(tread=>tread.elevation)).toEqual([-.34,-.17,0,.17,.34]);
+  expect(stairCutouts(model)).toHaveLength(2);
+  const [shape]=roomSurfaces(model.rooms.find(room=>room.polygon.some(point=>point.x<200))!.polygon,.01,stairCutouts(model));
+  expect(shape.holes).toHaveLength(1);
+});
+
+test("GLB keeps wall finishes, windows, stairs and furniture",async({page})=>{
   test.setTimeout(75_000);
-  const model=setReference(fixture({openings:[]}),{x:100,y:100},{x:500,y:100},4);
+  const window={...fixture().openings[0],windowFrame:{material:"wood" as const,color:"#885522",widthM:.06,panes:2 as const}};
+  const stair={id:"stairs",layout:"l" as const,riseM:.17,treads:rectangularTreads,direction:"down" as const};
+  const model=setReference(fixture({openings:[window],stairs:[stair]}),{x:100,y:100},{x:500,y:100},4);
   let config={views:[],objects:[{id:"scene-planter",kind:"planter",position:{x:340,y:290},
     width:.55,depth:.55,height:.98,rotation:0}],style:"",wallFinishes:{},
     floorMaterial:{kind:"marble",color:"#e4dac6",widthM:.6,lengthM:.8}};
@@ -190,6 +237,12 @@ test("GLB keeps wall finishes, metric marble maps and furniture",async({page})=>
   expect(furniture.matrix[13]).toBe(0);
   expect(furniture.matrix[14]).toBeCloseTo(2.9);
   expect(furniture.children.length).toBeGreaterThan(3);
+  const exportedWindow=gltf.nodes.find((node:{name:string})=>node.name==="Window win");
+  expect(exportedWindow.extras.frame).toMatchObject({material:"wood",panes:2});
+  expect(exportedWindow.children.filter((index:number)=>gltf.nodes[index].extras.glass)).toHaveLength(2);
+  const exportedStair=gltf.nodes.find((node:{name:string})=>node.name==="stairs");
+  expect(exportedStair.extras.direction).toBe("down");
+  expect(gltf.nodes[exportedStair.children[0]].matrix[13]).toBeCloseTo(-.34);
 });
 
 test("a conflicting second distance is saved and shown without changing the plan scale",async({page})=>{

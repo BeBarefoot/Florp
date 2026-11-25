@@ -1,7 +1,8 @@
 "use client";
+import {OrbitNavigation} from "./OrbitNavigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
-import { Grid, OrbitControls } from "@react-three/drei";
+import { Grid } from "@react-three/drei";
 import type { PlanModel, Pt, RoomType } from "../../lib/plan/model";
 import { ROOM_TYPES } from "../../lib/plan/model";
 import { metersPerPixel, openingEnds, scaleCheck } from "../../lib/plan/derive";
@@ -485,7 +486,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
               <CaptureBridge bind={bind}/>
               {view&&cameraMode==="walk"?<WalkCamera view={view} scale={scale} frame={frame} canMove={p=>validCamera(p,true)} pose={walkPose}/>:
                 view&&cameraMode==="preview"?<EyeCamera view={view} scale={scale} frame={frame}/>:
-                <><Grid infiniteGrid cellSize={1} sectionSize={5}/><OrbitControls makeDefault target={cameraTarget}/></>}
+                <><Grid infiniteGrid cellSize={1} sectionSize={5}/><OrbitNavigation makeDefault target={cameraTarget}/></>}
             </Canvas>
           </div>
           {view&&cameraMode==="walk"&&<p>Drag left or right to turn and up or down to walk. Scroll or pinch to zoom.</p>}

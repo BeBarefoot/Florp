@@ -5,6 +5,7 @@ import type { Pt } from "../../lib/plan/model";
 import type { Frame, View } from "../../lib/plan/scene";
 import { makeCamera } from "./SceneMesh";
 import { MAX_HORIZONTAL_FOV_DEG } from "../../lib/plan/camera";
+import {twoFingerDelta} from "../../lib/plan/touchGesture";
 
 const movementKeys = new Map([
   ["w",[1,0]], ["arrowup",[1,0]], ["s",[-1,0]], ["arrowdown",[-1,0]],
@@ -63,6 +64,15 @@ export function WalkCamera({view, scale, frame, canMove, pose, keyboard, tapToWa
     }
     function step(forward:number,side:number){
       travel(Math.cos(yaw)*forward-Math.sin(yaw)*side,Math.sin(yaw)*forward+Math.cos(yaw)*side,tapToWalk);
+    }
+    function applyPose(){
+      target.set(Math.cos(yaw)*Math.cos(pitch),Math.sin(pitch),Math.sin(yaw)*Math.cos(pitch));
+      camera.lookAt(target.add(camera.position));
+      remember();
+      invalidate();
+    }
+    function tilt(amount:number){
+      pitch=MathUtils.clamp(pitch+amount,MathUtils.degToRad(-45),MathUtils.degToRad(30));
     }
 
     const keys=new Set<string>();
@@ -128,9 +138,11 @@ export function WalkCamera({view, scale, frame, canMove, pose, keyboard, tapToWa
       pointers.set(event.pointerId, after);
       if (pointers.size === 2) {
         const other = [...pointers].find(([id]) => id !== event.pointerId)![1];
-        const initial = Math.hypot(before.x - other.x, before.y - other.y);
-        const distance = Math.hypot(after.x - other.x, after.y - other.y);
-        if (initial > 0 && distance > 0) zoom(distance / initial);
+        const gesture=twoFingerDelta(before,after,other);
+        yaw+=gesture.twist;
+        step(MathUtils.clamp(-gesture.y*.012,-.6,.6),MathUtils.clamp(gesture.x*.011,-.6,.6));
+        if(gesture.pinch!==1)zoom(gesture.pinch);
+        applyPose();
         return;
       }
       if(tap?.id===event.pointerId){
@@ -140,13 +152,9 @@ export function WalkCamera({view, scale, frame, canMove, pose, keyboard, tapToWa
       yaw += (after.x - before.x) * .007;
       const vertical = before.y - after.y;
       const looking = keyboard && event.shiftKey;
-      if (looking) pitch = MathUtils.clamp(pitch + vertical * .006, MathUtils.degToRad(-45), MathUtils.degToRad(30));
+      if (looking) tilt(vertical*.006);
       else step(MathUtils.clamp(vertical * .012, -.6, .6),0);
-      const headingX = Math.cos(yaw), headingZ = Math.sin(yaw);
-      target.set(headingX * Math.cos(pitch), Math.sin(pitch), headingZ * Math.cos(pitch));
-      camera.lookAt(target.add(camera.position));
-      remember();
-      invalidate();
+      applyPose();
     }
 
     function end(event: PointerEvent) {
@@ -171,7 +179,11 @@ export function WalkCamera({view, scale, frame, canMove, pose, keyboard, tapToWa
       event.preventDefault();
       const units = event.deltaMode === WheelEvent.DOM_DELTA_PIXEL ? 1 :
         event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : canvas.clientHeight;
-      zoom(Math.exp(-event.deltaY * units * .002));
+      if(!event.ctrlKey&&(event.shiftKey||Math.abs(event.deltaX)>Math.abs(event.deltaY))){
+        yaw+=event.deltaX*units*.005;
+        tilt(-event.deltaY*units*.004);
+        applyPose();
+      }else zoom(Math.exp(-event.deltaY * units * .002));
     }
 
     canvas.addEventListener("pointerdown", down);

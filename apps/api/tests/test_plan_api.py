@@ -278,3 +278,24 @@ def test_restore_bundle_preserves_exported_geometry_without_overwriting_current_
     with zipfile.ZipFile(foreign, "w") as bundle:
         bundle.writestr("report.json", json.dumps({"plan": {**first, "id": "different-floor"}}))
     assert c.post(url + "/restore-bundle", files={"file": ("foreign.zip", foreign.getvalue())}).status_code == 422
+
+
+def test_window_frame_and_stair_landing_round_trip(client):
+    c, bid = client
+    url = f"/blueprints/{bid}/plan"
+    frame = {"material": "wood", "color": "#966846", "widthM": .06, "panes": 2}
+    opening = {"id": "window", "kind": "window", "hostWallId": "w0", "offsetPx": 40,
+               "widthPx": 120, "heightM": 1.1, "sillM": .85, "status": "confirmed", "windowFrame": frame}
+    treads = [[{"x": x, "y": y} for x, y in [(200, z), (280, z), (280, z+25), (200, z+25)]]
+              for z in (200, 225, 250)]
+    stair = {"id": "stair", "layout": "l", "treads": treads, "direction": "both", "treadsBelow": 1}
+    data = plan(openings=[opening], stairs=[stair], scale=reference())
+    result = c.put(url, json={"expectedRevision": 0, "model": data})
+    assert result.status_code == 200, result.text
+    saved = c.get(url).json()["model"]
+    assert saved["openings"][0]["windowFrame"] == frame
+    assert saved["openings"][0]["widthPx"] == 120
+    assert saved["stairs"][0]["direction"] == "both"
+    assert saved["stairs"][0]["treadsBelow"] == 1
+    data["stairs"][0]["treadsBelow"] = 2
+    assert c.put(url, json={"expectedRevision": 1, "model": data}).status_code == 422

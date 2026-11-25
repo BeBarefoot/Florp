@@ -2,9 +2,12 @@ import * as THREE from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import type { PlanModel } from "./plan/model";
 import { metersPerPixel } from "./plan/derive";
-import { floorOutlines, wallPieces } from "./plan/mesh";
+import { wallPieces } from "./plan/mesh";
+import { roomsOf } from "./plan/walkSpace";
 import {yardShapes} from "./plan/yard";
-import { stairPieces } from "./plan/stairs";
+import { roomSurfaces, stairPieces } from "./plan/stairs";
+import {stairCutouts} from "./plan/stairLevels";
+import { makeWindows } from "./plan/windowFrames";
 import { floorMaterialFor, floorSurface, floorTexture, loadFloorPhotos } from "./plan/floorMaterials";
 import { floorFinishes, type Scene } from "./plan/scene";
 import {furnitureParts,makeFurnitureResources} from "./plan/furnitureModels";
@@ -62,17 +65,13 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
     yard.rotation.x=-Math.PI/2;
     scene.add(yard);
   }
-  const rooms = [...floorOutlines(m), ...(m.roomZones??[]).map(room=>({
-    id:room.id,label:room.label,points:room.polygon.map(p=>({x:p.x*scale,y:p.y*scale})),
-  }))];
+  const rooms=roomsOf(m);
+  const cutouts=stairCutouts(m);
   const finishes = rooms.map(room=>config && floorMaterialFor(config,room.id));
   const kinds = [...new Set(finishes.flatMap(finish=>finish ? [finish.kind] : []))];
   const photos = new Map(await Promise.all(kinds.map(async kind=>[kind,await loadFloorPhotos(kind)] as const)));
   const surfaces = new Map<string,ReturnType<typeof floorSurface>>();
   for (const [index,r] of rooms.entries()) {
-    const shape = new THREE.Shape();
-    r.points.forEach((p, i) => (i ? shape.lineTo(p.x, -p.y) : shape.moveTo(p.x, -p.y)));
-    shape.closePath();
     const finish = finishes[index];
     let surface;
     if (finish) {
@@ -87,8 +86,10 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
       }
     }
     const base = config && floorFinishes[config.floorFinish??"default"];
+    const shapes=roomSurfaces(r.polygon,scale,cutouts);
+    if(!shapes.length)continue;
     const mesh = new THREE.Mesh(
-      new THREE.ShapeGeometry(shape),
+      new THREE.ShapeGeometry(shapes),
       new THREE.MeshStandardMaterial({color:finish?.color??base?.color??"#e2e6e2",
         roughness:base?.roughness, ...surface, side:THREE.DoubleSide}),
     );
@@ -97,18 +98,34 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
     mesh.rotation.x = -Math.PI / 2;
     scene.add(mesh);
   }
-  for (const stair of stairPieces(m)) {
+  const stairs=stairPieces(m);
+  for (const stair of stairs) {
     const group = new THREE.Group();
     group.name = stair.id;
-    group.userData = { kind: "stair", id: stair.id };
-    const material = new THREE.MeshStandardMaterial({ color: "#a9b9b2" });
+    group.userData = { kind: "stair", id: stair.id, direction:stair.direction };
+    const material = new THREE.MeshStandardMaterial({ color: "#a39b8d", roughness:.83 });
+    const treadMaterial=new THREE.MeshStandardMaterial({color:"#c6a681",roughness:.68});
     for (const step of stair.steps) {
       const mesh = new THREE.Mesh(new THREE.ExtrudeGeometry(step.shape, { depth: step.height, bevelEnabled: false }), material);
       mesh.rotation.x = -Math.PI / 2;
+      mesh.position.y=step.bottom;
       group.add(mesh);
+      const tread=new THREE.Mesh(new THREE.ShapeGeometry(step.shape),treadMaterial);
+      tread.rotation.x=-Math.PI/2;
+      tread.position.y=step.bottom+step.height+.001;
+      group.add(tread);
+    }
+    for(const well of stair.wells){
+      group.add(new THREE.Mesh(well.walls,new THREE.MeshStandardMaterial({color:"#aeaba0",side:THREE.DoubleSide})));
+      const bottom=new THREE.Mesh(new THREE.ShapeGeometry(well.shape),new THREE.MeshStandardMaterial({color:"#958d80"}));
+      bottom.position.y=well.bottom;
+      bottom.rotation.x=-Math.PI/2;
+      group.add(bottom);
     }
     scene.add(group);
   }
+  const windows=makeWindows(m);
+  scene.add(windows.group);
   const furniture=makeFurnitureResources();
   for (const item of config?.objects??[]) {
     const group=new THREE.Group();
@@ -128,6 +145,8 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
   const data = await new GLTFExporter().parseAsync(scene, { binary: true }).finally(()=>{
     textures.forEach(texture=>texture.dispose());
     furniture.dispose();
+    windows.dispose();
+    stairs.forEach(stair=>stair.wells.forEach(well=>well.walls.dispose()));
   });
   const url = URL.createObjectURL(new Blob([data as ArrayBuffer], { type: "model/gltf-binary" }));
   const a = document.createElement("a");

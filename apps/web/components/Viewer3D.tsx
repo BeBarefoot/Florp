@@ -1,7 +1,8 @@
 'use client';
+import {OrbitNavigation} from "./plan/OrbitNavigation";
 import {useMemo} from 'react';
 import {Canvas} from '@react-three/fiber';
-import {OrbitControls, Grid} from '@react-three/drei';
+import {Grid} from '@react-three/drei';
 import * as THREE from 'three';
 import type {Geometry, Pt, Opening} from '../lib/api';
 import {editableEdges} from '../lib/geometryEditing';
@@ -112,7 +113,7 @@ export default function Viewer3D({geometry,compact=false}:{geometry:Geometry;com
         <meshStandardMaterial color="#dceae2" side={THREE.DoubleSide}/></mesh>)}
       {data.edges.map(e=><WallMesh key={e.id} edge={e} scale={scale} openings={geometry.openings} color="#d1dae0"/>)}
       {data.independent.map(w=><WallMesh key={w.id} edge={{a:w.start,b:w.end,id:w.id,thickness:w.thickness_m,height:w.height_m}} scale={scale} openings={geometry.openings} color="#5b8aab"/>)}
-      <OrbitControls makeDefault target={target}/>
+      <OrbitNavigation makeDefault target={target}/>
     </Canvas>
     {!compact&&<p className="notice">3D displays {data.independent.length+data.edges.length} stored wall segments, not the colored detection overlay. {data.hasPlaceholderRoom?'The original starter rectangle and its floor are hidden. ':''}Missing interior walls must be accepted or drawn in the 2D draft before they appear here.</p>}
     {geometry.rooms.some(r=>!validPolygon(r.points))&&<p className="notice">A room polygon is invalid or self-intersecting; its 3D floor and boundary were skipped. Correct it in 2D.</p>}

@@ -1,8 +1,9 @@
 "use client";
+import {OrbitNavigation} from "./OrbitNavigation";
 import { roomTags } from "../../lib/plan/roomTags";
 import {useCallback,useEffect,useMemo,useRef,useState} from "react";
 import {Canvas,useThree} from "@react-three/fiber";
-import {Html,OrbitControls} from "@react-three/drei";
+import {Html} from "@react-three/drei";
 import {DoubleSide,Shape,Vector2,Vector3} from "three";
 import Link from "next/link";
 import {Maximize2,LayoutGrid,Box,MapPin,Pause,Play,SkipBack,SkipForward,Image as ImageIcon,FileDown,ImageDown,Bookmark,MapPinPlus,X,PencilRuler,Layers,Armchair} from "lucide-react";
@@ -31,10 +32,6 @@ function SampleFurniture({interior}:{interior:boolean}){
     return <mesh castShadow receiveShadow position={[x,y,z]}><boxGeometry args={[w,h,d]}/><meshStandardMaterial color={color}/></mesh>;
   }
   return <>
-    {[3.31,4.64,5.94].map(x=><group key={x}>{block(x,1.58,.008,.035,1.65,.08,"#756955")}</group>)}
-    {block(4.625,.75,.01,2.71,.07,.17,"#99816a")}
-    {block(4.625,2.4,.01,2.71,.06,.08,"#756955")}
-    {[2.11,3.71,5.29].map(z=><group key={z}>{block(.01,1.58,z,.08,1.65,.035,"#756955")}</group>)}
     {interior&&<>
       {block(3,-.13,-1,50,.14,50,"#a8b391")}
       {[-4,-1,2,6,9,14].map((x,i)=><group key={x} position={[x,0,-4-i%2]}>
@@ -72,7 +69,7 @@ function OverviewCamera({plan}:{plan:PlanModel}){
   },[plan,scale,size.width,size.height]);
   const perspective=camera as import("three").PerspectiveCamera;
   return <><primitive object={perspective} position={eye} fov={45} onUpdate={()=>perspective.updateProjectionMatrix()}/>
-    <OrbitControls target={target} enablePan={false} rotateSpeed={.65} minPolarAngle={.08} maxPolarAngle={Math.PI*.47}/></>;
+    <OrbitNavigation target={target} rotateSpeed={.65} minPolarAngle={.08} maxPolarAngle={Math.PI*.47}/></>;
 }
 
 type WalkFrame = {viewId:string;width:number;height:number;image:()=>string};
@@ -322,7 +319,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   }
   return <main className="showcase-player" data-furnishing={furnishing} aria-label="3D showcase">
     <div className="show-stage"><Canvas shadows frameloop="demand" dpr={[1,1.6]} camera={{near:.005,far:2000}} fallback={<p>Enable WebGL to view this tour.</p>}>
-      <color attach="background" args={[sample&&view?"#cfdfdf":"#d8d9cb"]}/>
+      <color attach="background" args={[view?"#d4e3e9":"#d8d9cb"]}/>
       <SceneMesh m={plan} objects={objects} closedDoorIds={scene.closedDoorIds} floorStyle={styledScene}
         wallFinishes={scene.wallFinishes} presentation cutaway={!view}/>
       {sample&&<SampleFurniture interior={!!view}/>}
@@ -382,7 +379,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
       <h1 className="show-current-view">{view?.name??"Dollhouse view"}</h1>
       {(toolsOpen||adding||pickingRoom)&&<div className="show-heading">
         <small>{approximate?"Approximate scale · ":""}{title}</small>
-        <p>{pickingRoom?"Tap a room’s floor to choose it.":adding?"Tap a room to add a wide corner view.":rendered?"Saved design render":view?"Tap the floor to walk. Drag to turn or move. Pinch to zoom.":"Tap the floor to start walking. Drag to orbit."}</p>
+        <p>{pickingRoom?"Tap a room’s floor to choose it.":adding?"Tap a room to add a wide corner view.":rendered?"Saved design render":view?"Tap to walk. Drag two fingers to move, twist to turn, and pinch to zoom.":"Drag to orbit. Use two fingers to pan, twist, or zoom."}</p>
       </div>}
       <div className="show-dock">
         <button type="button" className="show-menu-button" aria-label={toolsOpen?"Close tour tools":"Open tour tools"}

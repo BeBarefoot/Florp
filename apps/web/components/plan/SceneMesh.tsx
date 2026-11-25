@@ -8,7 +8,9 @@ import { metersPerPixel, openingEnds } from "../../lib/plan/derive";
 import { wallPieces } from "../../lib/plan/mesh";
 import { roomsOf } from "../../lib/plan/walkSpace";
 import {yardShapes} from "../../lib/plan/yard";
-import { stairPieces } from "../../lib/plan/stairs";
+import { roomSurfaces, stairPieces } from "../../lib/plan/stairs";
+import {stairCutouts, stairHeadroom} from "../../lib/plan/stairLevels";
+import { makeWindows } from "../../lib/plan/windowFrames";
 import { savedPose } from "../../lib/plan/camera";
 import { floorFinishes, type Capture, type Frame, type Item, type Scene, type View } from "../../lib/plan/scene";
 import { furnitureParts, makeFurnitureResources } from "../../lib/plan/furnitureModels";
@@ -101,6 +103,12 @@ function FurnitureMeshes({objects,scale,presentation,environment}:{objects:Item[
   </group>);
 }
 
+function Windows({plan,environment,shadows}:{plan:PlanModel;environment:T.Texture|null;shadows:boolean}){
+  const windows=useMemo(()=>makeWindows(plan,environment,shadows),[plan,environment,shadows]);
+  useEffect(()=>windows.dispose,[windows]);
+  return <primitive object={windows.group}/>;
+}
+
 export function SceneMesh({m, objects, closedDoorIds, floorStyle={}, wallFinishes, presentation=false, cutaway=false}: {m: PlanModel; objects: Item[]; closedDoorIds?: string[]; floorStyle?:FloorStyle; wallFinishes?:Scene["wallFinishes"]; presentation?:boolean; cutaway?:boolean}) {
   const scale = metersPerPixel(m)!;
   const {floorFinish="default",floorMaterial,roomFloorMaterials}=floorStyle;
@@ -113,10 +121,12 @@ export function SceneMesh({m, objects, closedDoorIds, floorStyle={}, wallFinishe
   useEffect(()=>()=>wallTiles?.dispose(),[wallTiles]);
   const yards=useMemo(()=>yardShapes(m),[m]);
   const stairs = useMemo(()=>stairPieces(m),[m]);
-  const rooms = useMemo(()=>roomsOf(m).map(r=>{
-    const shape = new T.Shape(r.polygon.map(p=>new T.Vector2(p.x*scale,-p.y*scale)));
-    return {room:r, shape};
-  }),[m,scale]);
+  useEffect(()=>()=>stairs.forEach(stair=>stair.wells.forEach(well=>well.walls.dispose())),[stairs]);
+  const rooms = useMemo(()=>{
+    const cutouts=stairCutouts(m);
+    return roomsOf(m).map(room=>({room, surfaces:roomSurfaces(room.polygon,scale,cutouts),
+      ceilings:roomSurfaces(room.polygon,scale,stairHeadroom(m,room.ceilingHeightM??2.8))}));
+  },[m,scale]);
   const materials = useMemo(()=>rooms.map(({room})=>
     floorMaterialFor({floorFinish,floorMaterial,roomFloorMaterials},room.id)
   ),[rooms,floorFinish,floorMaterial,roomFloorMaterials]);
@@ -144,45 +154,43 @@ export function SceneMesh({m, objects, closedDoorIds, floorStyle={}, wallFinishe
     roughnessMap?.dispose();
   }),[floors]);
   const environment = useMaterialEnvironment(presentation &&
-    (objects.length>0||floors.finishes.some(finish=>"normalMap" in finish && !!finish.normalMap)));
+    (objects.length>0||m.openings.some(o=>o.kind==="window"&&o.status==="confirmed")||
+      floors.finishes.some(finish=>"normalMap" in finish && !!finish.normalMap)));
   return <>
-    {presentation?<><hemisphereLight color="#fff3df" groundColor="#9b9b8f" intensity={1.45}/>
+    {presentation?<><hemisphereLight color="#fff6ea" groundColor="#b4b3aa" intensity={1.45}/>
       <primitive object={sunTarget}/>
       <directionalLight color="#fff0d6" intensity={2} castShadow target={sunTarget}
         position={[width*.25,shadowSize*1.5,-depth*.25]} shadow-mapSize={[1024,1024]}
         shadow-camera-left={-shadowSize} shadow-camera-right={shadowSize} shadow-camera-top={shadowSize}
-        shadow-camera-bottom={-shadowSize} shadow-camera-far={shadowSize*4} shadow-normalBias={.035}/>
+        shadow-camera-bottom={-shadowSize} shadow-camera-far={shadowSize*4} shadow-normalBias={.022} shadow-bias={-.0001}/>
     </>:<><ambientLight intensity={1.25}/><directionalLight position={[5,10,3]} intensity={2}/></>}
     {yards.map((shape,i)=><mesh key={"yard"+i} rotation={[-Math.PI/2,0,0]} position={[0,-.01,0]} receiveShadow userData={{maskId:1,furnishGround:true}}>
       <shapeGeometry args={[shape]}/><meshStandardMaterial color="#839768" side={T.DoubleSide}/>
     </mesh>)}
-    {rooms.map(({room,shape}, i)=>{
+    {rooms.map(({room,surfaces,ceilings}, i)=>{
       const finish = floors.finishes[i];
       const photoFloor = "normalMap" in finish && !!finish.normalMap;
       return <group key={room.id}>
-        <mesh receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,i*0.00002,0]} userData={{maskId:i+2,walkFloor:true}}>
+        {surfaces.map((shape,j)=><mesh key={j} receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,i*0.00002,0]} userData={{maskId:i+2,walkFloor:true}}>
           <shapeGeometry args={[shape]}/>
           <meshStandardMaterial key={photoFloor?"photo":"map" in finish?"pattern":"solid"} {...finish}
             envMap={photoFloor?environment:null} envMapIntensity={.42} side={T.DoubleSide}/>
-        </mesh>
-        {!cutaway&&room.roomType!=="balcony"&&<mesh receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,room.ceilingHeightM ?? 2.8,0]} userData={{maskId:1}}>
-          <shapeGeometry args={[shape]}/><meshStandardMaterial color="#f1efea" side={T.BackSide}/>
-        </mesh>}
+        </mesh>)}
+        {!cutaway&&room.roomType!=="balcony"&&ceilings.map((ceiling,j)=><mesh key={j} receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,room.ceilingHeightM ?? 2.8,0]} userData={{maskId:1}}>
+          <shapeGeometry args={[ceiling]}/><meshStandardMaterial color="#f1efea" side={T.BackSide}/>
+        </mesh>)}
       </group>;
     })}
     {walls.map((p,wallIndex)=><group key={p.id} position={[p.centre[0],0,p.centre[1]]} rotation={[0,p.angle,0]}>
       {p.chunks.map((chunk,i)=><WallChunk key={i} piece={p} chunk={chunk} wallIndex={wallIndex}
         presentation={presentation} finishes={wallFinishes} tileMap={wallTiles}/>)}
     </group>)}
-    {m.openings.filter(o=>o.status==="confirmed"&&(o.kind==="door"||o.kind==="window")).map(o=>{
+    <Windows plan={m} environment={environment} shadows={presentation}/>
+    {m.openings.filter(o=>o.status==="confirmed"&&o.kind==="door").map(o=>{
       const endpoints=openingEnds(m,o);
       if(!endpoints) return null;
       const [a,b]=endpoints, length=Math.hypot(b.x-a.x,b.y-a.y)*scale;
       const angle=Math.atan2(b.y-a.y,b.x-a.x);
-      if(o.kind==="window") return <mesh key={o.id} userData={{maskId:1,glass:true}}
-        position={[(a.x+b.x)*scale/2,o.sillM+o.heightM/2,(a.y+b.y)*scale/2]} rotation={[0,-angle,0]}>
-        <boxGeometry args={[length,o.heightM,.018]}/><meshStandardMaterial transparent opacity={.21} color="#aacbd5" depthWrite={false}/>
-      </mesh>;
       // The cut remains open; draw a leaf swung 90 degrees when swing evidence exists.
       const closed=closedDoorIds?.includes(o.id);
       if(!o.swing&&!closed) return null;
@@ -194,9 +202,23 @@ export function SceneMesh({m, objects, closedDoorIds, floorStyle={}, wallFinishe
         </mesh>
       </group>;
     })}
-    {stairs.map(stair=><group key={stair.id}>{stair.steps.map((step,i)=><mesh key={i} rotation={[-Math.PI/2,0,0]} userData={{maskId:1}}>
-      <extrudeGeometry args={[step.shape,{depth:step.height,bevelEnabled:false}]}/><meshStandardMaterial color="#a9b9b2"/>
-    </mesh>)}</group>)}
+    {stairs.map(stair=><group key={stair.id}>{stair.steps.map((step,i)=><group key={i} rotation={[-Math.PI/2,0,0]} position={[0,step.bottom,0]}>
+      <mesh castShadow={presentation} receiveShadow={presentation} userData={{maskId:1}}>
+        <extrudeGeometry args={[step.shape,{depth:step.height,bevelEnabled:false}]}/><meshStandardMaterial color="#a39b8d" roughness={.83}/>
+      </mesh>
+      <mesh position={[0,0,step.height+.001]} receiveShadow={presentation} userData={{maskId:1}}>
+        <shapeGeometry args={[step.shape]}/><meshStandardMaterial color="#c6a681" roughness={.68}/>
+      </mesh>
+    </group>)}
+      {stair.wells.map((well,i)=><group key={i}>
+        <mesh geometry={well.walls} receiveShadow={presentation} userData={{maskId:1}}>
+          <meshStandardMaterial color="#aeaba0" side={T.DoubleSide}/>
+        </mesh>
+        <mesh rotation={[-Math.PI/2,0,0]} position={[0,well.bottom,0]} receiveShadow={presentation} userData={{maskId:1}}>
+          <shapeGeometry args={[well.shape]}/><meshStandardMaterial color="#958d80"/>
+        </mesh>
+      </group>)}
+    </group>)}
     <FurnitureMeshes objects={objects} scale={scale} presentation={presentation} environment={environment}/>
   </>;
 }

@@ -302,8 +302,10 @@ export default function PlanCanvas(props: {
                 x: tread.reduce((sum, p) => sum + p.x, 0) / tread.length,
                 y: tread.reduce((sum, p) => sum + p.y, 0) / tread.length,
               }));
-              const start = centres[centres.length - 2], end = centres[centres.length - 1];
-              const angle = Math.atan2(end.y - start.y, end.x - start.x) * 180 / Math.PI;
+              const direction=stair.direction??"up";
+              const last=centres.length-1;
+              const arrows=[{from:centres[last-1],to:centres[last],label:direction==="down"?"Down":"Up"},
+                ...(direction==="both"?[{from:centres[1],to:centres[0],label:"Down"}]:[])];
               return (
                 <g key={stair.id} data-kind="stair" data-id={stair.id}
                   onPointerDown={(e) => {
@@ -311,7 +313,7 @@ export default function PlanCanvas(props: {
                     e.stopPropagation();
                     props.select({ type: "stair", id: stair.id });
                   }}>
-                  <title>{stair.layout.toUpperCase()}-shaped stair</title>
+                  <title>{stair.layout.toUpperCase()}-shaped stair · {direction==="both"?"Up and down":arrows[0].label}</title>
                   {stair.treads.map((tread, i) => (
                     <polygon key={i} points={tread.map(({ x, y }) => `${x},${y}`).join(" ")}
                       fill={active ? "#d3e8e6" : "#eef6f5"} fillOpacity={0.85}
@@ -319,9 +321,12 @@ export default function PlanCanvas(props: {
                   ))}
                   <polyline points={centres.map(({ x, y }) => `${x},${y}`).join(" ")} fill="none"
                     stroke="#16786e" strokeWidth={1.4 * px} strokeDasharray={`${4 * px} ${3 * px}`} pointerEvents="none" />
-                  <path d={`M ${-6 * px},${-3 * px} L 0,0 L ${-6 * px},${3 * px}`} fill="none"
-                    transform={`translate(${end.x},${end.y}) rotate(${angle})`}
-                    stroke="#16786e" strokeWidth={1.5 * px} pointerEvents="none" />
+                  {arrows.map(({from,to,label})=><g key={label} pointerEvents="none">
+                    <path d={`M ${-6 * px},${-3 * px} L 0,0 L ${-6 * px},${3 * px}`} fill="none"
+                      transform={`translate(${to.x},${to.y}) rotate(${Math.atan2(to.y-from.y,to.x-from.x)*180/Math.PI})`}
+                      stroke="#16786e" strokeWidth={1.5 * px}/>
+                    <text x={to.x} y={to.y-6*px} textAnchor="middle" fontSize={9*px} fill="#155f58">{label}</text>
+                  </g>)}
                 </g>
               );
             })}

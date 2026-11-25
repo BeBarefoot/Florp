@@ -136,6 +136,7 @@ test("saved floor tour opens its linked camera and makes no project edits",async
 });
 
 test("downloaded showcase prompt follows the live position, heading and zoom",async({page})=>{
+  test.setTimeout(60_000);
   const {readFile}=await import("node:fs/promises");
   await page.setViewportSize({width:390,height:844});
   await page.goto("/phone/showcase/sample");
@@ -169,6 +170,39 @@ test("downloaded showcase prompt follows the live position, heading and zoom",as
   await page.getByRole("button",{name:"Download view image"}).click();
   const png=await readFile((await (await pending).path())!);
   expect([png.readUInt32BE(16),png.readUInt32BE(20)]).toEqual(after.framePixels);
+  await page.getByRole("button",{name:"Living room",exact:true}).click();
+  const gestureStart=await camera();
+  const box=(await page.locator("canvas").boundingBox())!;
+  const x=Math.round(box.x+box.width/2),y=Math.round(box.y+box.height/2);
+  await page.mouse.move(x,y);
+  await page.mouse.wheel(85,0);
+  const swiped=await camera();
+  expect(swiped.forwardUnitXYZ).not.toEqual(gestureStart.forwardUnitXYZ);
+  expect(swiped.horizontalFovDegrees).toBeCloseTo(gestureStart.horizontalFovDegrees);
+
+  const cdp=await page.context().newCDPSession(page);
+  await cdp.send("Emulation.setTouchEmulationEnabled",{enabled:true,maxTouchPoints:2});
+  const touches=(dx:number,dy:number,angle:number)=>[-1,1].map((side,id)=>({
+    id,x:x+dx+side*50*Math.cos(angle),y:y+dy+side*50*Math.sin(angle),
+  }));
+  await cdp.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:touches(0,0,0)});
+  await cdp.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:touches(24,-20,.34)});
+  await cdp.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]});
+  const touched=await camera();
+  expect(touched.eyeXYZ).not.toEqual(swiped.eyeXYZ);
+  expect(touched.forwardUnitXYZ).not.toEqual(swiped.forwardUnitXYZ);
+});
+
+test("trackpad swipe orbits the dollhouse in both axes",async({page})=>{
+  test.setTimeout(45_000);
+  await page.setViewportSize({width:960,height:700});
+  await page.goto("/phone/showcase/sample#overview");
+  const canvas=page.locator("canvas");
+  const initial=await canvas.screenshot();
+  const bounds=(await canvas.boundingBox())!;
+  await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2);
+  await page.mouse.wheel(80,-50);
+  expect((await canvas.screenshot()).equals(initial)).toBe(false);
 });
 
 test("dollhouse lands on the floor and saves a new view from one tap",async({page})=>{

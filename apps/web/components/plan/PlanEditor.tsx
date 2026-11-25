@@ -6,7 +6,8 @@ import { BrickWall, DoorOpen, MousePointer2, PanelTop, Trash2, Undo2 } from "luc
 import { API, request, type Blueprint } from "../../lib/api";
 import type { Finding, PlanModel, PlanResponse, Pt } from "../../lib/plan/model";
 import { metersPerPixel, scaleCheck, wallFootprint, withDerived } from "../../lib/plan/derive";
-import { deleteOpening, deleteWall, decideOpening, setReference } from "../../lib/plan/ops";
+import { StairFields, WindowFields } from "./OpeningAndStairFields";
+import { deleteOpening, deleteWall, decideOpening, patchOpening, setReference } from "../../lib/plan/ops";
 import {regionArea} from "../SiteOutline";
 import PlanCanvas from "./PlanCanvas";
 import Inspector from "./Inspector";
@@ -509,7 +510,8 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
   if(phone){
     const selectedWall=selection?.type==="wall"&&m.walls.find(w=>w.id===selection.id);
     const selectedOpening=selection?.type==="opening"?m.openings.find(o=>o.id===selection.id):undefined;
-    const selectedName=selectedWall?"Wall":selectedOpening?.kind==="door"?"Door":selectedOpening?.kind==="window"?"Window":null;
+    const selectedStair=selection?.type==="stair"?m.stairs?.find(stair=>stair.id===selection.id):undefined;
+    const selectedName=selectedStair?"Stair":selectedWall?"Wall":selectedOpening?.kind==="door"?"Door":selectedOpening?.kind==="window"?"Window":null;
     return <div className="fe phone-plan-editor" data-display="2d">
       <div className="phone-plan-header">
         <h1>Edit floor</h1>
@@ -517,7 +519,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
       </div>
       <main className="fe-stage">{canvas}</main>
       <div className="phone-plan-tools">
-        <p role="status">{error||(tool==="select"?(selectedName?`${selectedName} selected`:"Tap a wall, door or window.") :
+        <p role="status">{error||(tool==="select"?(selectedName?`${selectedName} selected`:"Tap a wall, door, window or stair.") :
           tool==="measure"?"Tap both ends of a second known distance.":tool==="wall"?"Tap both ends of the wall.":"Tap both ends of the opening along a wall.")}</p>
         {error&&dirty&&<button onClick={()=>live.current&&void persist(live.current)}>Retry save</button>}
         <div className="phone-plan-actions" role="group" aria-label="Plan tools">
@@ -532,9 +534,19 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
           {selectedName&&<button onClick={()=>{
             if(selectedWall)edit(deleteWall(m,selectedWall.id));
             if(selectedOpening)edit(deleteOpening(m,selectedOpening.id));
+            if(selectedStair)edit({...m,stairs:m.stairs?.filter(stair=>stair.id!==selectedStair.id)});
             setSelection(null);setTool("select");setError("");
           }}><Trash2 size={18}/>Remove {selectedName.toLowerCase()}</button>}
         </div>
+        {selectedOpening?.kind==="window"&&<details key={selectedOpening.id} className="phone-plan-properties">
+          <summary>Window dimensions and frame</summary>
+          <WindowFields model={m} opening={selectedOpening} onPatch={patch=>edit(patchOpening(m,selectedOpening.id,patch))}/>
+        </details>}
+        {selectedStair&&<details key={selectedStair.id} className="phone-plan-properties">
+          <summary>Stair direction and rise</summary>
+          <StairFields stair={selectedStair} onPatch={patch=>edit({...m,stairs:m.stairs?.map(stair=>
+            stair.id===selectedStair.id?{...stair,...patch}:stair)})}/>
+        </details>}
         <div className="phone-plan-footer">
           <button aria-pressed={view==="overlay"} onClick={()=>setView(view==="overlay"?"clean":"overlay")}>Original drawing</button>
           <button onClick={()=>void navigateAfterSave("/plan/"+encodeURIComponent(id))}>Full editor</button>

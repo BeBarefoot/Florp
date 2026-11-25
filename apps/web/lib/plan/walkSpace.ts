@@ -2,12 +2,14 @@ import { openingEnds } from "./derive";
 import { wallPieces } from "./mesh";
 import type { PlanModel, Pt } from "./model";
 import { contains, groundFootprint, obstructsMovement, type Scene } from "./scene";
+import {stairCutouts} from "./stairLevels";
 
 export const roomsOf = (m: PlanModel) => [...m.rooms, ...(m.roomZones || [])].slice(0, 990);
 
 export function walkSpace(m: PlanModel, scale: number, scene: Scene, eye = 1.6,
   pieces = wallPieces(m), nodeMap = new Map(m.nodes.map(n=>[n.id,n]))) {
   const rooms = roomsOf(m);
+  const drops=stairCutouts(m);
   const {objects, closedDoorIds} = scene;
   function clearance(p:Pt, walking=false) {
     let nearest=Infinity;
@@ -49,6 +51,7 @@ export function walkSpace(m: PlanModel, scale: number, scene: Scene, eye = 1.6,
   }
   function validCamera(p:Pt, walking=false){
     return (rooms.some(r=>contains(p,r.polygon)) || inDoorway(p)) && clearance(p,walking)>=.3 &&
+      !drops.some(polygon=>contains(p,polygon)) &&
       !objects.some(o=>obstructsMovement(o)&&contains(p,groundFootprint(o,scale)));
   }
   return { clearance, validCamera };
