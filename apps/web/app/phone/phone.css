@@ -57,6 +57,7 @@
 }
 .show-stage,.show-render{position:absolute;inset:0}
 .show-stage canvas{touch-action:none}
+.showcase-player[data-placing=true] .show-stage canvas{cursor:crosshair}
 .show-render{background:var(--ink);z-index:2}
 .show-render img{width:100%;height:100%;object-fit:contain}
 .showcase-player .show-overview {
@@ -170,23 +171,21 @@
 .furnish-catalog,.furnish-dimensions,.furnish-actions {display:flex;gap:6px}
 .furnish-rooms {flex:1}
 .furnish-rooms button {flex:none;display:flex;align-items:center;gap:6px;min-height:44px;white-space:nowrap}
-.furnish-rooms button[aria-pressed="true"] {background:var(--pine);color:var(--paper)}
+.furnish-sheet button[aria-pressed="true"]:not(.finish-save) {background:var(--pine);color:var(--paper)}
 .furnish-items {align-items:stretch;gap:12px}
-.furnish-group {display:grid;gap:4px}
-.furnish-group h3 {margin:0;font-size:12px;font-weight:650}
 .furnish-catalog button {display:grid;gap:2px;justify-items:start;align-content:center;min-height:50px;text-align:left}
 .furnish-catalog button[draggable="true"] {cursor:grab}
 .furnish-catalog span {font-size:11px;white-space:nowrap}
 .furnish-footer {display:flex;align-items:flex-end;gap:6px;min-width:0}
 .furnish-edit-rail {flex:1;align-items:flex-end;white-space:nowrap;font-size:12px}
 .furnish-sheet .furnish-edit-fields {display:flex;align-items:flex-end;gap:6px}
-.furnish-dimensions label,.furnish-select {display:grid;gap:3px;font-size:12px;min-width:0}
-.furnish-dimensions input,.furnish-select select {width:100%;min-width:0;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--pine);font:inherit}
+.furnish-dimensions label {display:grid;gap:3px;font-size:12px;min-width:0}
+.furnish-dimensions input,.furnish-select {min-height:44px;min-width:0;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--pine);font:inherit;font-size:16px}
 .furnish-actions button {min-height:44px;display:flex;align-items:center;justify-content:center;gap:4px}
 .furnish-issues {display:flex;gap:8px;margin:0;padding:0;list-style:none;color:#8b3927}
 .furnish-dimensions input {width:86px}
-.furnish-select select {max-width:145px}
-.furnish-dimensions input,.furnish-select select {min-height:44px;font-size:16px}
+.furnish-select {flex:none;width:100px;text-overflow:ellipsis}
+.furnish-preview {display:inline-flex;align-items:center;min-height:44px;color:var(--muted)}
 
 .phone-plan-properties {max-height:32dvh;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:0 10px}
 .phone-plan-properties summary {min-height:44px;align-content:center;cursor:pointer;font-size:14px}

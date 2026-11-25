@@ -20,7 +20,7 @@ import FurnishSheet from "./FurnishSheet";
 import {scrollTourRail} from "./scrollTourRail";
 import {FurniturePlacement} from "./FurniturePlacement";
 import {fitsFloor,furnitureFit} from "../../lib/plan/furnitureFit";
-import {objectName,tvDimensions,yardKinds} from "../../lib/plan/furnitureCatalog";
+import {tvDimensions,yardKinds} from "../../lib/plan/furnitureCatalog";
 import { floorMaterialFor, materialDefaults, unmatchedFloorFinishes } from "../../lib/plan/floorMaterials";
 import { contains, footprint, newItem } from "../../lib/plan/scene";
 import type {PlanModel,Pt} from "../../lib/plan/model";
@@ -142,7 +142,6 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   const tourScene=useMemo(()=>previewFurniture?{...scene,objects:previewFurniture}:scene,[previewFurniture,scene]);
   const objects=furnitureDraft??tourScene.objects;
   const selectedFurniture=objects.find(item=>item.id===furnitureId);
-  const placingNew=placement&&!objects.some(item=>item.id===placement.id);
   const displayedObjects=dragPreview?[...objects.filter(item=>item.id!==dragPreview.id),dragPreview]:objects;
   const walkScene=useMemo(()=>furnitureDraft?{...tourScene,objects:furnitureDraft}:tourScene,[tourScene,furnitureDraft]);
   const styledScene={...scene,...sessionFinishes,...finishDraft,objects};
@@ -177,9 +176,19 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   ]:[];
   const persistFurniture=check?.mismatch?undefined:saveFurniture;
   const previewReason=persistFurniture?undefined:
-    approximate?"Preview only. Furniture fit uses an approximate scale.":
-    check?.mismatch?"Preview only. Your scale measurements differ.":
-    "Preview only. The scene needs review against the current floor plan.";
+    approximate?"Approximate scale":check?.mismatch?"Scale mismatch":"Scene needs review";
+  const selectFurniture=useCallback((id:string)=>{
+    setFurnitureId(id);setPlacement(null);setFurnitureNotice("");setDragPreview(null);
+  },[]);
+  useEffect(()=>{
+    if(!furnishing)return;
+    const cancel=(event:KeyboardEvent)=>{
+      if(event.key!=="Escape")return;
+      selectFurniture("");
+    };
+    window.addEventListener("keydown",cancel);
+    return ()=>window.removeEventListener("keydown",cancel);
+  },[furnishing,selectFurniture]);
   function openFurnish(){
     setPlaying(false);setRendered(false);setAdding(false);setNotice("");
     if(view&&pose.current?.id===view.id)setFreeView(pose.current);
@@ -204,7 +213,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   }
   function placeFurniture(item:Item,point:Pt|null){
     if(savingRef.current)return;
-    if(!point){setFurnitureNotice("Choose a visible spot on the floor.");return;}
+    if(!point){selectFurniture("");return;}
     if(objects.length>=100&&!objects.some(other=>other.id===item.id))return;
     if(updateFurniture({...item,position:point}))setPlacement(null);
   };
@@ -323,7 +332,12 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     setNotice("");
     setFreeView({id:"free-walk",name:"Walkthrough",...wideView,...corner});
   }
-  return <main className="showcase-player" data-furnishing={furnishing} aria-label="3D showcase">
+  return <main className="showcase-player" data-furnishing={furnishing} data-placing={!!placement} aria-label="3D showcase"
+    onPointerDownCapture={event=>{
+      if(event.button===0&&furnishing&&event.target instanceof Element&&!event.target.closest(".furnish-sheet,canvas")){
+        selectFurniture("");
+      }
+    }}>
     <h1 className="show-current-view">{view?.name??"Dollhouse view"}</h1>
     <div ref={stage} className="show-stage"><Canvas shadows frameloop="demand" dpr={[1,1.6]} camera={{near:.005,far:2000}} fallback={<p>Enable WebGL to view this tour.</p>}>
       <color attach="background" args={[view?"#d4e3e9":"#d8d9cb"]}/>
@@ -335,7 +349,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
       {furnishing&&<FurniturePlacement scale={scale} walkthrough={!!view} disabled={saving} pending={placement}
         objects={objects} catalogDrag={catalogDrag}
         onPreview={item=>setDragPreview(item&&fitsFloor(plan,item,scale)?item:null)}
-        onPlace={placeFurniture} onSelect={id=>{setFurnitureId(id);setFurnitureNotice("");}}/>}
+        onPlace={placeFurniture} onSelect={selectFurniture}/>}
       {!dragPreview&&fit&&selectedFurniture&&<>
         <FitOverlay points={footprint({...selectedFurniture,width:selectedFurniture.width+.08,depth:selectedFurniture.depth+.08},scale)}
           scale={scale} color={fitWarnings.length?"#af5035":"#477b63"}/>
@@ -354,14 +368,17 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     {view&&rendered&&renders[view.id]&&<div className="show-render"><img src={renders[view.id]} alt={"Saved design render for "+view.name}/></div>}
     {view&&<button type="button" className="show-overview" data-tour-tools onClick={()=>select(-1)}><Box size={18}/>Overview</button>}
     {furnishing?<FurnishSheet objects={objects} selected={selectedFurniture} previewReason={previewReason}
-      pending={placement?placingNew?`Tap or drag on ${yardKinds.has(placement.kind)?"a yard or balcony":"the floor"} to place the ${objectName(placement.kind).toLowerCase()}.`:"Tap or drag on the ground to move this object.":""}
+      pending={placement}
       dirty={!!furnitureDraft} saving={saving} message={furnitureNotice} issues={fitWarnings}
       edit={edit&&"/phone/edit/"+encodeURIComponent(plan.id)}
-      onAdd={kind=>{setPlacement(newItem(kind,{x:0,y:0}));setFurnitureId("");setFurnitureNotice("");}}
+      onAdd={kind=>{
+        if(placement?.kind===kind&&!selectedFurniture) selectFurniture("");
+        else {selectFurniture("");setPlacement(newItem(kind,{x:0,y:0}));}
+      }}
       onDragStart={kind=>{catalogDrag.current=newItem(kind,{x:0,y:0});setFurnitureNotice("");}}
       onDragEnd={()=>{catalogDrag.current=null;setDragPreview(null);}}
-      onSelect={id=>{setFurnitureId(id);setPlacement(null);setFurnitureNotice("");}}
-      onMove={()=>{if(selectedFurniture){setPlacement(selectedFurniture);setFurnitureNotice("");}}}
+      onSelect={selectFurniture}
+      onMove={()=>{if(selectedFurniture){setPlacement(placement?null:selectedFurniture);setFurnitureNotice("");}}}
       onRotate={degrees=>{if(selectedFurniture)updateFurniture({...selectedFurniture,rotation:(selectedFurniture.rotation+degrees+360)%360});}}
       onResize={(key,value)=>{
         if(!selectedFurniture)return;
@@ -371,8 +388,8 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
         updateFurniture(item);
       }}
       onScreenSize={inches=>{if(selectedFurniture?.kind==="tv")updateFurniture({...selectedFurniture,...tvDimensions(inches)});}}
-      onRemove={()=>{setFurnitureDraft(objects.filter(item=>item.id!==furnitureId));setFurnitureId("");setFurnitureNotice("");}}
-      onCancelPick={()=>{setPlacement(null);setFurnitureNotice("");}} onClose={closeFurnish} onSave={()=>void applyFurniture()}/>:
+      onRemove={()=>{setFurnitureDraft(objects.filter(item=>item.id!==furnitureId));selectFurniture("");}}
+      onClose={closeFurnish} onSave={()=>void applyFurniture()}/>:
     finishesOpen?<FinishSheet rooms={rooms} scope={finishScope} selectScope={setFinishScope} material={material}
       change={changeFinish} saving={saving} dirty={!!finishDraft} notice={finishNotice} canPersist={!!saveFinishes}
       onReset={finishScope&&styledScene.roomFloorMaterials?.[finishScope]?()=>{

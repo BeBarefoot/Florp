@@ -7,20 +7,21 @@ import {scrollTourRail} from "./scrollTourRail";
 
 const roomIcons=[Armchair,BedDouble,Bath,CookingPot,TreePine];
 
-export default function FurnishSheet({objects,selected,pending,previewReason,dirty,saving,message,issues,onAdd,onDragStart,onDragEnd,onSelect,onMove,onRotate,onResize,onScreenSize,onRemove,onClose,onSave,onCancelPick,edit}:{
-  objects:Item[];selected?:Item;pending:string;previewReason?:string;dirty:boolean;saving:boolean;
+export default function FurnishSheet({objects,selected,pending,previewReason,dirty,saving,message,issues,onAdd,onDragStart,onDragEnd,onSelect,onMove,onRotate,onResize,onScreenSize,onRemove,onClose,onSave,edit}:{
+  objects:Item[];selected?:Item;pending:Item|null;previewReason?:string;dirty:boolean;saving:boolean;
   message:string;issues:string[];edit?:string;
   onAdd:(kind:ObjectKind)=>void;onSelect:(id:string)=>void;onMove:()=>void;
   onDragStart:(kind:ObjectKind)=>void;onDragEnd:()=>void;
   onRotate:(degrees:number)=>void;onResize:(key:"width"|"depth"|"height",value:number)=>void;
   onScreenSize:(inches:number)=>void;
-  onRemove:()=>void;onCancelPick:()=>void;onClose:()=>void;onSave:()=>void;
+  onRemove:()=>void;onClose:()=>void;onSave:()=>void;
 }){
   const [roomIndex,setRoomIndex]=useState(0);
   const room=furnitureRooms[roomIndex];
   const catalog=useRef<HTMLDivElement>(null);
   const editFields=useRef<HTMLFieldSetElement>(null);
   const selectedId=selected?.id;
+  const moving=!!pending&&pending.id===selectedId;
   useLayoutEffect(()=>{
     if(selectedId)editFields.current?.scrollIntoView({block:"nearest",inline:"nearest"});
   },[selectedId]);
@@ -41,11 +42,11 @@ export default function FurnishSheet({objects,selected,pending,previewReason,dir
     </div>
     <div ref={catalog} className="furnish-items tour-rail" role="group" aria-label="Furniture catalog">
       {room.groups.map(group=><section key={group.name} className="furnish-group" aria-label={group.name}>
-        <h3>{group.name}</h3>
         <div className="furnish-catalog">
           {group.items.map(kind=>{
             const {width,depth}=dimensions(kind);
             return <button key={kind} type="button" disabled={objects.length>=100} draggable={!saving&&objects.length<100}
+              aria-pressed={!moving&&pending?.kind===kind}
               onClick={()=>onAdd(kind)}
               onDragStart={event=>{
                 event.dataTransfer.setData("application/x-florp-furniture",kind);
@@ -54,23 +55,21 @@ export default function FurnishSheet({objects,selected,pending,previewReason,dir
               }}
               onDragEnd={onDragEnd}>
               <strong>{objectName(kind)}</strong>
-              <span>{kind==="tv"?"55″ default":`${Math.round(width*100)} × ${Math.round(depth*100)} cm`}</span>
+              <span>{kind==="tv"?"55″":`${Math.round(width*100)} × ${Math.round(depth*100)} cm`}</span>
             </button>;
           })}
         </div>
       </section>)}
     </div>
     <div className="furnish-footer">
-      <div className="tour-rail furnish-edit-rail" role="group" aria-label="Furniture controls">
-      {pending&&<><span role="status">{pending}</span><button type="button" onClick={onCancelPick}>Cancel pick</button></>}
-      {objects.length>0&&<label className="furnish-select">Placed objects
-        <select value={selected?.id??""} onChange={e=>onSelect(e.target.value)}>
-          <option value="">Choose an object</option>
+      {objects.length>0&&
+        <select className="furnish-select" aria-label="Placed objects" value={selected?.id??""} onChange={e=>onSelect(e.target.value)}>
+          <option value="">Objects</option>
           {objects.map((item,i)=><option key={item.id} value={item.id}>{objectName(item.kind)} {i+1}</option>)}
-        </select>
-      </label>}
-      {selected&&<fieldset className="furnish-edit-fields" ref={editFields} disabled={!!pending}>
-        <div className="furnish-dimensions">
+        </select>}
+      <div className="tour-rail furnish-edit-rail" role="group" aria-label="Furniture controls">
+      {selected&&<fieldset className="furnish-edit-fields" ref={editFields}>
+        <fieldset className="furnish-dimensions" disabled={moving}>
           {selected.kind==="tv"&&<label>Screen diagonal (inches)
             <input key={selected.id+selected.width} type="number" {...tvSizeRange} step={1}
               defaultValue={tvInches(selected.width,selected.height)}
@@ -96,24 +95,25 @@ export default function FurnishSheet({objects,selected,pending,previewReason,dir
                 e.target.value=String(cm);
               }}/></label>;
           })}
-        </div>
+        </fieldset>
         <div className="furnish-actions">
-          <button onClick={onMove}><Move size={16}/>Move</button>
-          <button aria-label="Rotate left 15 degrees" title="Rotate left 15°" onClick={()=>onRotate(-15)}><RotateCcw size={18}/></button>
-          <button aria-label="Rotate right 15 degrees" title="Rotate right 15°" onClick={()=>onRotate(15)}><RotateCw size={18}/></button>
+          <button aria-label="Move" aria-pressed={moving} title="Move" onClick={onMove}><Move size={16}/></button>
+          <button aria-label="Rotate left 15 degrees" title="Rotate left 15°" disabled={moving} onClick={()=>onRotate(-15)}><RotateCcw size={18}/></button>
+          <button aria-label="Rotate right 15 degrees" title="Rotate right 15°" disabled={moving} onClick={()=>onRotate(15)}><RotateCw size={18}/></button>
           <button aria-label="Remove object" onClick={onRemove}><Trash2 size={18}/></button>
         </div>
       </fieldset>}
-      {!objects.length&&!pending&&<span className="furnish-tip">Choose an item, then tap the floor.</span>}
-      {edit&&!previewReason&&!dirty&&!pending&&!saving&&<Link href={edit+"?setup=furniture"}>Open 2D placement editor</Link>}
+      {previewReason&&(edit?
+        <Link className="furnish-preview" href={edit+"?setup=furniture"} title={previewReason}>Preview only</Link>:
+        <span className="furnish-preview" title={previewReason}>Preview only</span>)}
       </div>
-      <button type="button" className="finish-save" disabled={!dirty||!!pending} onClick={onSave}>{previewReason?"Keep preview":"Save furniture"}</button>
+      <button type="button" className="finish-save" aria-label={previewReason?"Keep preview":"Save furniture"}
+        disabled={!dirty||!!pending} onClick={onSave}>{previewReason?"Keep":"Save"}</button>
     </div>
     </fieldset>
-    {(previewReason||message||issues.length>0)&&<div className="tour-rail finish-notes">
+    {(message||issues.length>0)&&<div className="tour-rail finish-notes">
       {message&&<p role="status">{message}</p>}
       {issues.length>0&&<ul className="furnish-issues" aria-label="Fit warnings">{issues.map(issue=><li key={issue}>{issue}</li>)}</ul>}
-      {previewReason&&<p className="furnish-preview">{previewReason} {edit&&<Link href={edit+"?setup=furniture"}>Open the plan editor to enable saving.</Link>}</p>}
     </div>}
   </section>;
 }

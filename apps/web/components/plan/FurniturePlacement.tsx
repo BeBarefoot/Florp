@@ -29,6 +29,7 @@ export function FurniturePlacement(props:Props){
     const heightPlane=new Plane(new Vector3(0,1,0));
     const planePoint=new Vector3();
     let gesture:{id:number;start:Pt;item:Item;grab?:Grab;moving:boolean}|null=null;
+    let emptyTap:{id:number;start:Pt}|null=null;
 
     function hits(event:{clientX:number;clientY:number}){
       const bounds=canvas.getBoundingClientRect();
@@ -65,14 +66,19 @@ export function FurniturePlacement(props:Props){
       if(gesture){event.stopImmediatePropagation();return;}
       const hit=pending?undefined:hits(event).find(({object})=>!object.userData.glass||object.userData.furnitureId);
       const item=pending??objects.find(object=>object.id===hit?.object.userData.furnitureId);
-      if(!item)return;
       const start={x:event.clientX,y:event.clientY};
+      if(!item){
+        emptyTap=emptyTap?null:{id:event.pointerId,start};
+        return;
+      }
+      emptyTap=null;
       const grab=hit&&{height:hit.point.y,offset:{x:item.position.x-hit.point.x/scale,y:item.position.y-hit.point.z/scale}};
       gesture={id:event.pointerId,start,item,grab,moving:false};
       event.stopImmediatePropagation();
       canvas.setPointerCapture(event.pointerId);
     }
     function move(event:PointerEvent){
+      if(emptyTap?.id===event.pointerId&&Math.hypot(event.clientX-emptyTap.start.x,event.clientY-emptyTap.start.y)>=6)emptyTap=null;
       if(gesture?.id!==event.pointerId)return;
       event.stopImmediatePropagation();
       if(!gesture.moving&&Math.hypot(event.clientX-gesture.start.x,event.clientY-gesture.start.y)<6)return;
@@ -82,6 +88,11 @@ export function FurniturePlacement(props:Props){
       latest.current.onPreview(point?{...item,position:point}:null);
     }
     function end(event:PointerEvent){
+      if(emptyTap?.id===event.pointerId){
+        move(event);
+        if(emptyTap&&event.type==="pointerup")latest.current.onSelect("");
+        emptyTap=null;
+      }
       if(gesture?.id!==event.pointerId)return;
       const {item,grab,moving}=gesture;
       gesture=null;
