@@ -4,7 +4,7 @@ import { MathUtils, Raycaster, Vector2, Vector3 } from "three";
 import type { Pt } from "../../lib/plan/model";
 import type { Frame, View } from "../../lib/plan/scene";
 import { makeCamera } from "./SceneMesh";
-import { MAX_HORIZONTAL_FOV_DEG } from "../../lib/plan/camera";
+import { MAX_HORIZONTAL_FOV_DEG, verticalFov } from "../../lib/plan/camera";
 import {twoFingerDelta} from "../../lib/plan/touchGesture";
 
 const movementKeys = new Map([
@@ -16,8 +16,15 @@ export function WalkCamera({view, scale, frame, canMove, pose, keyboard, tapToWa
   keyboard?: boolean; tapToWalk?: boolean;
   pose: {current: View|null}; view: View; scale: number; frame: Frame; canMove: (p: Pt) => boolean;
 }) {
-  const camera = useMemo(() => makeCamera(view, scale, frame), [view, scale, frame]);
+  const camera = useMemo(() => makeCamera(view, scale, {width:1,height:1,configured:false,model:"",provider:""}), [view, scale]);
   const {gl, get, set, invalidate} = useThree();
+  const aspect=frame.width/frame.height;
+  useLayoutEffect(()=>{
+    camera.aspect=aspect;
+    camera.fov=verticalFov(view.horizontalFov,aspect);
+    camera.updateProjectionMatrix();
+    invalidate();
+  },[camera,aspect,view.horizontalFov,invalidate]);
   const walkable = useRef(canMove);
   useLayoutEffect(() => { walkable.current = canMove; }, [canMove]);
 

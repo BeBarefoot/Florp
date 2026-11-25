@@ -313,7 +313,7 @@ test("phone furnishing places metric objects, updates fit warnings and saves thr
         endpoint==="scene"?{revision,planRevision:1,config}:endpoint==="renders"?[]:
         {id:"f",filename:"Owner floor",project_id:"p"}});
     });
-    await page.goto("/phone/showcase/f");
+    await page.goto("/phone/showcase/f#overview");
     await openTools(page);
     await page.getByRole("button",{name:"Furnish",exact:true}).click();
     const sheet=page.getByRole("region",{name:"Furnish",exact:true});
@@ -432,7 +432,7 @@ test("Furnish offers a session preview when scale or scene review prevents savin
       endpoint==="scene"?{revision:1,planRevision:1,config:sampleScene}:endpoint==="renders"?[]:
       {id:"f",filename:"Owner floor",project_id:"p"}});
   });
-  await page.goto("/phone/showcase/f");
+  await page.goto("/phone/showcase/f#overview");
   await openTools(page);
   await page.getByRole("button",{name:"Furnish",exact:true}).click();
   const sheet=page.getByRole("region",{name:"Furnish",exact:true});
@@ -484,7 +484,7 @@ test("room catalog saves a resized TV and places a planter on the detected yard"
       endpoint==="scene"?{revision,planRevision:1,config}:endpoint==="renders"?[]:
       {id:"f",filename:"Owner floor",project_id:"p"}});
   });
-  await page.goto("/phone/showcase/f");
+  await page.goto("/phone/showcase/f#overview");
   await openTools(page);
   await page.getByRole("button",{name:"Furnish",exact:true}).click();
   const sheet=page.getByRole("region",{name:"Furnish",exact:true});
@@ -523,4 +523,87 @@ test("room catalog saves a resized TV and places a planter on the detected yard"
   expect(tv.width/tv.height).toBeCloseTo(16/9);
   expect(plant.kind).toBe("planter");
   expect(plant.position.x).toBeCloseTo(1200,-1);
+});
+
+test("cursor zoom keeps an off-center floor target for catalog dragging in Overview",async({page})=>{
+  test.setTimeout(75_000);
+  await page.setViewportSize({width:1100,height:850});
+  const {PerspectiveCamera,Vector3}=await import("three");
+  let config={...sampleScene,objects:[] as Scene["objects"]};
+  await page.route("**/blueprints/f/*",async route=>{
+    const endpoint=new URL(route.request().url()).pathname.split("/").pop();
+    if(endpoint==="scene"&&route.request().method()==="PUT")config=route.request().postDataJSON().config;
+    return route.fulfill({json:endpoint==="plan"?{revision:1,model:{...samplePlan,id:"f"}}:
+      endpoint==="scene"?{revision:1,planRevision:1,config}:endpoint==="renders"?[]:
+      {id:"f",filename:"Owner floor",project_id:"p"}});
+  });
+  await page.goto("/phone/showcase/f#overview");
+  await openTools(page);
+  await page.getByRole("button",{name:"Furnish",exact:true}).click();
+  const sheet=page.getByRole("region",{name:"Furnish",exact:true});
+  const canvas=page.locator("canvas");
+  const bounds=(await canvas.boundingBox())!;
+  const aspect=bounds.width/bounds.height;
+  const target=new Vector3(5,.65,3.4);
+  const camera=new PerspectiveCamera(45,aspect,.005,2000);
+  camera.position.copy(target).addScaledVector(new Vector3(.82,1.1,1.22).normalize(),19);
+  camera.lookAt(target);
+  camera.updateMatrixWorld();
+  const projected=new Vector3(2,0,2.9).project(camera);
+  const drop={x:(projected.x+1)*bounds.width/2,y:(1-projected.y)*bounds.height/2};
+  const beforeZoom=await canvas.screenshot();
+  await page.mouse.move(bounds.x+drop.x,bounds.y+drop.y);
+  for(let i=0;i<6;i++)await page.mouse.wheel(0,-120);
+  expect((await canvas.screenshot()).equals(beforeZoom)).toBe(false);
+  await sheet.getByRole("button",{name:"Sofa 220 × 92 cm"}).dragTo(canvas,{targetPosition:drop});
+  await sheet.getByRole("button",{name:"Save furniture"}).click();
+  await expect(sheet.getByText("Furniture saved")).toBeVisible();
+  expect(config.objects[0].position.x).toBeCloseTo(200,-1);
+  expect(config.objects[0].position.y).toBeCloseTo(290,-1);
+});
+
+test("furniture can be placed and dragged directly in the current walkthrough",async({page})=>{
+  test.setTimeout(75_000);
+  await page.setViewportSize({width:1100,height:850});
+  const {PerspectiveCamera,Vector3}=await import("three");
+  const {savedPose}=await import("../lib/plan/camera");
+  const start={...sampleScene.views[0],position:{x:130,y:320},yaw:0,pitch:-22};
+  let config={...sampleScene,views:[start],objects:[] as Scene["objects"]};
+  await page.route("**/blueprints/f/*",async route=>{
+    const endpoint=new URL(route.request().url()).pathname.split("/").pop();
+    if(endpoint==="scene"&&route.request().method()==="PUT")config=route.request().postDataJSON().config;
+    return route.fulfill({json:endpoint==="plan"?{revision:1,model:{...samplePlan,id:"f"}}:
+      endpoint==="scene"?{revision:1,planRevision:1,config}:endpoint==="renders"?[]:
+      {id:"f",filename:"Owner floor",project_id:"p"}});
+  });
+  await page.goto("/phone/showcase/f#view="+start.id);
+  await openTools(page);
+  await page.getByRole("button",{name:"Furnish",exact:true}).click();
+  const sheet=page.getByRole("region",{name:"Furnish",exact:true});
+  const bounds=(await page.locator("canvas").boundingBox())!;
+  const aspect=bounds.width/bounds.height;
+  const pose=savedPose(start,.01,aspect);
+  const camera=new PerspectiveCamera(pose.verticalFovDeg,aspect,.03,80);
+  camera.position.set(...pose.position);
+  camera.lookAt(camera.position.clone().add(new Vector3(...pose.direction)));
+  camera.updateMatrixWorld();
+  function point(x:number,y:number,z:number){
+    const projected=new Vector3(x,y,z).project(camera);
+    return [bounds.x+(projected.x+1)*bounds.width/2,bounds.y+(1-projected.y)*bounds.height/2] as const;
+  }
+  await sheet.getByRole("button",{name:"Table 140 × 80 cm"}).click();
+  await page.mouse.click(...point(3.6,0,3.2));
+  await expect(sheet.getByLabel("Width (cm)")).toHaveValue("140");
+  const grab=point(3.6,.74,3.2);
+  await page.mouse.move(...grab);
+  await page.mouse.down();
+  await page.mouse.move(grab[0]+110,grab[1],{steps:8});
+  await page.mouse.up();
+  await sheet.getByRole("button",{name:"Save furniture"}).click();
+  await expect(sheet.getByText("Furniture saved")).toBeVisible();
+  expect(config.objects).toHaveLength(1);
+  expect(config.objects[0].position.x).toBeCloseTo(360,-1);
+  expect(config.objects[0].position.y).toBeGreaterThan(350);
+  await sheet.getByRole("button",{name:"Close Furnish"}).click();
+  await expect(page.getByRole("heading",{name:start.name})).toBeVisible();
 });

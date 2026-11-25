@@ -5,7 +5,7 @@ import {MathUtils,Spherical,TOUCH,Vector3} from "three";
 import type {Pt} from "../../lib/plan/model";
 import {twoFingerDelta} from "../../lib/plan/touchGesture";
 
-export function OrbitNavigation(props:ComponentProps<typeof OrbitControls>){
+export function OrbitNavigation({zoomToCursor=false,...props}:ComponentProps<typeof OrbitControls>){
   const controls=useRef<ComponentRef<typeof OrbitControls>>(null);
   const {gl,invalidate}=useThree();
   useEffect(()=>{
@@ -24,8 +24,9 @@ export function OrbitNavigation(props:ComponentProps<typeof OrbitControls>){
       invalidate();
     }
     function wheel(event:WheelEvent){
-      // Chrome reports a trackpad pinch as Ctrl+wheel. Let OrbitControls zoom it.
-      if(event.ctrlKey||event.deltaMode!==WheelEvent.DOM_DELTA_PIXEL)return;
+      // In Overview, vertical wheel events feed the cursor zoom in OrbitControls.
+      if(event.ctrlKey||event.deltaMode!==WheelEvent.DOM_DELTA_PIXEL||
+        (zoomToCursor&&!event.deltaX&&!event.shiftKey))return;
       event.preventDefault();
       event.stopImmediatePropagation();
       rotate(-event.deltaX*.006,-event.deltaY*.006);
@@ -57,6 +58,6 @@ export function OrbitNavigation(props:ComponentProps<typeof OrbitControls>){
       canvas.removeEventListener("pointercancel",end);
       canvas.removeEventListener("lostpointercapture",end);
     };
-  },[gl,invalidate]);
-  return <OrbitControls ref={controls} touches={{ONE:TOUCH.ROTATE,TWO:TOUCH.DOLLY_PAN}} {...props}/>;
+  },[gl,invalidate,zoomToCursor]);
+  return <OrbitControls ref={controls} zoomToCursor={zoomToCursor} touches={{ONE:TOUCH.ROTATE,TWO:TOUCH.DOLLY_PAN}} {...props}/>;
 }

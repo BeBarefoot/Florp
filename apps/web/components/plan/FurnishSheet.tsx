@@ -6,10 +6,11 @@ import type {Item} from "../../lib/plan/scene";
 
 const roomIcons=[Armchair,BedDouble,Bath,CookingPot,TreePine];
 
-export default function FurnishSheet({objects,selected,pending,previewReason,dirty,saving,message,issues,onAdd,onSelect,onMove,onRotate,onResize,onScreenSize,onRemove,onClose,onSave,onCancelPick,edit}:{
+export default function FurnishSheet({objects,selected,pending,previewReason,dirty,saving,message,issues,onAdd,onDragStart,onDragEnd,onSelect,onMove,onRotate,onResize,onScreenSize,onRemove,onClose,onSave,onCancelPick,edit}:{
   objects:Item[];selected?:Item;pending:string;previewReason?:string;dirty:boolean;saving:boolean;
   message:string;issues:string[];edit?:string;
   onAdd:(kind:ObjectKind)=>void;onSelect:(id:string)=>void;onMove:()=>void;
+  onDragStart:(kind:ObjectKind)=>void;onDragEnd:()=>void;
   onRotate:(degrees:number)=>void;onResize:(key:"width"|"depth"|"height",value:number)=>void;
   onScreenSize:(inches:number)=>void;
   onRemove:()=>void;onCancelPick:()=>void;onClose:()=>void;onSave:()=>void;
@@ -37,12 +38,20 @@ export default function FurnishSheet({objects,selected,pending,previewReason,dir
         })}
       </div>
       {pending&&<div className="furnish-pending finish-fields"><p role="status">{pending}</p><button type="button" onClick={onCancelPick}>Cancel pick</button></div>}
+      {!pending&&<p className="furnish-tip">Choose an item to place it. Drag placed furniture to move it.</p>}
       {room.groups.map(group=><section key={group.name} className="furnish-group" aria-label={group.name}>
         <h3>{group.name}</h3>
         <div className="furnish-catalog">
           {group.items.map(kind=>{
             const {width,depth}=dimensions(kind);
-            return <button key={kind} type="button" disabled={objects.length>=100} onClick={()=>onAdd(kind)}>
+            return <button key={kind} type="button" disabled={objects.length>=100} draggable={!saving&&objects.length<100}
+              onClick={()=>onAdd(kind)}
+              onDragStart={event=>{
+                event.dataTransfer.setData("application/x-florp-furniture",kind);
+                event.dataTransfer.effectAllowed="copy";
+                onDragStart(kind);
+              }}
+              onDragEnd={onDragEnd}>
               <strong>{objectName(kind)}</strong>
               <span>{kind==="tv"?"55″ default":`${Math.round(width*100)} × ${Math.round(depth*100)} cm`}</span>
             </button>;

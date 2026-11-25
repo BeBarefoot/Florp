@@ -3,7 +3,7 @@ import {useThree} from "@react-three/fiber";
 import {Raycaster,Vector2} from "three";
 import type {Pt} from "../../lib/plan/model";
 
-export function FloorPicker({scale,onPick,onObject,placeOnFloor=false}:{scale:number;placeOnFloor?:boolean;onPick:(point:Pt|null,yaw:number)=>void;onObject?:(id:string)=>void}){
+export function FloorPicker({scale,onPick}:{scale:number;onPick:(point:Pt|null,yaw:number)=>void}){
   const {gl,get}=useThree();
   useEffect(()=>{
     const canvas=gl.domElement;
@@ -34,13 +34,9 @@ export function FloorPicker({scale,onPick,onObject,placeOnFloor=false}:{scale:nu
         2*(event.clientX-bounds.left)/bounds.width-1,
         1-2*(event.clientY-bounds.top)/bounds.height,
       ),camera);
-      const hit=ray.intersectObjects(scene.children).find(({object})=>placeOnFloor
-        ?object.userData.walkFloor||object.userData.furnishGround
-        :!object.userData.glass||!!(onObject&&object.userData.furnitureId));
-      const id=hit?.object.userData.furnitureId;
-      if(typeof id==="string"&&onObject){onObject(id);return;}
+      const hit=ray.intersectObjects(scene.children).find(({object})=>!object.userData.glass);
       const yaw=Math.atan2(ray.ray.direction.z,ray.ray.direction.x)*180/Math.PI;
-      onPick(hit&&(hit.object.userData.walkFloor||(placeOnFloor&&hit.object.userData.furnishGround))
+      onPick(hit?.object.userData.walkFloor
         ?{x:hit.point.x/scale,y:hit.point.z/scale}:null,yaw);
     }
     canvas.addEventListener("pointerdown",down);
@@ -55,6 +51,6 @@ export function FloorPicker({scale,onPick,onObject,placeOnFloor=false}:{scale:nu
       canvas.removeEventListener("pointercancel",cancel);
       canvas.removeEventListener("lostpointercapture",cancel);
     };
-  },[get,gl,onObject,onPick,placeOnFloor,scale]);
+  },[get,gl,onPick,scale]);
   return null;
 }
