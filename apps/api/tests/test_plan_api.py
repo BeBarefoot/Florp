@@ -328,3 +328,16 @@ def test_refreshing_an_older_plan_marks_revision_and_keeps_new_room_tags(client,
     assert updated["model"]["extractionVersion"] == updated["latestExtractionVersion"]
     assert updated["model"]["rooms"][0]["label"] == "Kitchen & living room"
     assert len(c.get(path + "/history").json()) == 2
+
+
+def test_extraction_diagnostics_include_saved_model_source_and_runtime(client):
+    c, bid = client
+    endpoint = f"/blueprints/{bid}/plan"
+    response = c.put(endpoint, json={"expectedRevision": 0, "model": plan()})
+    assert response.status_code == 200
+    debug = c.get(endpoint + "/debug")
+    assert debug.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(debug.content)) as bundle:
+        assert bundle.read("preview.png").startswith(b"\x89PNG")
+        assert json.loads(bundle.read("plan.json"))["model"] == response.json()["model"]
+        assert json.loads(bundle.read("runtime.json"))["opencv"]

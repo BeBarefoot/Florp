@@ -261,9 +261,11 @@ def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, p
             detector if detector is not None else _detector_boxes(path, w, h)
         )
         framed_area = (framed[2][0] - framed[0][0]) * (framed[2][1] - framed[0][1])
-        for factor in (min(1.6, 1300 / max(w, h)), min(1.8, 1500 / max(w, h))):
+        # Linear-exact interpolation avoids backend-dependent byte rounding
+        # before the threshold and connectivity stages.
+        for factor in (min(1.65, 1450 / max(w, h)), min(1.75, 1550 / max(w, h))):
             enlarged = cv2.resize(
-                source, None, fx=factor, fy=factor, interpolation=cv2.INTER_CUBIC
+                source, None, fx=factor, fy=factor, interpolation=cv2.INTER_LINEAR_EXACT
             )
             enlarged_boxes = [
                 replace(
@@ -317,9 +319,12 @@ def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, p
                 cabinets = [item for item in symbols if item.kind == "cabinets"]
                 if cabinets:
                     supplemental.extend(kitchen_fridges(image, cabinets))
-                else:
+                if not any(item.kind == "fridge" for item in supplemental):
+                    kitchen = recover_kitchen_at_second_resolution(image, model)
                     supplemental.extend(
-                        recover_kitchen_at_second_resolution(image, model)
+                        item
+                        for item in kitchen
+                        if item.kind != "cabinets" or not cabinets
                     )
                 for item in supplemental:
                     nearby = any(

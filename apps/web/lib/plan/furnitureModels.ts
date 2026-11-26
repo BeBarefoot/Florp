@@ -13,6 +13,7 @@ const palette = {
   soil:["#46372b",1,0], pot:["#b97558",.79,0], leaf:["#64815b",.72,0], twig:["#596d47",.76,0],
 } as const;
 export type FurnitureFinish = keyof typeof palette;
+export const furnitureColor = (finish: FurnitureFinish) => palette[finish][0];
 type Shape = "box" | "soft" | "upholstered" | "sphere" | "tube" | "bowl" | "pot";
 type XYZ = [number,number,number];
 type Part = {position:XYZ;size:XYZ;finish:FurnitureFinish;shape:Shape;turn?:XYZ};

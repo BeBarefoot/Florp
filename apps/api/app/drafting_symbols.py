@@ -830,7 +830,14 @@ def kitchen_fridges(image, cabinets):
             continue
         for sign in (-1, 1):
             tip = pos + sign * cabinet.width_px / 2
-            starts = range(round(tip - 0.22 * depth), round(tip + 0.22 * depth) + 1)
+            # A faint cabinet-front line can carry through an appliance
+            # bay. Search back inside the return as well as beyond the tip.
+            starts = (
+                round(tip + sign * shift)
+                for shift in sorted(
+                    range(-round(0.72 * depth), round(0.22 * depth) + 1), key=abs
+                )
+            )
             fronts = range(round(lane - 0.75 * depth), round(lane + 0.75 * depth) + 1)
             for start in starts:
                 if not 3 <= start < len(raster) - 3:
@@ -860,6 +867,13 @@ def kitchen_fridges(image, cabinets):
                                 for y in (start, end)
                             ]
                             if min((cap > 4).mean() for cap in caps) > 0.72:
+                                if (tip - start) * sign > 0:
+                                    opposite = pos - sign * cabinet.width_px / 2
+                                    cabinet.width_px = abs(start - opposite)
+                                    if vertical:
+                                        cabinet.position.y = (start + opposite) / 2
+                                    else:
+                                        cabinet.position.x = (start + opposite) / 2
                                 x, y = (front + rear) / 2, (start + end) / 2
                                 fridges.append(
                                     RoomSymbol(
@@ -894,19 +908,25 @@ def recover_kitchen_at_second_resolution(image, model):
     from .extraction_resize import ExtractionResize
 
     h, w = image.shape[:2]
-    factor = 1.18
-    resized = cv2.resize(
-        image, None, fx=factor, fy=factor, interpolation=cv2.INTER_CUBIC
-    )
-    working = model.model_copy(deep=True)
-    working.stairs = []
-    working = ExtractionResize(resized.shape[1], resized.shape[0], 1 / factor).model(
-        working
-    )
-    sinks = counter_basins(resized, working.room_symbols)
-    cabinets = kitchen_cabinets(resized, [*working.room_symbols, *sinks], working)
-    for item in [*sinks, *cabinets]:
-        ExtractionResize(w, h, factor).point(item.position)
-        item.width_px /= factor
-        item.depth_px /= factor
-    return [*sinks, *cabinets, *kitchen_fridges(image, cabinets)]
+    best = []
+    for factor in (1.18, 1.25, 1.12, 1.30):
+        resized = cv2.resize(
+            image, None, fx=factor, fy=factor, interpolation=cv2.INTER_LINEAR_EXACT
+        )
+        working = model.model_copy(deep=True)
+        working.stairs = []
+        working = ExtractionResize(resized.shape[1], resized.shape[0], 1 / factor).model(working)
+        sinks = counter_basins(resized, working.room_symbols)
+        cabinets = kitchen_cabinets(resized, [*working.room_symbols, *sinks], working)
+        mapper = ExtractionResize(w, h, factor)
+        for item in [*sinks, *cabinets]:
+            mapper.point(item.position)
+            item.width_px /= factor
+            item.depth_px /= factor
+        fridges = kitchen_fridges(image, cabinets)
+        items = [*sinks, *cabinets, *fridges]
+        if fridges and len(cabinets) >= 2:
+            return items
+        if len(items) > len(best):
+            best = items
+    return best

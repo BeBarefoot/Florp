@@ -620,6 +620,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
         walkthroughBusy={busy}
         onWalkthrough={() => void openTour()}
         exportBlocker={exportBlocker}
+        debugHref={`${API}/blueprints/${encodeURIComponent(id)}/plan/debug`}
         exportPlanHref={`${API}/blueprints/${id}/plan/export`}
         export3D={() => void (async () => {
           const snapshot = await request<PlanResponse>(`/blueprints/${id}/plan`);

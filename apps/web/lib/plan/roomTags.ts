@@ -22,7 +22,7 @@ function labelPosition(polygon: Pt[]): Pt | undefined {
   return position;
 }
 
-export function roomTags(plan: PlanModel) {
+export function roomTags(plan: PlanModel, onlyUnmeasured = false) {
   const tags: { key: string; text: string; position: Pt }[] = [];
   const rooms = [...plan.rooms, ...(plan.roomZones ?? [])];
   for (const room of rooms) {
@@ -31,6 +31,7 @@ export function roomTags(plan: PlanModel) {
     if (position) tags.push({ key: room.id, text: room.label, position });
   }
   for (const [index, symbol] of (plan.roomSymbols ?? []).entries()) {
+    if (onlyUnmeasured && symbol.widthPx && symbol.depthPx) continue;
     const labels = {car:"Car", bed:"Bed", sofa:"Sofa", dining_table:"Dining table", bar_stools:"Bar stools", cooktop:"Cooktop", coffee_table:"Coffee table", tree:"Tree", sink:"Sink", toilet:"Toilet", cabinets:"Cabinets", patio_set:"Patio dining set", bar_counter:"Bar counter", tv_console:"TV console", fridge:"Fridge"};
     if ((symbol.kind !== "car" && symbol.kind !== "bed") || !rooms.some(room => contains(symbol.position, room.polygon))) {
       tags.push({key: "symbol-" + index, text: labels[symbol.kind], position: symbol.position});

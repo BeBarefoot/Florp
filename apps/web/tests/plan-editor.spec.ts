@@ -939,3 +939,17 @@ test("opens a corrected bundle and switches to 3D without aligning its walls", a
   await expect(page.locator(".scene-frame canvas")).toBeVisible();
   expect(puts.at(-1)?.walls[0].thicknessPx).toBe(26);
 });
+
+
+test("the uncalibrated drawing shows detected appliance footprints", async ({page}) => {
+  await setup(page, {model: {...fixture(), roomSymbols: [
+    {kind:"fridge", position:{x:270,y:210}, widthPx:38, depthPx:32, rotation:90},
+    {kind:"cabinets", position:{x:320,y:160}, widthPx:180, depthPx:30, rotation:0},
+  ]}});
+  const drawing = page.getByLabel("Plan drawing");
+  const fridge = drawing.getByRole("img", {name:"Fridge"});
+  await expect(fridge.locator("rect").first()).toBeVisible();
+  await expect(fridge).toHaveAttribute("transform", "translate(270 210) rotate(90)");
+  await expect(drawing.getByRole("img", {name:"Cabinets"}).locator("rect").first()).toBeVisible();
+  await expect(drawing.getByText("Fridge", {exact:true})).toHaveCount(0);
+});

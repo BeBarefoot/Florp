@@ -1,4 +1,5 @@
 "use client";
+import DetectedObjects from "./DetectedObjects";
 import { roomTags } from "../../lib/plan/roomTags";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Finding, Opening, PlanModel, Pt } from "../../lib/plan/model";
@@ -55,7 +56,7 @@ export default function PlanCanvas(props: {
   const [draft, setDraft] = useState<Pt | null>(null);
   const [hover, setHover] = useState<Selection>(null);
   const drag = useRef<Drag>(null);
-  const tags = useMemo(() => roomTags(m), [m]);
+  const tags = useMemo(() => roomTags(m, true), [m]);
   const nodes = useMemo(() => nodeMap(m), [m]);
   const reaches = useMemo(() => wallEndReaches(m, nodes), [m, nodes]);
   const mpp = metersPerPixel(m);
@@ -261,6 +262,7 @@ export default function PlanCanvas(props: {
                 fill={selection?.id === r.id ? COLORS.roomSel : COLORS.room}
               />
             ))}
+            <DetectedObjects plan={m}/>
             {tags.map(tag => <text key={tag.key} x={tag.position.x} y={tag.position.y}
               pointerEvents="none" textAnchor="middle" fontSize={Math.max(6, W / 85)}
               fill="#18352f" stroke="white" strokeWidth={2} paintOrder="stroke">{tag.text}</text>)}

@@ -21,6 +21,7 @@ export default function TopBar(p: {
   walkthroughBusy: boolean;
   exportBlocker: string | null;
   exportPlanHref: string;
+  debugHref: string;
   export3D: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -52,6 +53,7 @@ export default function TopBar(p: {
             <a role="menuitem" aria-disabled={!!p.exportBlocker} className={p.exportBlocker ? "disabled" : ""} href={p.exportBlocker ? undefined : p.exportPlanHref}>
               Plan bundle (DXF, SVG, PNG)
             </a>
+            <a role="menuitem" href={p.debugHref}>Extraction diagnostics (.zip)</a>
             <button role="menuitem" disabled={!!p.exportBlocker} onClick={p.export3D}>3D model (.glb)</button>
           </div>
         )}

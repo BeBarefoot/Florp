@@ -14,6 +14,7 @@ from shapely.geometry import GeometryCollection, LineString, Polygon
 from shapely.ops import unary_union
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
+from .config import settings
 from .models import Blueprint, PlanRevision
 from .plan_model import PlanModel, ImageTransform, Reference, Pt, wall_length
 from .plan_derive import derive
@@ -21,7 +22,7 @@ from .plan_reconstruct import configured_config
 
 router = APIRouter()
 WORKER_BUDGET_S = 120
-EXTRACTION_VERSION = 3
+EXTRACTION_VERSION = 4
 
 
 def get_engine():
@@ -279,8 +280,51 @@ async def extract(bid: str, expected_revision: int = 0, body: Extract | None = N
     with Session(get_engine()) as s:
         row = latest(s, bid)
         if (row.revision if row else 0) != expected_revision:
-            raise HTTPException(409, "Plan changed during extraction; saved edits retained")
+            raise HTTPException(
+                409, "Plan changed during extraction; saved edits retained"
+            )
         return store(s, bid, model, expected_revision + 1)
+
+
+@router.get("/blueprints/{bid}/plan/debug")
+def export_extraction_debug(bid: str):
+    """Download the exact input raster and latest saved extraction revision."""
+    import platform
+    import cv2
+
+    with Session(get_engine()) as session:
+        bp = blueprint(session, bid)
+        row = latest(session, bid)
+        if not row:
+            raise HTTPException(404, "Extract the plan before downloading diagnostics.")
+        payload = {"revision": row.revision, "model": row.model}
+        runtime = {
+            "extractionVersion": EXTRACTION_VERSION,
+            "platform": platform.system(),
+            "architecture": platform.machine(),
+            "opencv": cv2.__version__,
+            "semanticExtractor": bool(
+                settings.workspace_semantic_source
+                or settings.workspace_semantic_weights
+            ),
+        }
+        try:
+            preview = Path(bp.preview_path).read_bytes()
+        except OSError as exc:
+            raise HTTPException(404, "The source preview is unavailable.") from exc
+    archive = BytesIO()
+    with ZipFile(archive, "w") as bundle:
+        bundle.writestr("preview.png", preview)
+        bundle.writestr("plan.json", json.dumps(payload))
+        bundle.writestr("runtime.json", json.dumps(runtime))
+    return Response(
+        archive.getvalue(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="florp-yard-debug.zip"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.get("/blueprints/{bid}/plan/history")
