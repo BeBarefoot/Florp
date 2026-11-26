@@ -6,6 +6,7 @@ import {Canvas,useThree} from "@react-three/fiber";
 import {Html} from "@react-three/drei";
 import {DoubleSide,Shape,Vector2,Vector3} from "three";
 import Link from "next/link";
+import {request} from "../../lib/api";
 import {Maximize2,LayoutGrid,Box,MapPin,Pause,Play,SkipBack,SkipForward,Image as ImageIcon,FileDown,ImageDown,Bookmark,MapPinPlus,X,PencilRuler,Layers,Armchair} from "lucide-react";
 import {MAX_HORIZONTAL_FOV_DEG} from "../../lib/plan/camera";
 import {downloadPrompt,renderPrompt} from "../../lib/plan/renderPrompt";
@@ -132,6 +133,16 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   const [sessionFinishes,setSessionFinishes]=useState<FloorStyles|null>(null);
   const [finishNotice,setFinishNotice]=useState("");
   const [furnishing,setFurnishing]=useState(false);
+  const [detected,setDetected]=useState<{planRevision:number;suggestions:Item[]}|null>(null);
+  useEffect(()=>{
+    if(!furnishing||approximate||sample||!plan.roomSymbols?.length)return;
+    const controller=new AbortController();
+    request<{planRevision:number;suggestions:Item[]}>(`/blueprints/${encodeURIComponent(plan.id)}/scene/fixture-suggestions?measured_only=true&plan_revision=${plan.revision}`,
+      {signal:controller.signal})
+      .then(result=>{if(!controller.signal.aborted)setDetected(result);})
+      .catch(error=>{if(!controller.signal.aborted)setFurnitureNotice(String(error));});
+    return ()=>controller.abort();
+  },[furnishing,approximate,sample,plan.id,plan.revision,plan.roomSymbols?.length]);
   const [furnitureDraft,setFurnitureDraft]=useState<Item[]|null>(null);
   const [previewFurniture,setPreviewFurniture]=useState<Item[]|null>(null);
   const [furnitureId,setFurnitureId]=useState("");
@@ -368,6 +379,11 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     {view&&rendered&&renders[view.id]&&<div className="show-render"><img src={renders[view.id]} alt={"Saved design render for "+view.name}/></div>}
     {view&&<button type="button" className="show-overview" data-tour-tools onClick={()=>select(-1)}><Box size={18}/>Overview</button>}
     {furnishing?<FurnishSheet objects={objects} selected={selectedFurniture} previewReason={previewReason}
+      detected={approximate||detected?.planRevision!==plan.revision?[]:detected.suggestions.filter(item=>!objects.some(other=>other.id===item.id)&&!scene.dismissedFixtureIds?.includes(item.id))}
+      onInsertDetected={item=>{
+        if(objects.length>=100)return;
+        setPlacement(null);setFurnitureDraft([...objects,item]);setFurnitureId(item.id);
+      }}
       pending={placement}
       dirty={!!furnitureDraft} saving={saving} message={furnitureNotice} issues={fitWarnings}
       edit={edit&&"/phone/edit/"+encodeURIComponent(plan.id)}

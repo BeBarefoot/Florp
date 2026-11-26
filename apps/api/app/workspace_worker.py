@@ -257,43 +257,56 @@ def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, p
         from dataclasses import replace
         from .extraction_resize import ExtractionResize
 
-        factor = min(1.6, 1300 / max(w, h))
-        enlarged = cv2.resize(
-            source, None, fx=factor, fy=factor, interpolation=cv2.INTER_CUBIC
-        )
         boxes, detector_ok = (
             detector if detector is not None else _detector_boxes(path, w, h)
         )
-        enlarged_boxes = [
-            replace(
-                box,
-                x1=box.x1 * factor,
-                y1=box.y1 * factor,
-                x2=box.x2 * factor,
-                y2=box.y2 * factor,
-            )
-            for box in boxes
-        ]
-        checked = _extract_raster(
-            enlarged,
-            None,
-            plan_id,
-            reconstruct_config,
-            False,
-            detector=(enlarged_boxes, detector_ok),
-            geometry_only=geometry_only,
-            enlarge_clipped=False,
-        )
         framed_area = (framed[2][0] - framed[0][0]) * (framed[2][1] - framed[0][1])
-        if any(
-            room.area_px2 > 0.18 * framed_area * factor**2 for room in checked.rooms
-        ):
+        for factor in (min(1.6, 1300 / max(w, h)), min(1.8, 1500 / max(w, h))):
+            enlarged = cv2.resize(
+                source, None, fx=factor, fy=factor, interpolation=cv2.INTER_CUBIC
+            )
+            enlarged_boxes = [
+                replace(
+                    box,
+                    x1=box.x1 * factor,
+                    y1=box.y1 * factor,
+                    x2=box.x2 * factor,
+                    y2=box.y2 * factor,
+                )
+                for box in boxes
+            ]
+            checked = _extract_raster(
+                enlarged,
+                None,
+                plan_id,
+                reconstruct_config,
+                False,
+                detector=(enlarged_boxes, detector_ok),
+                geometry_only=True,
+                enlarge_clipped=False,
+            )
+            if not any(
+                room.area_px2 > 0.18 * framed_area * factor**2 for room in checked.rooms
+            ):
+                continue
+            if not geometry_only:
+                from .drafting_symbols import site_symbols
+
+                checked = tag_rooms(
+                    checked,
+                    [*detect_symbols(enlarged), *site_symbols(enlarged, checked)][:256],
+                )
             from .painted_openings import remove_clipped_site_artifacts
 
             checked = remove_clipped_site_artifacts(checked)
             model = ExtractionResize(w, h, factor).model(checked)
             if not geometry_only:
-                from .drafting_symbols import bar_counters, media_consoles
+                from .drafting_symbols import (
+                    bar_counters,
+                    kitchen_fridges,
+                    media_consoles,
+                    recover_kitchen_at_second_resolution,
+                )
                 from .plan_model import PlanModel
 
                 symbols = model.room_symbols
@@ -301,13 +314,21 @@ def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, p
                     *bar_counters(image, symbols),
                     *media_consoles(image, symbols, model),
                 ]
+                cabinets = [item for item in symbols if item.kind == "cabinets"]
+                if cabinets:
+                    supplemental.extend(kitchen_fridges(image, cabinets))
+                else:
+                    supplemental.extend(
+                        recover_kitchen_at_second_resolution(image, model)
+                    )
                 for item in supplemental:
                     nearby = any(
                         symbol.kind == item.kind
                         and math.hypot(
                             symbol.position.x - item.position.x,
                             symbol.position.y - item.position.y,
-                        ) < w_wall * 2
+                        )
+                        < w_wall * 2
                         for symbol in symbols
                     )
                     if not nearby:
@@ -325,7 +346,9 @@ def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, p
     else:
         polygon, env_mask = building_envelope(strips.mask, w_wall)
         if polygon and stats.get("coloured_walls") and strips.boundary_mask is not None:
-            polygon, env_mask = recover_notched_crop(polygon, env_mask, strips.boundary_mask | strips.blue, w_wall)
+            polygon, env_mask = recover_notched_crop(
+                polygon, env_mask, strips.boundary_mask | strips.blue, w_wall
+            )
         if framed:
             polygon = framed
             env_mask = mask_from_polygon(polygon,image.shape)

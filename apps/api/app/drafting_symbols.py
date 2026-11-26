@@ -810,3 +810,103 @@ def site_symbols(image, model, roi=None):
     matches.extend(patio_sets(image, model.gardens, matches))
     matches.extend(media_consoles(image, matches, model))
     return [*matches, *bars, *sanitary, *trees]
+
+
+def kitchen_fridges(image, cabinets):
+    """Identify a terminal appliance bay using the double cabinet-side outline."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    fridges = []
+    for cabinet in cabinets:
+        if cabinet.kind != "cabinets":
+            continue
+        depth = cabinet.depth_px
+        if not 10 <= depth or not 1.7 * depth <= cabinet.width_px <= 6 * depth:
+            continue
+        vertical = cabinet.rotation in (-90, 90)
+        raster = gray if vertical else gray.T
+        pos = cabinet.position.y if vertical else cabinet.position.x
+        lane = cabinet.position.x if vertical else cabinet.position.y
+        if not 5 < lane - depth * 0.85 or lane + depth * 0.85 >= raster.shape[1] - 5:
+            continue
+        for sign in (-1, 1):
+            tip = pos + sign * cabinet.width_px / 2
+            starts = range(round(tip - 0.22 * depth), round(tip + 0.22 * depth) + 1)
+            fronts = range(round(lane - 0.75 * depth), round(lane + 0.75 * depth) + 1)
+            for start in starts:
+                if not 3 <= start < len(raster) - 3:
+                    continue
+                for length in np.arange(0.96, 1.5, 0.08) * depth:
+                    end = round(start + sign * length)
+                    if not 3 <= end < len(raster) - 3:
+                        continue
+                    lo, hi = sorted((start, end))
+                    columns = np.array(list(fronts))
+                    contrast = (
+                        raster[lo:hi, columns - 2] + raster[lo:hi, columns + 2]
+                    ) / 2 - raster[lo:hi, columns]
+                    rails = columns[(contrast > 4).mean(axis=0) > 0.8]
+                    for front in rails:
+                        for rear in rails:
+                            if not 0.94 * depth < rear - front < 1.45 * depth:
+                                continue
+                            if not any(
+                                2 <= inner - front <= 0.26 * depth for inner in rails
+                            ):
+                                continue
+                            caps = [
+                                (raster[y - 2, front:rear] + raster[y + 2, front:rear])
+                                / 2
+                                - raster[y, front:rear]
+                                for y in (start, end)
+                            ]
+                            if min((cap > 4).mean() for cap in caps) > 0.72:
+                                x, y = (front + rear) / 2, (start + end) / 2
+                                fridges.append(
+                                    RoomSymbol(
+                                        kind="fridge",
+                                        position=Pt(
+                                            x=x if vertical else y,
+                                            y=y if vertical else x,
+                                        ),
+                                        width_px=abs(end - start),
+                                        depth_px=rear - front,
+                                        rotation=cabinet.rotation,
+                                    )
+                                )
+                                break
+                        else:
+                            continue
+                        break
+                    else:
+                        continue
+                    break
+                else:
+                    continue
+                break
+            else:
+                continue
+            break
+    return fridges
+
+
+def recover_kitchen_at_second_resolution(image, model):
+    """Recheck the inset sink and countertop on a less enlarged raster."""
+    from .extraction_resize import ExtractionResize
+
+    h, w = image.shape[:2]
+    factor = 1.18
+    resized = cv2.resize(
+        image, None, fx=factor, fy=factor, interpolation=cv2.INTER_CUBIC
+    )
+    working = model.model_copy(deep=True)
+    working.stairs = []
+    working = ExtractionResize(resized.shape[1], resized.shape[0], 1 / factor).model(
+        working
+    )
+    sinks = counter_basins(resized, working.room_symbols)
+    cabinets = kitchen_cabinets(resized, [*working.room_symbols, *sinks], working)
+    for item in [*sinks, *cabinets]:
+        ExtractionResize(w, h, factor).point(item.position)
+        item.width_px /= factor
+        item.depth_px /= factor
+    return [*sinks, *cabinets, *kitchen_fridges(image, cabinets)]

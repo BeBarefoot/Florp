@@ -2,6 +2,7 @@
 from math import hypot
 
 import cv2
+import numpy as np
 
 from .deterministic_blueprint.calibration import dimension_candidates, recognize
 from .deterministic_blueprint.schema import Options
@@ -60,27 +61,53 @@ def matching_proposal(candidates):
     a = max((c for c, vertical in best if not vertical), key=pixels)
     b = max((c for c, vertical in best if vertical), key=pixels)
     span_by_axis = {False: pixels(a), True: pixels(b)}
-    if any(abs(rate(c) / rate(a) - 1) > .025 and pixels(c) >= .8 * span_by_axis[vertical]
-           for c, vertical in values):
+    if any(
+        abs(rate(c) / rate(a) - 1) > 0.025 and pixels(c) >= 0.8 * span_by_axis[vertical]
+        for c, vertical in values
+    ):
         return None
     if pixels(b) > pixels(a):
         a, b = b, a
-    return ScaleProposal(reference=ref(a), check_reference=ref(b), evidence_count=len(best))
+    return ScaleProposal(
+        reference=ref(a), check_reference=ref(b), evidence_count=len(best)
+    )
+
+
+def _read_both_axes(image, options):
+    height, width = image.shape[:2]
+    words, _ = recognize(image, options)
+    for turn in (cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_90_COUNTERCLOCKWISE):
+        rotated, _ = recognize(cv2.rotate(image, turn), options)
+        for word in rotated:
+            x1, y1, x2, y2 = word["box"]
+            if turn == cv2.ROTATE_90_CLOCKWISE:
+                box = [y1, height - x2, y2, height - x1]
+            else:
+                box = [width - y2, x1, width - y1, x2]
+            words.append({**word, "box": box})
+    return words
 
 
 def propose_scale(image):
     options = Options(ocr_languages="eng", ocr_timeout_s=1)
-    words, _ = recognize(image, options)
-    # OCR sees vertical labels when the image is turned. Map their boxes
-    # back to source coordinates so the user can verify them on the plan.
-    height, width = image.shape[:2]
-    if words:
-        rotated, _ = recognize(cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE), options)
-        for word in rotated:
-            x1, y1, x2, y2 = word["box"]
-            words.append({**word, "box": [y1, height - x2, y2, height - x1]})
-        rotated, _ = recognize(cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE), options)
-        for word in rotated:
-            x1, y1, x2, y2 = word["box"]
-            words.append({**word, "box": [width - y2, x1, width - y1, x2]})
+    words = _read_both_axes(image, options)
+    proposal = matching_proposal(dimension_candidates(image, words)) if words else None
+    if proposal or max(image.shape[:2]) >= 1100:
+        return proposal
+
+    # Thin dimension rules run through some printed labels. Use a cleaned
+    # copy for reading, then validate the witness ticks in the original.
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    ink = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 25, 9
+    )
+    horizontal = cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((1, 40), np.uint8))
+    vertical = cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((40, 1), np.uint8))
+    clean = 255 - (ink & ~(horizontal | vertical))
+    factor = min(2, 1600 / max(gray.shape))
+    enlarged = cv2.resize(
+        clean, None, fx=factor, fy=factor, interpolation=cv2.INTER_CUBIC
+    )
+    for word in _read_both_axes(cv2.cvtColor(enlarged, cv2.COLOR_GRAY2BGR), options):
+        words.append({**word, "box": [value / factor for value in word["box"]]})
     return matching_proposal(dimension_candidates(image, words)) if words else None

@@ -7,8 +7,8 @@ import {scrollTourRail} from "./scrollTourRail";
 
 const roomIcons=[Armchair,BedDouble,Bath,CookingPot,TreePine];
 
-export default function FurnishSheet({objects,selected,pending,previewReason,dirty,saving,message,issues,onAdd,onDragStart,onDragEnd,onSelect,onMove,onRotate,onResize,onScreenSize,onRemove,onClose,onSave,edit}:{
-  objects:Item[];selected?:Item;pending:Item|null;previewReason?:string;dirty:boolean;saving:boolean;
+export default function FurnishSheet({objects,detected,onInsertDetected,selected,pending,previewReason,dirty,saving,message,issues,onAdd,onDragStart,onDragEnd,onSelect,onMove,onRotate,onResize,onScreenSize,onRemove,onClose,onSave,edit}:{
+  objects:Item[];detected?:Item[];onInsertDetected?:(item:Item)=>void;selected?:Item;pending:Item|null;previewReason?:string;dirty:boolean;saving:boolean;
   message:string;issues:string[];edit?:string;
   onAdd:(kind:ObjectKind)=>void;onSelect:(id:string)=>void;onMove:()=>void;
   onDragStart:(kind:ObjectKind)=>void;onDragEnd:()=>void;
@@ -41,6 +41,14 @@ export default function FurnishSheet({objects,selected,pending,previewReason,dir
       <button type="button" className="finish-close" aria-label={dirty?"Discard furniture changes":"Close Furnish"} onClick={onClose}><X size={20}/></button>
     </div>
     <div ref={catalog} className="furnish-items tour-rail" role="group" aria-label="Furniture catalog">
+      {!!detected?.length&&<section className="furnish-group" aria-label="Detected on plan">
+        <div className="furnish-catalog">
+          {detected.map(item=><button key={item.id} type="button" disabled={objects.length>=100}
+            aria-label={`Insert detected ${objectName(item.kind)}`} onClick={()=>onInsertDetected?.(item)}>
+            <strong>{objectName(item.kind)}</strong><span>Insert from plan</span>
+          </button>)}
+        </div>
+      </section>}
       {room.groups.map(group=><section key={group.name} className="furnish-group" aria-label={group.name}>
         <div className="furnish-catalog">
           {group.items.map(kind=>{
@@ -82,7 +90,7 @@ export default function FurnishSheet({objects,selected,pending,previewReason,dir
               }}/>
           </label>}
           {(selected.kind==="tv"?["depth"] as const:["width","depth","height"] as const).map(key=>{
-            const thin=selected.kind==="rug"&&key==="height";
+            const thin=(selected.kind==="rug"||selected.kind==="cooktop")&&key==="height";
             const precision=thin?10:1;
             const cm=Math.round(selected[key]*100*precision)/precision;
             return <label key={key}>{key.charAt(0).toUpperCase()+key.slice(1)} (cm)

@@ -139,6 +139,40 @@ export function furnitureParts(o:Item):Part[]{
   }
 
   switch(o.kind){
+    case "car":
+      add(0,.34,0,.99,.38,.96,"steel","upholstered");
+      add(-.04,.64,0,.56,.26,.81,"screen","upholstered");
+      add(-.04,.85,0,.37,.23,.72,"steel","upholstered");
+      for(const x of [-.31,.31])for(const z of [-.43,.43])
+        add(x,.18,z,.15,.36,.13,"black","tube",[Math.PI/2,0,0]);
+      for(const z of [-.32,.32]){
+        add(.47,.41,z,.055,.09,.20,"ceramic");
+        add(-.47,.41,z,.055,.09,.20,"rust");
+      }
+      break;
+    case "tree":
+      add(0,.32,0,.09,.64,.09,"walnut","tube");
+      add(0,.70,0,.70,.56,.76,"leaf","sphere");
+      add(-.24,.69,.08,.51,.45,.56,"twig","sphere");
+      add(.23,.76,-.09,.53,.46,.56,"leaf","sphere");
+      add(.03,.85,-.06,.50,.30,.49,"sage","sphere");
+      break;
+    case "cooktop":
+      add(0,.5,0,1,1,1,"screen");
+      for(const x of [-.23,.23])for(const z of [-.22,.22]){
+        add(x,1,z,.31,.1,.34,"steel","tube");
+        add(x,1.06,z,.25,.1,.28,"black","tube");
+      }
+      break;
+    case "bar_stools":
+      for(const x of [-.375,-.125,.125,.375]){
+        add(x,.035,0,.17,.07,.76,"steel","tube");
+        add(x,.34,0,.023,.62,.11,"steel","tube");
+        add(x,.50,.17,.12,.045,.13,"chrome");
+        add(x,.69,0,.21,.11,.96,"oak","upholstered");
+        add(x,.84,-.39,.20,.32,.16,"walnut","upholstered");
+      }
+      break;
     case "sofa":case "loveseat":case "chair": {
       const count=o.kind==="chair"?1:o.kind==="loveseat"?2:3;
       const fabric=o.kind==="chair"?"rust":"sage";
@@ -185,7 +219,7 @@ export function furnitureParts(o:Item):Part[]{
       add(0,.051,-.039,.92,.102,.80,"walnut");
       cabinet(o.kind==="island"?"oak":"cream",3,.09,.934,true);
       break;
-    case "fridge_2":case "fridge_4": {
+    case "fridge":case "fridge_2":case "fridge_4": {
       add(0,.501,-.042,.98,.978,.905,"black");
       const rows=o.kind==="fridge_4"?[[.744,.493],[.255,.479]]:[[.658,.676],[.16,.303]];
       const columns=o.kind==="fridge_4"?[-.252,.252]:[0];

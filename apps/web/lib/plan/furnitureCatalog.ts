@@ -12,6 +12,7 @@ const products = {
   sink: ["Sink", .62, .46, .84],
   vanity: ["Vanity", .8, .5, .86],
   toilet: ["Toilet", .38, .68, .8],
+  fridge: ["Fridge", .83, .73, 1.8],
   fridge_2: ["2-door fridge", .83, .73, 1.8],
   fridge_4: ["4-door fridge", .92, .76, 1.83],
   dining_4: ["Dining set · 4 seats", 1.7, 1.85, .85],
@@ -26,6 +27,10 @@ const products = {
   patio_set: ["Patio dining set", 1.74, 1.95, .85],
   lounge: ["Sun lounger", .71, 1.96, .8],
   planter: ["Planter", .55, .55, .98],
+  car: ["Car", 4.5, 1.8, 1.48],
+  tree: ["Tree", 2.5, 2.5, 3],
+  cooktop: ["Cooktop", .6, .52, .045],
+  bar_stools: ["Bar stools", 1.8, .45, 1.02],
   grill: ["Grill", 1.22, .59, 1.12],
   parasol: ["Patio umbrella", 2.45, 2.45, 2.25],
 } as const;
@@ -52,13 +57,13 @@ export const furnitureRooms = [
     {name:"Fixtures", items:["sink","vanity","toilet"]},
   ], tip:"Allow space in front of fixtures and keep the door swing clear."},
   {name:"Kitchen", groups:[
-    {name:"Appliances", items:["fridge_2","fridge_4"]},
+    {name:"Appliances", items:["fridge_2","fridge_4","cooktop"]},
     {name:"Dining sets", items:["dining_4","dining_6","dining_8"]},
-    {name:"Worktops & storage", items:["island","cabinets"]},
+    {name:"Worktops & storage", items:["island","cabinets","bar_stools"]},
   ], tip:"Dining footprints include chairs. Leave extra space to pull chairs out and open appliance doors."},
   {name:"Yard", groups:[
-    {name:"Outdoor living", items:["patio_set","lounge","grill"]},
-    {name:"Plants & shade", items:["planter","parasol"]},
+    {name:"Outdoor living", items:["patio_set","lounge","grill","car"]},
+    {name:"Plants & shade", items:["planter","parasol","tree"]},
   ], tip:"Place items on a detected yard or balcony. Keep circulation and grill clearance in mind."},
 ] as const satisfies readonly {name:string;groups:readonly {name:string;items:readonly ObjectKind[]}[];tip:string}[];
 

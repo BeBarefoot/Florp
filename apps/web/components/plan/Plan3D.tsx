@@ -118,6 +118,15 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
     request<Job[]>(path+"/scene/renders").then(r=>{if(!cancelled)setJobs(r);}).catch(e=>{if(!cancelled)setMessage(String(e));});
     return ()=>{cancelled=true;};
   },[path,phone]);
+  useEffect(()=>{
+    if(dirty||!m.roomSymbols?.length)return;
+    const controller=new AbortController();
+    request<{planRevision:number;suggestions:Item[]}>(path+"/scene/fixture-suggestions?measured_only=true&plan_revision="+m.revision,
+      {signal:controller.signal})
+      .then(result=>{if(!controller.signal.aborted)setFixtureScan(current=>current?.planRevision===result.planRevision?current:result);})
+      .catch(error=>{if(!controller.signal.aborted)setMessage(String(error));});
+    return ()=>controller.abort();
+  },[dirty,m.revision,m.roomSymbols?.length,path]);
   const pending=jobs.filter(active).map(j=>j.id).join(",");
   useEffect(()=>{
     if(!pending)return;
@@ -567,7 +576,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
         </label>}
         {(item.kind==="tv"?["depth"]:["width","depth","height",...(item.kind==="bed"?["mattressWidth","mattressDepth"]:[])]).map(raw=>{
           const k=raw as "width"|"depth"|"height"|"mattressWidth"|"mattressDepth";
-          const min=item.kind==="rug"&&k==="height"?.006:.06;
+          const min=(item.kind==="rug"||item.kind==="cooktop")&&k==="height"?.006:.06;
           return <label key={k}>{({width:"Frame width",depth:"Frame depth",height:"Height",mattressWidth:"Mattress width",mattressDepth:"Mattress length"})[k]}
             <input key={item.id+"-"+k+"-"+item[k]} aria-label={k} type="number" step={min===.006?.001:.01} min={min} max={k==="height"?5:8} defaultValue={item[k]??""}
               onBlur={e=>{const n=e.target.valueAsNumber;if(n>=min&&n<=(k==="height"?5:8))updateItem({[k]:n});else e.target.value=String(item[k]??"");}}/> m</label>;

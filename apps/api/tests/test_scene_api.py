@@ -353,3 +353,27 @@ def test_optional_fixture_weights_stay_review_only(client, monkeypatch):
         raise ValueError('missing')
     monkeypatch.setattr(fixture_weights, 'detect', missing)
     assert c.get(path + '/scene/fixture-suggestions', params={'plan_revision': 1}).status_code == 503
+
+
+def test_detected_appliances_convert_to_scene_objects_after_calibration(client):
+    c, bid = client
+    path = f"/blueprints/{bid}"
+    symbols = [
+        {"kind": "fridge", "position": {"x": 250, "y": 200},
+         "widthPx": 83, "depthPx": 73, "rotation": 90},
+        {"kind": "cooktop", "position": {"x": 400, "y": 200},
+         "widthPx": 60, "depthPx": 52},
+    ]
+    saved = c.put(path + "/plan", json={"expectedRevision": 0,
+                   "model": plan(scale=reference(), roomSymbols=symbols)})
+    assert saved.status_code == 200, saved.text
+    response = c.get(path + "/scene/fixture-suggestions",
+                     params={"plan_revision": 1, "measured_only": True})
+    assert response.status_code == 200, response.text
+    fridge, cooktop = response.json()["suggestions"]
+    assert (fridge["kind"], fridge["rotation"], round(fridge["width"], 2)) == ("fridge", 90, .83)
+    assert cooktop["kind"] == "cooktop"
+    assert c.get(path + "/scene").json()["config"]["objects"] == []
+    placed = c.put(path + "/scene", json={"expectedRevision": 0, "planRevision": 1,
+                   "config": {"objects": [fridge, cooktop]}})
+    assert placed.status_code == 200, placed.text

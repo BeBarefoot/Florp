@@ -39,13 +39,14 @@ export function newItem(kind: ObjectKind, position: Pt): Item {
 }
 
 export function itemBottom(item: Pick<Item,"kind"|"height">) {
+  if (item.kind==="cooktop") return .91;
   if (item.kind==="tv") return 1.27-item.height/2;
   if (item.kind==="console_floating") return .26;
   return 0;
 }
 
 export function obstructsMovement(item: Item) {
-  return item.kind!=="rug" && item.kind!=="tv";
+  return item.kind!=="rug" && item.kind!=="tv" && item.kind!=="cooktop";
 }
 
 export function promptFor(view: View, facts: string[], style: string) {

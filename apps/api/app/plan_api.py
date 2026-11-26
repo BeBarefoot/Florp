@@ -20,8 +20,8 @@ from .plan_derive import derive
 from .plan_reconstruct import configured_config
 
 router = APIRouter()
-WORKER_BUDGET_S = 60
-EXTRACTION_VERSION = 2
+WORKER_BUDGET_S = 120
+EXTRACTION_VERSION = 3
 
 
 def get_engine():
@@ -75,6 +75,7 @@ async def run_worker(path: str, roi=None, *, plan_id: str) -> PlanModel:
             **os.environ,
             "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
             "OMP_NUM_THREADS": "1",
+            "OMP_THREAD_LIMIT": "1",
             "OPENBLAS_NUM_THREADS": "1",
         }
         proc = await asyncio.create_subprocess_exec(

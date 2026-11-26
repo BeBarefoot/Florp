@@ -81,7 +81,7 @@ export type PlanModel = {
   walls: Wall[];
   openings: Opening[];
   stairs?: Stair[];
-  roomSymbols?: { kind: "car" | "bed" | "sofa" | "dining_table" | "bar_stools" | "cooktop" | "coffee_table" | "tree" | "sink" | "toilet" | "cabinets" | "patio_set" | "bar_counter" | "tv_console"; position: Pt; widthPx?: number | null; depthPx?: number | null; rotation?: number }[];
+  roomSymbols?: { kind: "car" | "bed" | "sofa" | "dining_table" | "bar_stools" | "cooktop" | "coffee_table" | "tree" | "sink" | "toilet" | "cabinets" | "patio_set" | "bar_counter" | "tv_console" | "fridge"; position: Pt; widthPx?: number | null; depthPx?: number | null; rotation?: number }[];
   rooms: Room[];
   roomZones?: Omit<Room, "wallIds" | "areaPx2">[];
   findings: Finding[];

@@ -50,7 +50,7 @@ class SceneObject(Data):
         "bed", "wardrobe", "toilet", "vanity", "shower", "bathtub", "sofa", "table",
         "loveseat", "chair", "rug", "nightstand", "sink", "fridge_2", "fridge_4",
         "dining_4", "dining_6", "dining_8", "island", "cabinets", "tv", "console_floating",
-        "console_standing", "coffee_table", "patio_set", "lounge", "planter", "grill", "parasol",
+        "console_standing", "coffee_table", "patio_set", "lounge", "planter", "grill", "parasol", "car", "tree", "cooktop", "bar_stools", "fridge",
     ]
     position: Pt
     rotation: float = Field(ge=-360, le=360)
@@ -122,7 +122,7 @@ def save_scene(bid: str, body: SaveScene):
         if any(o.kind == "bed" and ((o.mattress_width or 0) > o.width or (o.mattress_depth or 0) > o.depth * .96) for o in body.config.objects):
             raise HTTPException(422, "The mattress must fit within the bed frame")
         for item in body.config.objects:
-            if item.kind != "rug" and item.height <= .05:
+            if item.kind not in ("rug", "cooktop") and item.height <= .05:
                 raise HTTPException(422, "Object height must exceed 5 cm")
             if item.kind == "tv":
                 inches = math.hypot(item.width, item.height) / .0254
@@ -157,7 +157,7 @@ def save_scene(bid: str, body: SaveScene):
 
 
 @router.get("/scene/fixture-suggestions")
-def fixture_suggestions(bid: str, plan_revision: int):
+def fixture_suggestions(bid: str, plan_revision: int, measured_only: bool = False):
     """Inspect the original local blueprint for reviewable scene objects."""
     from .fixture_detection import HEIGHT, for_plan, furniture_symbol_hits
 
@@ -169,53 +169,92 @@ def fixture_suggestions(bid: str, plan_revision: int):
         model = PlanModel.model_validate(plan.model)
         path = bp.preview_path
     if not model.scale.meters_per_pixel:
-        raise HTTPException(422, "Calibrate the floor plan before scanning for furniture.")
-    try:
-        with Image.open(path) as image:
-            dims = model.image_transform
-            if image.size != (dims.width, dims.height):
-                raise HTTPException(409, "The saved plan and source image do not match.")
-            gray = np.array(image.convert("L"))
-    except OSError as exc:
-        raise HTTPException(404, "The blueprint image is not available.") from exc
-    measured = []
-    source = "local-symbol-matcher"
-    if settings.fixture_yolo_weights:
-        from .fixture_weights import detect, contextual_hits
+        raise HTTPException(
+            422, "Calibrate the floor plan before scanning for furniture."
+        )
+    measured = furniture_symbol_hits(model)
+    hits = measured
+    source = "plan-extraction" if measured_only else "local-symbol-matcher"
+    if not measured_only:
         try:
-            hits = contextual_hits(detect(gray, model.scale.meters_per_pixel, settings.fixture_yolo_weights), model)
-        except (ImportError, ValueError, OSError, RuntimeError) as exc:
-            raise HTTPException(503, "Fixture detector unavailable. Install the pretrained-yolo extra and configure trusted local FIXTURE_YOLO_WEIGHTS.") from exc
-        source = "local-yolo-weights"
-    else:
-        measured = furniture_symbol_hits(model)
-        hits = [hit for hit in for_plan(gray, model) if not any(
-            hit.kind == other.kind and
-            ((hit.x-other.x)**2 + (hit.y-other.y)**2)**.5 * model.scale.meters_per_pixel
-            < min(other.width, other.depth)*.6 for other in measured
-        )] + measured
+            with Image.open(path) as image:
+                dims = model.image_transform
+                if image.size != (dims.width, dims.height):
+                    raise HTTPException(
+                        409, "The saved plan and source image do not match."
+                    )
+                gray = np.array(image.convert("L"))
+        except OSError as exc:
+            raise HTTPException(404, "The blueprint image is not available.") from exc
+        if settings.fixture_yolo_weights:
+            from .fixture_weights import detect, contextual_hits
+
+            try:
+                scanned = contextual_hits(
+                    detect(
+                        gray,
+                        model.scale.meters_per_pixel,
+                        settings.fixture_yolo_weights,
+                    ),
+                    model,
+                )
+            except (ImportError, ValueError, OSError, RuntimeError) as exc:
+                raise HTTPException(
+                    503,
+                    "Fixture detector unavailable. Install the pretrained-yolo extra and configure trusted local FIXTURE_YOLO_WEIGHTS.",
+                ) from exc
+            source = "local-yolo-weights"
+        else:
+            scanned = for_plan(gray, model)
+        hits = [
+            *measured,
+            *(
+                hit
+                for hit in scanned
+                if not any(
+                    hit.kind == other.kind
+                    and math.hypot(hit.x - other.x, hit.y - other.y)
+                    * model.scale.meters_per_pixel
+                    < min(other.width, other.depth) * 0.6
+                    for other in measured
+                )
+            ),
+        ]
     proposals = []
     for h in hits:
         # The ID is scoped to the blueprint by the scene record. It stays
         # stable across identical scans so accepted or dismissed items stay hidden.
-        token = f"{h.kind}:{round(h.x/4)}:{round(h.y/4)}"
+        token = f"{h.kind}:{round(h.x / 4)}:{round(h.y / 4)}"
         fixture_id = "fixture-" + hashlib.sha256(token.encode()).hexdigest()[:20]
-        item = SceneObject(id=fixture_id, kind=h.kind, position=Pt(x=h.x, y=h.y),
-                           width=h.width, depth=h.depth, height=HEIGHT[h.kind],
-                           rotation=h.rotation if h.rotation <= 180 else h.rotation-360,
-                           mattress_width=round(h.width*.94, 2) if h.kind == "bed" else None,
-                           mattress_depth=round(h.depth*.93, 2) if h.kind == "bed" else None)
+        item = SceneObject(
+            id=fixture_id,
+            kind=h.kind,
+            position=Pt(x=h.x, y=h.y),
+            width=h.width,
+            depth=h.depth,
+            height=HEIGHT[h.kind],
+            rotation=h.rotation if h.rotation <= 180 else h.rotation - 360,
+            mattress_width=round(h.width * 0.94, 2) if h.kind == "bed" else None,
+            mattress_depth=round(h.depth * 0.93, 2) if h.kind == "bed" else None,
+        )
         proposals.append(item.model_dump(by_alias=True))
-    return {"planRevision": plan_revision, "suggestions": proposals, "source": source,
-            "orientationNeedsReview": bool(settings.fixture_yolo_weights or measured)}
+    return {
+        "planRevision": plan_revision,
+        "suggestions": proposals,
+        "source": source,
+        "orientationNeedsReview": bool(settings.fixture_yolo_weights or measured),
+    }
 
 
 @router.get("/scene/render-settings")
 def render_settings(bid: str):
     with Session(get_engine()) as s:
         blueprint(s, bid)
-    return {**comfy.render_config(),
-            "width": providers.FRAME_WIDTH, "height": providers.FRAME_HEIGHT}
+    return {
+        **comfy.render_config(),
+        "width": providers.FRAME_WIDTH,
+        "height": providers.FRAME_HEIGHT,
+    }
 
 
 class Submit(Data):
