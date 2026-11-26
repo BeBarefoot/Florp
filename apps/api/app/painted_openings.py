@@ -179,7 +179,8 @@ def remove_dimension_hosts(model, image, strips):
             continue
         if tint[lane - 3 : lane + 4, lo:hi].mean() > 0.16:
             continue
-        for row in range(lane - 2, lane + 3):
+        radius = min(7, max(2, round(wall.thickness_px * .4)), lane-3, len(raster)-4-lane)
+        for row in range(lane - radius, lane + radius + 1):
             contrast = (raster[row - 3] + raster[row + 3]) / 2 - raster[row]
             runs = [
                 contrast[lo - reach : lo - 5],

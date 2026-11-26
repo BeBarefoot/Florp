@@ -565,20 +565,40 @@ def kitchen_cabinets(image, symbols, model):
                 max([edge[0], *(k for k in stops if k < first)]),
                 min([edge[1], *(k for k in stops if k > last)]),
             )
-            found.append(cabinet(*edge, rear, front, vertical))
-            for end, direction in ((edge[0], -1), (edge[1], 1)):
+            ends = list(edge)
+            for index, direction in enumerate((-1, 1)):
+                end = ends[index]
                 at = front + sign * side * 0.45
-                arm = _counter_edge(raster.T, end, 2, at, at)
-                if not arm:
+                # Find a perpendicular room wall close to the measured end.
+                # The join can extend through the end unit on a blurred scan.
+                outer_faces = []
+                for wall in walls:
+                    (x1, y1), (x2, y2) = wall.coords
+                    outer = (y1 + y2) / 2 if vertical else (x1 + x2) / 2
+                    delta = abs(y1 - y2) if vertical else abs(x1 - x2)
+                    probe = GeoPoint(at, outer) if vertical else GeoPoint(outer, at)
+                    if (
+                        delta < 1
+                        and wall.distance(probe) < 2
+                        and -0.12 * side < (outer - end) * direction < 1.6 * side
+                    ):
+                        outer_faces.append(outer)
+                if not outer_faces:
                     continue
-                tip = arm[1] if sign > 0 else arm[0]
-                if not 1.75 * side < (tip - front) * sign < 7 * side:
-                    continue
-                outer = end + direction * side
-                pt = GeoPoint(outer, at) if not vertical else GeoPoint(at, outer)
-                if not any(w.distance(pt) < 0.23 * side for w in walls):
-                    continue
-                found.append(cabinet(*sorted([rear, tip]), end, outer, not vertical))
+                outer = min(outer_faces, key=lambda k: abs(k - end))
+                for depth in np.linspace(0.82, 1.22, 12) * side:
+                    inner = outer - direction * depth
+                    arm = _counter_edge(raster.T, inner, 1, at, at)
+                    if not arm:
+                        continue
+                    tip = arm[1] if sign > 0 else arm[0]
+                    if 1.75 * side < (tip - front) * sign < 7 * side:
+                        ends[index] = inner
+                        found.append(
+                            cabinet(*sorted([rear, tip]), inner, outer, not vertical)
+                        )
+                        break
+            found.append(cabinet(*ends, rear, front, vertical))
             break
     return found
 
@@ -722,3 +742,71 @@ def bar_counters(image, symbols):
                 )
             )
     return found
+
+
+def site_symbols(image, model, roi=None):
+    matches = compound_symbols(image, roi)
+    sanitary = sanitary_symbols(image, model)
+    bars = bar_counters(image, matches)
+    trees = tree_symbols(image)
+    h, w = image.shape[:2]
+    factor = 1280 / max(w, h)
+    if 0.5 <= factor <= 1.5 and abs(factor - 1) > 0.14:
+        from .extraction_resize import ExtractionResize
+
+        small = cv2.resize(
+            image,
+            None,
+            fx=factor,
+            fy=factor,
+            interpolation=cv2.INTER_CUBIC if factor > 1 else cv2.INTER_AREA,
+        )
+        # Only geometry is needed for bathroom context. Create separate source
+        # points before scaling, including where neighbouring rooms share corners.
+        working = model.model_copy(update={"stairs": [], "room_symbols": []})
+        working = type(model).model_validate(working.dump())
+        working = ExtractionResize(small.shape[1], small.shape[0], 1 / factor).model(
+            working
+        )
+        secondary = compound_symbols(small, np.array(roi) * factor if roi else None)
+
+        def original_positions(items):
+            for item in items:
+                item.position.x = (item.position.x + 0.5) / factor - 0.5
+                item.position.y = (item.position.y + 0.5) / factor - 0.5
+                item.width_px /= factor
+                item.depth_px /= factor
+            return items
+
+        def supplement(primary, secondary):
+            for item in original_positions(secondary):
+                if not any(
+                    s.kind == item.kind
+                    and np.hypot(
+                        s.position.x - item.position.x, s.position.y - item.position.y
+                    )
+                    < 0.6 * max(item.width_px, item.depth_px)
+                    for s in primary
+                ):
+                    primary.append(item)
+
+        supplement(bars, bar_counters(small, secondary))
+        supplement(sanitary, sanitary_symbols(small, working))
+        supplement(matches, secondary)
+        # Canopy identification relies on local tonal texture. Thin planting
+        # borders that turn into blobs at just one sampling size are unstable.
+        confirmed = original_positions(tree_symbols(small))
+        trees = [
+            t
+            for t in trees
+            if any(
+                np.hypot(t.position.x - c.position.x, t.position.y - c.position.y)
+                < 0.45 * t.width_px
+                for c in confirmed
+            )
+        ]
+    matches.extend(counter_basins(image, matches))
+    matches.extend(kitchen_cabinets(image, matches, model))
+    matches.extend(patio_sets(image, model.gardens, matches))
+    matches.extend(media_consoles(image, matches, model))
+    return [*matches, *bars, *sanitary, *trees]

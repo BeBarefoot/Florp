@@ -7,6 +7,7 @@ The reference photographs and generated PlanModels stay outside source control.
 import argparse
 from hashlib import sha256
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import cv2
 from numpy import hypot
@@ -49,17 +50,40 @@ def check(source):
         != "764b243c8a44882502e68c47621a8688c0249c45c114e5860f5d1bd32e436485"
     ):
         raise ValueError("Supply the original yard PNG from the October 24 archive.")
-    model = build(str(source), plan_id="yard-verification")
+    with TemporaryDirectory() as tmp:
+        original = cv2.imread(str(source))
+        for factor in (1.0, 0.8, 1.25):
+            path = source
+            if factor != 1:
+                path = Path(tmp) / "resized.png"
+                cv2.imwrite(
+                    str(path),
+                    cv2.resize(
+                        original,
+                        None,
+                        fx=factor,
+                        fy=factor,
+                        interpolation=cv2.INTER_AREA if factor < 1 else cv2.INTER_CUBIC,
+                    ),
+                )
+            check_landmarks(build(str(path), plan_id="yard-verification"), factor)
+
+
+def check_landmarks(model, factor):
     errors = []
-    for kind, x, y in OBJECTS:
+    missed = [
+        (kind, x, y)
+        for kind, x, y in OBJECTS
         if not any(
-            v.kind == kind and hypot(v.position.x - x, v.position.y - y) <= 15
-            for v in model.room_symbols
-        ):
-            errors.append(f"Missing {kind} near ({x}, {y})")
+            s.kind == kind
+            and hypot(s.position.x / factor - x, s.position.y / factor - y) <= 15
+            for s in model.room_symbols
+        )
+    ]
+    errors.extend(f"Missing {kind} near ({x}, {y})" for kind, x, y in missed)
 
     def near(p, xy):
-        return hypot(p.x - xy[0], p.y - xy[1]) <= 10
+        return hypot(p.x / factor - xy[0], p.y / factor - xy[1]) <= 10
 
     for kind, a, b in APERTURES:
         if not any(
@@ -82,7 +106,8 @@ def check(source):
     if errors:
         raise SystemExit("\n".join(errors))
     print(
-        f"{len(OBJECTS)} object marks, {len(APERTURES)} openings and two labeled rooms verified."
+        f"{factor:g}x: {len(OBJECTS) - len(missed)}/{len(OBJECTS)} object landmarks matched, "
+        f"{len(model.room_symbols)} marks returned, {len(APERTURES)} openings and two rooms verified."
     )
 
 

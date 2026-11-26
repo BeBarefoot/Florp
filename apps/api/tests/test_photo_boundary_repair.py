@@ -110,3 +110,13 @@ def test_dimension_line_must_continue_past_both_door_jambs():
     assert remove_dimension_hosts(plan,image,strips).walls==[]
     image[32:39,195:]=245
     assert remove_dimension_hosts(plan,image,strips) is plan
+
+
+def test_second_resolution_preserves_native_geometry_on_disagreement():
+    from app.photo_boundary_repair import reconcile_resolution
+
+    native, _, _ = photo_case()
+    alternate = native.model_copy(deep=True)
+    for node in alternate.nodes:
+        node.x += 80
+    assert reconcile_resolution(native, alternate, tolerance=8) is native

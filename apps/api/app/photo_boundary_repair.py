@@ -46,16 +46,40 @@ def recover_photo_boundaries(model, image, strips, *, junctions=False):
     height, width = material.shape
     envelope = Polygon([(p.x, p.y) for p in model.envelope]) if model.envelope else None
 
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.int16)
+
+    def straight_face(horizontal, lanes, longitudinal):
+        raster = gray if horizontal else gray.T
+        lanes = np.unique(lanes)
+        lanes = lanes[(lanes >= 3) & (lanes < len(raster) - 3)]
+        if not len(lanes):
+            return 0.0
+        center = raster[np.ix_(lanes, longitudinal)]
+        sides = (
+            raster[np.ix_(lanes - 3, longitudinal)]
+            + raster[np.ix_(lanes + 3, longitudinal)]
+        )
+        return ((sides / 2 - center) > 7).mean(axis=1).max()
+
     candidates = []
     degree_limit = 3 if junctions else 1
-    free = sorted(key for key, linked in incident.items()
-                  if 1 <= len(linked) <= degree_limit and all(w.source == "extracted" for w in linked))
-    limit = .08 * max(width, height)
+    free = sorted(
+        key
+        for key, linked in incident.items()
+        if 1 <= len(linked) <= degree_limit
+        and all(w.source == "extracted" for w in linked)
+    )
+    limit = (0.12 if junctions else 0.08) * max(width, height)
     locations = [Point(nodes[key]) for key in free]
     free_index = STRtree(locations)
-    pairs = ((a, free[j]) for i, a in enumerate(free)
-             for j in sorted(free_index.query(locations[i], predicate="dwithin", distance=limit))
-             if j > i)
+    pairs = (
+        (a, free[j])
+        for i, a in enumerate(free)
+        for j in sorted(
+            free_index.query(locations[i], predicate="dwithin", distance=limit)
+        )
+        if j > i
+    )
     for a, b in pairs:
         start, end = nodes[a], nodes[b]
         delta = end - start
@@ -67,7 +91,7 @@ def recover_photo_boundaries(model, image, strips, *, junctions=False):
             for wall in incident[key]:
                 far = nodes[wall.b if wall.a == key else wall.a]
                 direction = nodes[key] - far
-                if direction @ outward >= .98 * np.linalg.norm(direction) * distance:
+                if direction @ outward >= 0.98 * np.linalg.norm(direction) * distance:
                     return wall
             return None
 
@@ -76,7 +100,14 @@ def recover_photo_boundaries(model, image, strips, *, junctions=False):
             continue
         junction = len(incident[a]) > 1 or len(incident[b]) > 1
         thickness = min(first.thickness_px, second.thickness_px)
-        if distance > min((10 if junction else 5) * thickness, limit):
+        # A scan can truncate the outer face of masonry at the page edge.
+        # Longer spans are eligible there only with continuous source evidence below.
+        near_edge = junctions and all(
+            min(*point, width - 1 - point[0], height - 1 - point[1]) < 2 * thickness
+            for point in (start, end)
+        )
+        max_span = (22 if near_edge else 10 if junction else 5) * thickness
+        if distance > min(max_span, limit):
             continue
         if not junction and first.material != second.material:
             continue
@@ -84,35 +115,76 @@ def recover_photo_boundaries(model, image, strips, *, junctions=False):
         normal = np.array([-along[1], along[0]])
         first_far = nodes[first.b if first.a == a else first.a]
         second_far = nodes[second.b if second.a == b else second.a]
-        directions = [start - first_far, second_far - end]
-        if any(v @ along < .98 * np.linalg.norm(v) or np.linalg.norm(v) < thickness for v in directions):
+        if (
+            min(np.linalg.norm(start - first_far), np.linalg.norm(second_far - end))
+            < thickness
+        ):
             continue
         # Ignore contacts at the two jambs; never join across an actual
         # opening or a third wall in the middle of the span.
         interior = LineString([start + 2 * along, end - 2 * along])
         if envelope is not None and not envelope.covers(interior):
             continue
-        if len(structures.query(interior, predicate="intersects")) or len(openings.query(interior, predicate="intersects")):
+        if len(structures.query(interior, predicate="intersects")) or len(
+            openings.query(interior, predicate="intersects")
+        ):
             continue
-        samples = start + np.linspace(.02, .98, int(np.ceil(distance)))[:, None] * delta
+        samples = (
+            start + np.linspace(0.02, 0.98, int(np.ceil(distance)))[:, None] * delta
+        )
         offsets = np.arange(-int(thickness / 2), int(thickness / 2) + 1)
-        x, y = np.rint(samples[None, :, :] + offsets[:, None, None] * normal).astype(int).transpose(2, 0, 1)
+        x, y = (
+            np.rint(samples[None, :, :] + offsets[:, None, None] * normal)
+            .astype(int)
+            .transpose(2, 0, 1)
+        )
         x, y = x.clip(0, width - 1), y.clip(0, height - 1)
         ink_length = strips.ink[y, x].mean(axis=1).max()
-        band_share = (material[y, x].sum(axis=0) >= max(3, thickness * .25)).mean()
-        consistent_band = band_share >= .6 and ink_length >= .8
+        band_share = (material[y, x].sum(axis=0) >= max(3, thickness * 0.25)).mean()
+        consistent_band = band_share >= 0.6 and ink_length >= 0.8
         # A decorative fill can hide masonry tint between two windows.
         # It takes a continuous drawn rail PLUS paired source window hosts
         # to infer the short wall between them.
+        facade_face = ink_length
+        if junctions and abs(along).max() > 0.996:
+            horizontal = abs(along[0]) > abs(along[1])
+            lanes, axis = (y, x) if horizontal else (x, y)
+            facade_face = max(facade_face, straight_face(horizontal, lanes, axis[0]))
         decorated_facade = (
-            all(any(at.distance(aperture) <= thickness / 2 for aperture in window_hosts[wall.id])
-                for wall, at in ((first, Point(start)), (second, Point(end))))
-            and decoration[y, x].mean() >= .5 and ink_length >= .85
+            all(
+                any(
+                    at.distance(aperture) <= thickness / 2
+                    for aperture in window_hosts[wall.id]
+                )
+                for wall, at in ((first, Point(start)), (second, Point(end)))
+            )
+            and decoration[y, x].mean() >= 0.5
+            and facade_face >= 0.85
         )
+        edge_supported = False
+        if near_edge and abs(along).max() > 0.996:
+            # Hue survives in the core of a pink masonry band even where text
+            # or treads cross its faces and break the segmented wall mask.
+            patch = image[y, x].astype(np.int16)
+            warm = (patch[:, :, 2] - patch[:, :, 0] >= 7) & (
+                patch[:, :, 2] > patch[:, :, 1]
+            )
+            colour_coverage = (warm.sum(axis=0) >= max(2, thickness * 0.20)).mean()
+            horizontal = abs(along[0]) > abs(along[1])
+            transverse, longitudinal = (y, x) if horizontal else (x, y)
+            source_ink = strips.ink if horizontal else strips.ink.T
+            lanes = np.unique(transverse)
+            face = source_ink[np.ix_(lanes, longitudinal[0])].mean(axis=1).max()
+            edge_supported = colour_coverage >= 0.65 and max(face, facade_face) >= 0.88
+            if distance > (10 if junction else 5) * thickness and not edge_supported:
+                continue
+            consistent_band |= edge_supported
         if junction:
             # Closing between existing junctions requires original masonry across
             # the entire gap. A jamb, a leader or a single rail is insufficient.
-            tint = strips.structural_colour[y, x].sum(axis=0) >= max(3, thickness * .35)
+            tint = strips.structural_colour[y, x].sum(axis=0) >= max(
+                3, thickness * 0.35
+            )
             # At a cropped page edge the outer wall face can lie outside
             # the raster. Look for a continuous straight face and an
             # independently paired band in the middle of the missing run.
@@ -128,7 +200,7 @@ def recover_photo_boundaries(model, image, strips, *, junctions=False):
             cropped = (axial and edge < thickness and face and
                        strips.boundary_mask[y,x].any(axis=0).mean() >= .35 and band_share >= .60)
             consistent_band |= cropped
-            if not cropped and any(chunk.mean() < .85 for chunk in np.array_split(tint, 4)):
+            if not edge_supported and not cropped and any(chunk.mean() < .85 for chunk in np.array_split(tint, 4)):
                 continue
         if consistent_band or decorated_facade:
             candidates.append((distance, Wall(
@@ -259,4 +331,52 @@ def extend_glazed_returns(model, image):
         )
         if edited
         else model
+    )
+
+
+def reconcile_resolution(native, alternate, tolerance):
+    """Accept recovered room topology only where it agrees with native wall evidence."""
+    from shapely.ops import unary_union
+
+    def structure(model):
+        nodes = {n.id: (n.x, n.y) for n in model.nodes}
+        return unary_union([LineString([nodes[w.a], nodes[w.b]]) for w in model.walls])
+
+    primary, secondary = structure(native), structure(alternate)
+    if (
+        not primary.length
+        or primary.intersection(secondary.buffer(tolerance)).length
+        < 0.86 * primary.length
+    ):
+        return native
+
+    supported = {wid for room in alternate.rooms for wid in room.wall_ids}
+    keep = []
+    for opening in alternate.openings:
+        if not opening.span:
+            continue
+        span = LineString([(p.x, p.y) for p in opening.span])
+        agrees = any(
+            o.kind == opening.kind
+            and o.span
+            and span.hausdorff_distance(LineString([(p.x, p.y) for p in o.span]))
+            < tolerance
+            for o in native.openings
+        )
+        if agrees:
+            keep.append(opening)
+        elif opening.host_wall_id in supported:
+            keep.append(opening.model_copy(update={"status": "proposed"}))
+    return derive(
+        alternate.model_copy(
+            update={
+                "openings": keep,
+                "stairs": native.stairs,
+                "gardens": native.gardens,
+                "notes": [
+                    *alternate.notes,
+                    "Recovered the indoor boundary at a second resolution.",
+                ],
+            }
+        )
     )

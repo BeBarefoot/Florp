@@ -167,6 +167,10 @@ def dimension_framed_crop(strips, image):
 
 def build(path, roi=None, *, plan_id=None, reconstruct_config=None, detect_scale=False):
     source = decode(Path(path).read_bytes())
+    return _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, path=path)
+
+
+def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, path=None, detector=None, geometry_only=False):
     image = sharpen_soft_scan(source)
     native_image = image
     notes = ["Soft source edges detected. Applied mild sharpening before extraction."] if image is not source else []
@@ -321,7 +325,7 @@ def build(path, roi=None, *, plan_id=None, reconstruct_config=None, detect_scale
             ) > 0
             material_ink = (extension_ink | solid) & env_mask
         extend_dangling(objects, extension_ink & env_mask, material_ink=material_ink)
-    boxes, detector_ok = _detector_boxes(path, source.shape[1], source.shape[0])
+    boxes, detector_ok = detector if detector is not None else _detector_boxes(path, source.shape[1], source.shape[0])
     if resize is not None:
         for box in boxes:
             box.x1 *= resize.factor
@@ -417,26 +421,79 @@ def build(path, roi=None, *, plan_id=None, reconstruct_config=None, detect_scale
         model = resize.model(model)
         model.stairs = stairs
         model.gardens = detect_gardens(native_image)
+    if geometry_only:
+        return model
+    if framed and not roi and max(w, h) > 1440:
+        from shapely.geometry import Polygon
+        from .extraction_resize import ExtractionResize
+
+        envelope_area = Polygon(polygon).area
+        indoor = max((room.area_px2 for room in model.rooms), default=0)
+        if indoor < 0.18 * envelope_area:
+            # When only a small service room closes, thinner scan strokes can
+            # resolve the rest of the facade. Keep the native drawing as the
+            # coordinate system and do all fixture recognition on that drawing.
+            factor = 1280 / max(w, h)
+            compact = cv2.resize(
+                source, None, fx=factor, fy=factor, interpolation=cv2.INTER_AREA
+            )
+            from dataclasses import replace
+
+            scaled_boxes = [
+                replace(
+                    b,
+                    x1=b.x1 * factor,
+                    y1=b.y1 * factor,
+                    x2=b.x2 * factor,
+                    y2=b.y2 * factor,
+                )
+                for b in boxes
+            ]
+            alternate = _extract_raster(
+                compact,
+                None,
+                plan_id,
+                reconstruct_config,
+                False,
+                detector=(scaled_boxes, detector_ok),
+                geometry_only=True,
+            )
+            if (
+                max((r.area_px2 for r in alternate.rooms), default=0)
+                > 0.22 * envelope_area * factor**2
+            ):
+                alternate.stairs = []
+                alternate = ExtractionResize(w, h, factor).model(alternate)
+                from .photo_boundary_repair import reconcile_resolution
+
+                reconciled = reconcile_resolution(model, alternate, w_wall)
+                if reconciled is not model:
+                    from .painted_openings import remove_dimension_hosts
+
+                    model = remove_dimension_hosts(reconciled, image, strips)
     symbols = detect_symbols(native_image, roi)
     if framed:
-        from .drafting_symbols import compound_symbols, tree_symbols, counter_basins, sanitary_symbols, kitchen_cabinets, patio_sets, media_consoles, bar_counters
-        matches = compound_symbols(native_image, roi)
-        matches.extend(counter_basins(native_image, matches))
-        matches.extend(kitchen_cabinets(native_image, matches, model))
-        matches.extend(patio_sets(native_image, model.gardens, matches))
-        matches.extend(media_consoles(native_image,matches,model))
-        matches.extend(bar_counters(native_image,matches))
-        matches.extend(sanitary_symbols(native_image, model))
-        matches.extend(tree_symbols(native_image))
+        from .drafting_symbols import site_symbols
+        matches = site_symbols(native_image, model, roi)
         outline = np.float32(roi) if roi else None
         for symbol in matches:
-            if outline is not None and cv2.pointPolygonTest(
-                outline, (symbol.position.x, symbol.position.y), False
-            ) < 0:
+            if (
+                outline is not None
+                and cv2.pointPolygonTest(
+                    outline, (symbol.position.x, symbol.position.y), False
+                )
+                < 0
+            ):
                 continue
-            if not any(other.kind == symbol.kind and math.hypot(
-                    other.position.x-symbol.position.x, other.position.y-symbol.position.y
-            ) < w_wall*2 for other in symbols):
+            if not any(
+                other.kind == symbol.kind
+                and math.hypot(
+                    other.position.x - symbol.position.x,
+                    other.position.y - symbol.position.y,
+                )
+                < w_wall * 2
+                for other in symbols
+            ):
                 symbols.append(symbol)
     model = tag_rooms(model, symbols[:256])
     return with_scale_proposal(model, source) if detect_scale else model
