@@ -120,3 +120,29 @@ def test_second_resolution_preserves_native_geometry_on_disagreement():
     for node in alternate.nodes:
         node.x += 80
     assert reconcile_resolution(native, alternate, tolerance=8) is native
+
+
+def test_clipped_dimension_framing_still_requires_multiple_facade_bands():
+    from types import SimpleNamespace
+    from app.workspace_worker import dimension_framed_crop
+
+    image = np.full((200, 400, 3), 230, np.uint8)
+    blue = np.zeros(image.shape[:2], bool)
+    blue[100:110, 225:355] = True
+    blue[164:174, 225:355] = True
+    blue[100:174, 225:230] = True
+    boundaries = blue.copy()
+    boundaries[28:35, 94:355] = True
+    dashes = np.zeros_like(blue)
+    dashes[10:180, 75:79] = True
+    strips = SimpleNamespace(
+        blue=blue,
+        boundary_mask=boundaries,
+        structural_colour=boundaries,
+        rejected={"dimension_dashes": dashes},
+        stats={"w_wall": 10},
+    )
+    frame = dimension_framed_crop(strips, image)
+    assert frame and frame[0][0] >= 79 and frame[2][0] >= 354
+    boundaries[28:35] = False
+    assert dimension_framed_crop(strips, image) is None

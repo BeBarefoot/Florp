@@ -203,3 +203,77 @@ def remove_dimension_hosts(model, image, strips):
             }
         )
     )
+
+
+def remove_clipped_site_artifacts(model):
+    """Reject openings traced from furniture inside the recovered site layout."""
+    from shapely.geometry import LineString, Polygon
+    from .plan_derive import derive
+
+    nodes = {n.id: (n.x, n.y) for n in model.nodes}
+    walls = {wall.id: wall for wall in model.walls}
+    paths = {
+        wall.id: LineString((nodes[wall.a], nodes[wall.b])) for wall in model.walls
+    }
+    room_edges = {key for room in model.rooms for key in room.wall_ids}
+    rooms = [Polygon([(p.x, p.y) for p in room.polygon]) for room in model.rooms]
+    cars = [
+        s for s in model.room_symbols if s.kind == "car" and s.width_px and s.depth_px
+    ]
+    rejected, remove_walls = set(), set()
+    for opening in model.openings:
+        if not opening.span or opening.host_wall_id not in walls:
+            continue
+        host = walls[opening.host_wall_id]
+        span = LineString([(p.x, p.y) for p in opening.span])
+        middle = span.interpolate(0.5, normalized=True)
+        if host.id not in room_edges:
+            furnishing_window = opening.kind == "window" and any(
+                r.contains(middle) for r in rooms
+            )
+            crosses_car = any(
+                (
+                    (middle.x - car.position.x) * np.cos(np.deg2rad(car.rotation))
+                    + (middle.y - car.position.y) * np.sin(np.deg2rad(car.rotation))
+                )
+                ** 2
+                / (0.45 * car.width_px) ** 2
+                + (
+                    (middle.y - car.position.y) * np.cos(np.deg2rad(car.rotation))
+                    - (middle.x - car.position.x) * np.sin(np.deg2rad(car.rotation))
+                )
+                ** 2
+                / (0.45 * car.depth_px) ** 2
+                < 1
+                for car in cars
+            )
+            if furnishing_window or crosses_car:
+                rejected.add(opening.id)
+                remove_walls.add(host.id)
+                continue
+        if opening.kind == "door" and host.thickness_px < 0.22 * opening.width_px:
+            # An immediately parallel wall throughout the swing span is
+            # evidence of a traced cabinet line or duplicate wall face.
+            tolerance = 1.8 * host.thickness_px
+            if any(
+                key != host.id
+                and span.distance(line) > 0.35 * host.thickness_px
+                and line.buffer(tolerance).covers(span)
+                for key, line in paths.items()
+            ):
+                rejected.add(opening.id)
+    if not rejected:
+        return model
+    openings = [o for o in model.openings if o.id not in rejected]
+    remove_walls.difference_update(o.host_wall_id for o in openings)
+    remaining = [w for w in model.walls if w.id not in remove_walls]
+    used = {key for wall in remaining for key in (wall.a, wall.b)}
+    return derive(
+        model.model_copy(
+            update={
+                "walls": remaining,
+                "openings": openings,
+                "nodes": [n for n in model.nodes if n.id in used],
+            }
+        )
+    )

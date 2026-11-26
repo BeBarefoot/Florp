@@ -31,8 +31,17 @@ class ExtractionResize:
                 self.point(point)
         for point in model.envelope or ():
             self.point(point)
+        for stair in model.stairs:
+            stair.treads = [[p.model_copy() for p in tread] for tread in stair.treads]
+            for tread in stair.treads:
+                for point in tread:
+                    self.point(point)
         for symbol in model.room_symbols:
             self.point(symbol.position)
+            if symbol.width_px is not None:
+                symbol.width_px /= self.factor
+            if symbol.depth_px is not None:
+                symbol.depth_px /= self.factor
         for finding in model.findings:
             self.point(finding.anchor)
             if finding.closure:

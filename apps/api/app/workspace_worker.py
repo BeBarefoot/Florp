@@ -121,21 +121,40 @@ def recover_notched_crop(polygon, region, structural_ink, wall_width):
     return polygon, region
 
 
-def dimension_framed_crop(strips, image):
-    """Locate a facade between two outboard dashed dimension lines on a coloured sheet."""
+def dimension_guides(strips, height):
+    dashes = strips.rejected.get("dimension_dashes")
+    if dashes is None:
+        return []
+    columns = np.flatnonzero(dashes.sum(axis=0) > 0.35 * height)
+    if not columns.size:
+        return []
+    return np.split(columns, np.flatnonzero(np.diff(columns) > 2) + 1)
+
+
+def dimension_framed_crop(strips, image, guides=None):
+    """Locate facade bands between dimension guides, including clipped site drawings."""
     if strips.boundary_mask is None or not strips.blue.any():
         return None
     h, w = image.shape[:2]
-    dash = strips.rejected.get("dimension_dashes")
-    if dash is None:
+    clusters = dimension_guides(strips, h) if guides is None else guides
+    if len(clusters) == 2:
+        left, right = int(clusters[0][-1]) + 1, int(clusters[1][0])
+    elif len(clusters) == 1:
+        marker = clusters[0]
+        left, right = int(marker[-1]) + 1, w
+        if marker[0] > w / 2:
+            left, right = 0, int(marker[0])
+        masonry = strips.blue[:, left:right]
+        masonry_area = masonry.sum()
+        if masonry_area < 0.004 * h * w:
+            return None
+        # A lone marker also appears beside interior floors. In a cropped
+        # site plan the blue bands form one connected parking boundary.
+        _, _, components, _ = cv2.connectedComponentsWithStats(masonry.astype(np.uint8))
+        if components[1:, cv2.CC_STAT_AREA].max() < .85 * masonry_area:
+            return None
+    else:
         return None
-    cols = np.flatnonzero(dash.sum(axis=0) > 0.35 * h)
-    if not len(cols):
-        return None
-    clusters = np.split(cols, np.flatnonzero(np.diff(cols) > 2) + 1)
-    if len(clusters) != 2:
-        return None
-    left, right = int(clusters[0][-1]) + 1, int(clusters[1][0])
     if right - left < 0.35 * w or not strips.blue[:, left:right].any():
         return None
     ink = (strips.boundary_mask | strips.blue)[:, left:right].astype(np.uint8)
@@ -170,7 +189,7 @@ def build(path, roi=None, *, plan_id=None, reconstruct_config=None, detect_scale
     return _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, path=path)
 
 
-def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, path=None, detector=None, geometry_only=False):
+def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, path=None, detector=None, geometry_only=False, enlarge_clipped=True):
     image = sharpen_soft_scan(source)
     native_image = image
     notes = ["Soft source edges detected. Applied mild sharpening before extraction."] if image is not source else []
@@ -206,17 +225,100 @@ def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, p
         # scale fixture outlines are thinner than masonry again, and rail /
         # swing templates operate at the size they were designed for.
         factor = 672 / max(h, w)
-        compact = cv2.resize(source, None, fx=factor, fy=factor, interpolation=cv2.INTER_AREA)
+        compact = cv2.resize(
+            source, None, fx=factor, fy=factor, interpolation=cv2.INTER_AREA
+        )
         compact = sharpen_soft_scan(compact)
         compact_strips = wall_strips(compact)
-        if compact_strips.stats.get("neutral_wall_bands") and not compact_strips.stats.get("coloured_walls"):
+        if compact_strips.stats.get(
+            "neutral_wall_bands"
+        ) and not compact_strips.stats.get("coloured_walls"):
             resize = ExtractionResize(w, h, factor)
             image, strips = compact, compact_strips
             h, w = image.shape[:2]
-            notes.append("Analyzed the soft scan at a reduced resolution and mapped geometry to the source.")
+            notes.append(
+                "Analyzed the soft scan at a reduced resolution and mapped geometry to the source."
+            )
     stats = strips.stats
     w_wall = float(stats["w_wall"])
-    framed = dimension_framed_crop(strips, image)
+    guides = dimension_guides(strips, h)
+    framed = dimension_framed_crop(strips, image, guides)
+    if (
+        enlarge_clipped
+        and plan_id is not None
+        and not roi
+        and framed
+        and len(guides) == 1
+        and resize is None
+        and max(w, h) < 1050
+    ):
+        # Revisit compact, clipped site plans with enough raster samples
+        # across the facade's thin window rails and door swings.
+        from dataclasses import replace
+        from .extraction_resize import ExtractionResize
+
+        factor = min(1.6, 1300 / max(w, h))
+        enlarged = cv2.resize(
+            source, None, fx=factor, fy=factor, interpolation=cv2.INTER_CUBIC
+        )
+        boxes, detector_ok = (
+            detector if detector is not None else _detector_boxes(path, w, h)
+        )
+        enlarged_boxes = [
+            replace(
+                box,
+                x1=box.x1 * factor,
+                y1=box.y1 * factor,
+                x2=box.x2 * factor,
+                y2=box.y2 * factor,
+            )
+            for box in boxes
+        ]
+        checked = _extract_raster(
+            enlarged,
+            None,
+            plan_id,
+            reconstruct_config,
+            False,
+            detector=(enlarged_boxes, detector_ok),
+            geometry_only=geometry_only,
+            enlarge_clipped=False,
+        )
+        framed_area = (framed[2][0] - framed[0][0]) * (framed[2][1] - framed[0][1])
+        if any(
+            room.area_px2 > 0.18 * framed_area * factor**2 for room in checked.rooms
+        ):
+            from .painted_openings import remove_clipped_site_artifacts
+
+            checked = remove_clipped_site_artifacts(checked)
+            model = ExtractionResize(w, h, factor).model(checked)
+            if not geometry_only:
+                from .drafting_symbols import bar_counters, media_consoles
+                from .plan_model import PlanModel
+
+                symbols = model.room_symbols
+                supplemental = [
+                    *bar_counters(image, symbols),
+                    *media_consoles(image, symbols, model),
+                ]
+                for item in supplemental:
+                    nearby = any(
+                        symbol.kind == item.kind
+                        and math.hypot(
+                            symbol.position.x - item.position.x,
+                            symbol.position.y - item.position.y,
+                        ) < w_wall * 2
+                        for symbol in symbols
+                    )
+                    if not nearby:
+                        symbols.append(item)
+                model = tag_rooms(model, symbols[:256])
+                model = PlanModel.model_validate(model.dump())
+            model.notes.append(
+                "Analyzed the clipped site drawing at a larger resolution."
+            )
+            return with_scale_proposal(model, source) if detect_scale else model
+        detector = boxes, detector_ok
     if roi:
         polygon = [(float(x), float(y)) for x, y in roi]
         env_mask = mask_from_polygon(polygon, image.shape)
