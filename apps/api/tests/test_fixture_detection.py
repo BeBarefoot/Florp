@@ -36,3 +36,19 @@ def test_shadowed_blurred_photo_preserves_toilet_location_and_rejects_blank_pape
     assert any(h.kind == 'toilet' and abs(h.x - 80) < 4 and abs(h.y - 95) < 4
                and h.rotation == 90 for h in hits)
     assert not detect_fixtures(paper.astype(np.uint8), 1 / 64)
+
+
+def test_wall_mounted_bowl_survives_blur_and_requires_a_nearby_wall():
+    from shapely.geometry import box
+    from app.residential_fixtures import _wall_mounted_toilet, _wc_stencil
+
+    image = np.full((160, 145), 238, np.uint8)
+    glyph = _wc_stencil(17)
+    height, width = glyph.shape
+    image[78:78+height, 60:60+width] -= glyph // 2
+    image = cv2.GaussianBlur(image, (3, 3), .5)
+
+    toilet = _wall_mounted_toilet(image, box(25, 20, 108, 104), 16)
+    assert toilet and toilet.rotation == 180
+    assert abs(toilet.position.x - 68.5) < 2 and abs(toilet.position.y - 92.5) < 2
+    assert _wall_mounted_toilet(image, box(25, 20, 108, 144), 16) is None

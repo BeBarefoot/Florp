@@ -13,6 +13,7 @@ import { floorFinishes, type FloorFinish, contains, footprint, intersects, newIt
   type Job, type ObjectKind, type Saved, type Scene, type View, type WallMaterial, type WallSide } from "../../lib/plan/scene";
 import {objectKinds,objectName,tvDimensions,tvInches,tvSizeRange} from "../../lib/plan/furnitureCatalog";
 import {renderPrompt, downloadPrompt} from "../../lib/plan/renderPrompt";
+import {detectedPreviewItems, visibleDetections} from "../../lib/plan/detectedFurniture";
 import { CaptureBridge, EyeCamera, SceneMesh } from "./SceneMesh";
 import { roomsOf, walkSpace } from "../../lib/plan/walkSpace";
 import { WalkCamera } from "./WalkCamera";
@@ -55,6 +56,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
   const [ready,setReady]=useState(false);
   const [fixtureScan,setFixtureScan]=useState<{planRevision:number;suggestions:Item[]}|null>(null);
   const [fixtureId,setFixtureId]=useState("");
+  const [showDetections,setShowDetections]=useState(true);
   const [showBlueprint,setShowBlueprint]=useState(false);
   const walkPose=useRef<View|null>(null);
   const [design,setDesign]=useState(false);
@@ -107,6 +109,8 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
     fixtureScan.suggestions.filter(o=>!scene.dismissedFixtureIds?.includes(o.id)&&
       !scene.objects.some(p=>p.id===o.id||(p.kind===o.kind&&contains(o.position,footprint(p,scale))&&
         contains(p.position,footprint(o,scale))))):[];
+  const detections=useMemo(()=>detectedPreviewItems(m,scale),[m,scale]);
+  const detectedObjects=showDetections?visibleDetections(detections,scene.objects,scale):[];
   const fixture=fixtureSuggestions.find(o=>o.id===fixtureId)??fixtureSuggestions[0];
   const edited=!!saved&&(JSON.stringify(scene)!==JSON.stringify(saved.config)||saved.planRevision!==m.revision);
 
@@ -491,7 +495,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
           }} data-mode={view?cameraMode:"orbit"} style={{aspectRatio:`${frame.width}/${frame.height}`}}>
             <Canvas dpr={[1,2]} camera={{position:[w/2+w*.6,Math.max(7,h*.9),h/2+Math.max(8,h)],fov:55}}>
               <color attach="background" args={["#e9eff2"]}/>
-              <SceneMesh floorStyle={scene} wallFinishes={scene.wallFinishes} m={m} objects={scene.objects} closedDoorIds={scene.closedDoorIds}/>
+              <SceneMesh floorStyle={scene} wallFinishes={scene.wallFinishes} m={m} objects={scene.objects} detectedObjects={detectedObjects} closedDoorIds={scene.closedDoorIds}/>
               <CaptureBridge bind={bind}/>
               {view&&cameraMode==="walk"?<WalkCamera view={view} scale={scale} frame={frame} canMove={p=>validCamera(p,true)} pose={walkPose}/>:
                 view&&cameraMode==="preview"?<EyeCamera view={view} scale={scale} frame={frame}/>:
@@ -532,6 +536,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
         {mode&&<button onClick={()=>{setMode(null);setZoneStart(null);}}>Cancel placement</button>}
       </div>
       <section className="scene-fixtures" aria-label="Fixture suggestions">
+        {!!detections.length&&<label><input type="checkbox" checked={showDetections} onChange={e=>setShowDetections(e.target.checked)}/> Detected furniture preview</label>}
         <div className="scene-actions">
           <button disabled={dirty} title={dirty?"Save the plan before scanning.":undefined} onClick={()=>void scanFixtures()}>Find fixtures on plan</button>
           <label><input type="checkbox" checked={showBlueprint} onChange={e=>setShowBlueprint(e.target.checked)}/> Show original plan</label>

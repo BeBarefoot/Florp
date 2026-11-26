@@ -1,5 +1,6 @@
 "use client";
 import {OrbitNavigation} from "./OrbitNavigation";
+import {detectedPreviewItems, visibleDetections} from "../../lib/plan/detectedFurniture";
 import { roomTags } from "../../lib/plan/roomTags";
 import {useCallback,useEffect,useMemo,useRef,useState} from "react";
 import {Canvas,useThree} from "@react-three/fiber";
@@ -122,7 +123,8 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   const [selectedId,setSelectedId]=useState<string|null>(()=>
     typeof location!=="undefined"&&location.hash==="#overview"?"overview":null);
   const stage=useRef<HTMLDivElement>(null!);
-  const tags = useMemo(() => roomTags(plan), [plan]);
+  const tags = useMemo(() => roomTags(plan, true), [plan]);
+  const scale=metersPerPixel(plan)!;
   const rooms=useMemo(()=>roomsOf(plan),[plan]);
   const hasFloor=rooms.length>0;
   const check=scaleCheck(plan);
@@ -133,16 +135,17 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   const [sessionFinishes,setSessionFinishes]=useState<FloorStyles|null>(null);
   const [finishNotice,setFinishNotice]=useState("");
   const [furnishing,setFurnishing]=useState(false);
+  const [showDetections,setShowDetections]=useState(true);
   const [detected,setDetected]=useState<{planRevision:number;suggestions:Item[]}|null>(null);
   useEffect(()=>{
-    if(!furnishing||approximate||sample||!plan.roomSymbols?.length)return;
+    if(approximate||sample||!plan.roomSymbols?.length)return;
     const controller=new AbortController();
     request<{planRevision:number;suggestions:Item[]}>(`/blueprints/${encodeURIComponent(plan.id)}/scene/fixture-suggestions?measured_only=true&plan_revision=${plan.revision}`,
       {signal:controller.signal})
       .then(result=>{if(!controller.signal.aborted)setDetected(result);})
       .catch(error=>{if(!controller.signal.aborted)setFurnitureNotice(String(error));});
     return ()=>controller.abort();
-  },[furnishing,approximate,sample,plan.id,plan.revision,plan.roomSymbols?.length]);
+  },[approximate,sample,plan.id,plan.revision,plan.roomSymbols?.length]);
   const [furnitureDraft,setFurnitureDraft]=useState<Item[]|null>(null);
   const [previewFurniture,setPreviewFurniture]=useState<Item[]|null>(null);
   const [furnitureId,setFurnitureId]=useState("");
@@ -153,7 +156,12 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   const tourScene=useMemo(()=>previewFurniture?{...scene,objects:previewFurniture}:scene,[previewFurniture,scene]);
   const objects=furnitureDraft??tourScene.objects;
   const selectedFurniture=objects.find(item=>item.id===furnitureId);
-  const displayedObjects=dragPreview?[...objects.filter(item=>item.id!==dragPreview.id),dragPreview]:objects;
+  const localDetections=useMemo(()=>detectedPreviewItems(plan,scale),[plan,scale]);
+  const suggestions=useMemo(()=>visibleDetections(
+    detected?.planRevision===plan.revision?detected.suggestions:localDetections,
+    objects,scale,scene.dismissedFixtureIds
+  ),[detected,plan.revision,localDetections,objects,scale,scene.dismissedFixtureIds]);
+  const editableObjects=dragPreview?[...objects.filter(item=>item.id!==dragPreview.id),dragPreview]:objects;
   const walkScene=useMemo(()=>furnitureDraft?{...tourScene,objects:furnitureDraft}:tourScene,[tourScene,furnitureDraft]);
   const styledScene={...scene,...sessionFinishes,...finishDraft,objects};
   const needsFinishReview=unmatchedFloorFinishes(styledScene,rooms).length>0;
@@ -176,7 +184,6 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     }catch(error){setFinishNotice(String(error));}
     finally{savingRef.current=false;setSaving(false);}
   }
-  const scale=metersPerPixel(plan)!;
   const fit=useMemo(()=>furnishing&&selectedFurniture?furnitureFit(plan,selectedFurniture,objects,scale):null,
     [furnishing,selectedFurniture,objects,plan,scale]);
   const fitWarnings=fit?[
@@ -352,7 +359,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     <h1 className="show-current-view">{view?.name??"Dollhouse view"}</h1>
     <div ref={stage} className="show-stage"><Canvas shadows frameloop="demand" dpr={[1,1.6]} camera={{near:.005,far:2000}} fallback={<p>Enable WebGL to view this tour.</p>}>
       <color attach="background" args={[view?"#d4e3e9":"#d8d9cb"]}/>
-      <SceneMesh m={plan} objects={displayedObjects} closedDoorIds={scene.closedDoorIds} floorStyle={styledScene}
+      <SceneMesh m={plan} objects={editableObjects} detectedObjects={showDetections?suggestions:undefined} closedDoorIds={scene.closedDoorIds} floorStyle={styledScene}
         wallFinishes={scene.wallFinishes} presentation cutaway={!view}/>
       {sample&&<SampleFurniture interior={!!view}/>}
       {view?<ShowcaseWalk key={view.id} plan={plan} scene={walkScene} view={view} sample={sample} pose={pose} onFrame={setViewport} keyboard={!rendered}/>:
@@ -379,7 +386,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     {view&&rendered&&renders[view.id]&&<div className="show-render"><img src={renders[view.id]} alt={"Saved design render for "+view.name}/></div>}
     {view&&<button type="button" className="show-overview" data-tour-tools onClick={()=>select(-1)}><Box size={18}/>Overview</button>}
     {furnishing?<FurnishSheet objects={objects} selected={selectedFurniture} previewReason={previewReason}
-      detected={approximate||detected?.planRevision!==plan.revision?[]:detected.suggestions.filter(item=>!objects.some(other=>other.id===item.id)&&!scene.dismissedFixtureIds?.includes(item.id))}
+      detected={suggestions}
       onInsertDetected={item=>{
         if(objects.length>=100)return;
         setPlacement(null);setFurnitureDraft([...objects,item]);setFurnitureId(item.id);
@@ -442,6 +449,9 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
           {hasFloor&&<button disabled={saving} onClick={()=>{
             setPlaying(false);setRendered(false);setAdding(false);setFinishesOpen(true);
           }}><Layers/>Finishes</button>}
+          {!!suggestions.length&&<button type="button" aria-pressed={showDetections} onClick={()=>setShowDetections(shown=>!shown)}>
+            <Armchair/>Detected preview
+          </button>}
           {(hasFloor||!!plan.gardens?.length)&&!sample&&<button disabled={saving} onClick={openFurnish}><Armchair/>Furnish</button>}
           {views.map((v,i)=><button key={v.id} aria-pressed={view===v} onClick={()=>select(i)}><MapPin/>{v.name}</button>)}
           {view&&renders[view.id]&&<button aria-pressed={rendered} onClick={()=>{setPlaying(false);setRendered(!rendered);}}>

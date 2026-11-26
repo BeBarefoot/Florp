@@ -150,7 +150,7 @@ def evidence(kind, patch, variant):
     return np.quantile(blanket,.28)>.8 and np.median(cross)>1
 
 
-def detect_fixtures(gray, mpp, obstacle=None, allowed=None):
+def detect_fixtures(gray, mpp, obstacle=None, allowed=None, kinds=None):
     if gray.ndim != 2 or not math.isfinite(mpp) or mpp <= 0:
         return []
     # Bound each image and keep the stencil/image in the same physical units.
@@ -175,6 +175,8 @@ def detect_fixtures(gray, mpp, obstacle=None, allowed=None):
         integral = cv2.integral(resized)
     hits = []
     for kind, sizes in SIZES.items():
+        if kinds is not None and kind not in kinds:
+            continue
         for width, depth in sizes:
             w, h = round(width*ppm), round(depth*ppm)
             if min(w,h) < 6:
@@ -245,10 +247,10 @@ def detect_fixtures(gray, mpp, obstacle=None, allowed=None):
                     return True
             return h.score >= .74
         hits = [h for h in hits if supported_bath(h)]
-    return suppress(hits, mpp)
+    return suppress(hits, mpp, across_kinds=kinds is None)
 
 
-def suppress(hits, mpp):
+def suppress(hits, mpp, *, across_kinds=True):
     def box(h):
         w,d = (h.width,h.depth) if h.rotation%180==0 else (h.depth,h.width)
         return h.x-w/2/mpp,h.y-d/2/mpp,h.x+w/2/mpp,h.y+d/2/mpp
@@ -266,7 +268,8 @@ def suppress(hits, mpp):
         if counts.get(h.kind,0) >= {"bed":6,"wardrobe":6,"toilet":6,"bathtub":5,"shower":4}[h.kind]:
             continue
         b = box(h)
-        if any(overlap(b,a) / min(area(a),area(b)) > .34 for _,a in found):
+        if any((across_kinds or h.kind == other.kind) and overlap(b,a) / min(area(a),area(b)) > .34
+               for other,a in found):
             continue
         found.append((h,b))
         counts[h.kind] = counts.get(h.kind,0)+1
@@ -275,9 +278,9 @@ def suppress(hits, mpp):
     return [h for h,_ in found]
 
 
-def for_plan(gray, model):
+def for_plan(gray, model, *, mpp=None, kinds=None):
     """Use existing geometry as context, without requiring every room to close."""
-    mpp = model.scale.meters_per_pixel
+    mpp = mpp or model.scale.meters_per_pixel
     if not mpp or not model.walls:
         return []
     obstacle = np.zeros(gray.shape, dtype=np.uint8)
@@ -355,12 +358,12 @@ def for_plan(gray, model):
             return len(corners)==4 and min(corners[:2]) <= .36 and min(corners[2:]) <= .26
         return bool(corners) and min(corners) <= {"wardrobe":.23,"toilet":.34,"bed":.40,"shower":.30}[kind]
 
-    return detect_fixtures(gray, mpp, obstacle, allowed)
+    return detect_fixtures(gray, mpp, obstacle, allowed, kinds)
 
 
 def furniture_symbol_hits(model):
     """Convert measured source footprints to reviewable catalog items after calibration."""
-    kinds = {"dining_table": "dining_6", "sofa": "sofa", "coffee_table": "coffee_table",
+    kinds = {"bed": "bed", "bathtub": "bathtub", "shower": "shower", "wardrobe": "wardrobe", "dining_table": "dining_6", "sofa": "sofa", "coffee_table": "coffee_table",
              "sink": "sink", "toilet": "toilet", "patio_set":"patio_set", "cabinets":"cabinets", "bar_counter":"island", "tv_console":"console_standing", "car":"car", "tree":"tree", "cooktop":"cooktop", "bar_stools":"bar_stools", "fridge":"fridge"}
     scale = model.scale.meters_per_pixel
     if not scale:

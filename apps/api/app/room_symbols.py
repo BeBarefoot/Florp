@@ -89,14 +89,18 @@ def detect_symbols(image, roi=None):
                     split = 48 if kind == "car" else 26
                     score = min(close[rows < split].mean(), close[rows >= split].mean())
                     if score >= 0.82:
-                        matches.append((score, kind, center, short / scale))
+                        matches.append((score, kind, center, rotated.shape[1] / scale, rotated.shape[0] / scale, turns))
     found = []
-    for _, kind, (x, y), width in sorted(matches, reverse=True):
+    for _, kind, (x, y), width, depth, turns in sorted(matches, reverse=True):
         if any(
             np.hypot(s.position.x - x, s.position.y - y) < width * 0.5 for s in found
         ):
             continue
-        found.append(RoomSymbol(kind=kind, position=Pt(x=x, y=y)))
+        if kind == "car":
+            width, depth = depth, width
+            turns = (turns + 1) % 4
+        found.append(RoomSymbol(kind=kind, position=Pt(x=x, y=y), width_px=width,
+                                depth_px=depth, rotation=(0, 90, 180, -90)[turns]))
         if len(found) == 256:
             break
     return found
@@ -121,7 +125,7 @@ def tag_rooms(model, symbols):
             room.room_type = "bathroom"
             room.label = "Bathroom"
             room.needs_semantic_review = True
-        elif kinds in ({"car"}, {"bed"}):
+        elif kinds == {"car"} or ("bed" in kinds and kinds <= {"bed", "wardrobe", "nightstand"}):
             room.room_type = "garage" if kinds == {"car"} else "bedroom"
             room.label = room.room_type.title()
             room.needs_semantic_review = True

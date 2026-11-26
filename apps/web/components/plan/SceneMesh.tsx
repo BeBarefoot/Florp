@@ -112,7 +112,7 @@ function CatalogFurniture({asset,item,maskId,presentation,environment}:{asset:No
       const glass=material.transparent;
       if(glass) material.depthWrite=false;
       object.material=material;
-      object.userData={maskId,furnitureId:id,glass};
+      object.userData={maskId,furnitureId:maskId?id:undefined,glass};
       object.castShadow=presentation&&!glass&&kind!=="rug";
       object.receiveShadow=presentation;
     });
@@ -122,7 +122,7 @@ function CatalogFurniture({asset,item,maskId,presentation,environment}:{asset:No
   return <primitive object={model}/>;
 }
 
-function FurnitureMeshes({objects,scale,presentation,environment}:{objects:Item[];scale:number;presentation:boolean;environment:T.Texture|null}){
+function FurnitureMeshes({objects,scale,presentation,environment,preview=false}:{objects:Item[];scale:number;presentation:boolean;environment:T.Texture|null;preview?:boolean}){
   const resources=useMemo(()=>makeFurnitureResources(),[]);
   useEffect(()=>()=>resources.dispose(),[resources]);
   const [assets,setAssets]=useState<Partial<Record<Item["kind"],FurnitureAsset>>>({});
@@ -141,12 +141,12 @@ function FurnitureMeshes({objects,scale,presentation,environment}:{objects:Item[
     const asset=assets[item.kind];
     return <group key={item.id} position={[item.position.x*scale,0,item.position.y*scale]}
       rotation={[0,-item.rotation*Math.PI/180,0]}>
-    {asset?<CatalogFurniture asset={asset} item={item} maskId={1000+index} presentation={presentation} environment={environment}/>:
+    {asset?<CatalogFurniture asset={asset} item={item} maskId={preview?0:1000+index} presentation={presentation} environment={environment}/>:
       furnitureParts(item).map((part,i)=><mesh key={i} geometry={resources.geometry(part.shape)}
       material={resources.material(part.finish,environment)} dispose={null}
       castShadow={presentation&&part.finish!=="glass"&&item.kind!=="rug"} receiveShadow={presentation}
       position={part.position} scale={part.size} rotation={part.turn??[0,0,0]}
-      userData={{maskId:1000+index,furnitureId:item.id,glass:part.finish==="glass"}}/>)}
+      userData={{maskId:preview?0:1000+index,furnitureId:preview?undefined:item.id,glass:part.finish==="glass"}}/>)}
     </group>;
   });
 }
@@ -157,7 +157,7 @@ function Windows({plan,environment,shadows}:{plan:PlanModel;environment:T.Textur
   return <primitive object={windows.group}/>;
 }
 
-export function SceneMesh({m, objects, closedDoorIds, floorStyle={}, wallFinishes, presentation=false, cutaway=false}: {m: PlanModel; objects: Item[]; closedDoorIds?: string[]; floorStyle?:FloorStyle; wallFinishes?:Scene["wallFinishes"]; presentation?:boolean; cutaway?:boolean}) {
+export function SceneMesh({m, objects, detectedObjects = [], closedDoorIds, floorStyle={}, wallFinishes, presentation=false, cutaway=false}: {m: PlanModel; objects: Item[]; detectedObjects?: Item[]; closedDoorIds?: string[]; floorStyle?:FloorStyle; wallFinishes?:Scene["wallFinishes"]; presentation?:boolean; cutaway?:boolean}) {
   const scale = metersPerPixel(m)!;
   const {floorFinish="default",floorMaterial,roomFloorMaterials}=floorStyle;
   const width=m.imageTransform.width*scale, depth=m.imageTransform.height*scale;
@@ -203,7 +203,7 @@ export function SceneMesh({m, objects, closedDoorIds, floorStyle={}, wallFinishe
     roughnessMap?.dispose();
   }),[floors]);
   const environment = useMaterialEnvironment(presentation &&
-    (objects.length>0||m.openings.some(o=>o.kind==="window"&&o.status==="confirmed")||
+    (objects.length>0||detectedObjects.length>0||m.openings.some(o=>o.kind==="window"&&o.status==="confirmed")||
       floors.finishes.some(finish=>"normalMap" in finish && !!finish.normalMap)));
   return <>
     {presentation?<><hemisphereLight color="#fff6ea" groundColor="#b4b3aa" intensity={1.45}/>
@@ -269,6 +269,9 @@ export function SceneMesh({m, objects, closedDoorIds, floorStyle={}, wallFinishe
       </group>)}
     </group>)}
     <FurnitureMeshes objects={objects} scale={scale} presentation={presentation} environment={environment}/>
+    {detectedObjects.length>0&&<group name="Detected furniture preview" userData={{fixturePreview:true}}>
+      <FurnitureMeshes preview objects={detectedObjects} scale={scale} presentation={presentation} environment={environment}/>
+    </group>}
   </>;
 }
 
@@ -322,6 +325,7 @@ export function CaptureBridge({bind}: {bind: (fn: ((view: View, scale: number, f
       }
       try {
         scene.traverse(o=>{
+          if(o.userData.fixturePreview&&o.visible){o.visible=false;hidden.push(o);}
           if(!(o instanceof T.Mesh)) return;
           if(o.userData.maskId) meshes.push(o);
           else if(o.visible){o.visible=false;hidden.push(o);}

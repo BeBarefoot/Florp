@@ -32,7 +32,7 @@ export function roomTags(plan: PlanModel, onlyUnmeasured = false) {
   }
   for (const [index, symbol] of (plan.roomSymbols ?? []).entries()) {
     if (onlyUnmeasured && symbol.widthPx && symbol.depthPx) continue;
-    const labels = {car:"Car", bed:"Bed", sofa:"Sofa", dining_table:"Dining table", bar_stools:"Bar stools", cooktop:"Cooktop", coffee_table:"Coffee table", tree:"Tree", sink:"Sink", toilet:"Toilet", cabinets:"Cabinets", patio_set:"Patio dining set", bar_counter:"Bar counter", tv_console:"TV console", fridge:"Fridge"};
+    const labels = {car:"Car", bed:"Bed", sofa:"Sofa", dining_table:"Dining table", bar_stools:"Bar stools", cooktop:"Cooktop", coffee_table:"Coffee table", tree:"Tree", sink:"Sink", toilet:"Toilet", cabinets:"Cabinets", patio_set:"Patio dining set", bar_counter:"Bar counter", tv_console:"TV console", fridge:"Fridge", bathtub:"Bathtub", shower:"Shower", wardrobe:"Wardrobe"};
     if ((symbol.kind !== "car" && symbol.kind !== "bed") || !rooms.some(room => contains(symbol.position, room.polygon))) {
       tags.push({key: "symbol-" + index, text: labels[symbol.kind], position: symbol.position});
     }

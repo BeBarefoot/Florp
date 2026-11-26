@@ -39,3 +39,28 @@ for (const width of [390,1280]) {
     await expect(page.getByRole("link",{name:"Exit tour"})).toHaveCount(0);
   });
 }
+
+test("detected beds appear in the uncalibrated 3D tour without saving the scene", async ({page})=>{
+  await page.setViewportSize({width:900,height:760});
+  const plan={...samplePlan,id:"detected",revision:1,scale:{reference:null,metersPerPixel:null},
+    roomSymbols:[{kind:"bed",position:{x:310,y:240},widthPx:100,depthPx:125,rotation:90}]};
+  let writes=0;
+  await page.route("**/blueprints/detected/plan",r=>r.fulfill({json:{model:plan,revision:1}}));
+  await page.route("**/blueprints/detected/info",r=>r.fulfill({json:{id:"detected",filename:"Apartment.png",project_id:"s"}}));
+  await page.route("**/blueprints/detected/scene",r=>{
+    if(r.request().method()==="PUT")writes++;
+    return r.fulfill({json:{revision:0,planRevision:null,config:{views:[],objects:[],style:""}}});
+  });
+  await page.route("**/blueprints/detected/scene/renders",r=>r.fulfill({json:[]}));
+  await page.goto("/phone/showcase/detected#overview");
+  await page.getByRole("button",{name:"Open tour tools"}).click();
+  const preview=page.getByRole("button",{name:"Detected preview"});
+  await expect(preview).toHaveAttribute("aria-pressed","true");
+  const canvas=page.locator("canvas");
+  await expect(canvas).toBeVisible();
+  const furnished=(await canvas.screenshot()).toString("base64");
+  await preview.click();
+  await expect(preview).toHaveAttribute("aria-pressed","false");
+  await expect.poll(async ()=>(await canvas.screenshot()).toString("base64")!==furnished).toBe(true);
+  expect(writes).toBe(0);
+});

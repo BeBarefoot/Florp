@@ -1,24 +1,13 @@
 import type {PlanModel} from "../../lib/plan/model";
-import {objectName, dimensions, type ObjectKind} from "../../lib/plan/furnitureCatalog";
+import {objectName, dimensions} from "../../lib/plan/furnitureCatalog";
+import {detectedKinds, hasDetectedFootprint} from "../../lib/plan/detectedFurniture";
 import {furnitureParts, furnitureColor} from "../../lib/plan/furnitureModels";
-
-type Symbol = NonNullable<PlanModel["roomSymbols"]>[number];
-const models = {
-  car: "car", tree: "tree", bed: "bed", sofa: "sofa", bar_stools: "bar_stools",
-  cooktop: "cooktop", dining_table: "dining_6", coffee_table: "coffee_table",
-  sink: "sink", toilet: "toilet", patio_set: "patio_set", cabinets: "cabinets",
-  tv_console: "console_standing", bar_counter: "island", fridge: "fridge",
-} satisfies Record<Symbol["kind"], ObjectKind>;
-
-export function hasDetectedFootprint(symbol: Symbol) {
-  return (symbol.widthPx ?? 0) > 0 && (symbol.depthPx ?? 0) > 0;
-}
 
 export default function DetectedObjects({plan}: {plan: PlanModel}) {
   return <g pointerEvents="none" aria-label="Detected objects">
     {(plan.roomSymbols ?? []).map((symbol, index) => {
       if (!hasDetectedFootprint(symbol)) return null;
-      const kind = models[symbol.kind];
+      const kind = detectedKinds[symbol.kind];
       const width = symbol.widthPx!;
       const depth = symbol.depthPx!;
       // Project the same parts as the 3D object. The source footprint is

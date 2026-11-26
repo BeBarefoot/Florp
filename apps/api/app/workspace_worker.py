@@ -625,6 +625,9 @@ def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, p
                 for other in symbols
             ):
                 symbols.append(symbol)
+    else:
+        from .residential_fixtures import residential_fixtures
+        symbols.extend(residential_fixtures(native_image, model, symbols))
     model = tag_rooms(model, symbols[:256])
     return with_scale_proposal(model, source) if detect_scale else model
 

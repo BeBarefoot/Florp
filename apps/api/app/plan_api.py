@@ -22,7 +22,7 @@ from .plan_reconstruct import configured_config
 
 router = APIRouter()
 WORKER_BUDGET_S = 120
-EXTRACTION_VERSION = 4
+EXTRACTION_VERSION = 5
 
 
 def get_engine():
