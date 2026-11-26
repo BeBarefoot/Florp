@@ -7,6 +7,7 @@ export type Display = "2d" | "3d" | "split";
 export default function TopBar(p: {
   title: string;
   status: string;
+  extractionAction?: React.ReactNode;
   dirty: boolean;
   onSave: () => void;
   canUndo: boolean;
@@ -32,6 +33,7 @@ export default function TopBar(p: {
       <strong className="fe-brand" onClick={() => gotoHome()}>✦ Florp</strong>
       <span className="fe-title" title={p.title}>{p.title}</span>
       <span className="fe-status" role="status">{p.status}</span>
+      {p.extractionAction}
       <span className="fe-spacer" />
       <button aria-label="Undo" title="Undo (Ctrl+Z)" disabled={!p.canUndo} onClick={p.undo}><Undo2 size={16} /></button>
       <button aria-label="Redo" title="Redo (Ctrl+Shift+Z)" disabled={!p.canRedo} onClick={p.redo}><Redo2 size={16} /></button>

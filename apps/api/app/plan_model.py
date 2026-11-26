@@ -176,6 +176,7 @@ class Finding(Base):
 
 class PlanModel(Base):
     gardens: list[Garden] = Field(default_factory=list, max_length=12)
+    extraction_version: int | None = Field(default=None, ge=1)
     schema_version: Literal[2] = 2
     id: str
     revision: int = Field(default=0, ge=0)

@@ -65,6 +65,7 @@ export type Finding = {
 };
 export type Reference = { p1: Pt; p2: Pt; lengthMeters: number };
 export type PlanModel = {
+  extractionVersion?: number | null;
   gardens?: import("../api").SiteRegion[];
   schemaVersion: 2;
   id: string;
@@ -88,7 +89,7 @@ export type PlanModel = {
   dismissedFindings: string[];
   notes: string[];
 };
-export type PlanResponse = { revision: number; model: PlanModel | null };
+export type PlanResponse = { revision: number; model: PlanModel | null; latestExtractionVersion?: number };
 export const FINDING_LABELS: Record<FindingCategory, string> = {
   opening_needs_approval: "Needs your approval",
   suggested_closure: "Suggested wall closures",

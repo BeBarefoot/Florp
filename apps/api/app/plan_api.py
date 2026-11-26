@@ -21,6 +21,7 @@ from .plan_reconstruct import configured_config
 
 router = APIRouter()
 WORKER_BUDGET_S = 60
+EXTRACTION_VERSION = 1
 
 
 def get_engine():
@@ -51,7 +52,7 @@ def store(s, bid, model: PlanModel, revision: int) -> dict:
         s.commit()
     except IntegrityError:
         raise HTTPException(409, "Revision changed; reload before saving")
-    return {"revision": revision, "model": row.model}
+    return {"revision": revision, "model": row.model, "latestExtractionVersion": EXTRACTION_VERSION}
 
 
 def blueprint(s, bid) -> Blueprint:
@@ -125,7 +126,8 @@ def load(bid: str):
     with Session(get_engine()) as s:
         blueprint(s, bid)
         row = latest(s, bid)
-        return {"revision": row.revision, "model": row.model} if row else {
+        return {"revision": row.revision, "model": row.model,
+                "latestExtractionVersion": EXTRACTION_VERSION} if row else {
             "revision": 0,
             "model": None,
         }
@@ -262,6 +264,7 @@ async def extract(bid: str, expected_revision: int = 0, body: Extract | None = N
     except (OSError,ValueError) as exc:
         raise HTTPException(503,'Opening approval profile is unavailable or invalid; saved geometry is unchanged') from exc
     model = await run_worker(path, body.envelope if body else None, plan_id=bid)
+    model.extraction_version = EXTRACTION_VERSION
     if previous:
         proposal = model.scale.proposal
         model.scale = previous.scale.model_copy(deep=True)
@@ -270,6 +273,8 @@ async def extract(bid: str, expected_revision: int = 0, body: Extract | None = N
         model.rooms = previous.rooms
         model.room_zones = previous.room_zones
         model = derive(model)
+        from .room_symbols import tag_rooms
+        model = tag_rooms(model, model.room_symbols)
     with Session(get_engine()) as s:
         row = latest(s, bid)
         if (row.revision if row else 0) != expected_revision:

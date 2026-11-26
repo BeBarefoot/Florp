@@ -27,6 +27,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
   const [model, setModel] = useState<PlanModel | null>(null);
   const [past, setPast] = useState<PlanModel[]>([]);
   const [future, setFuture] = useState<PlanModel[]>([]);
+  const [latestExtractor, setLatestExtractor] = useState(0);
   const [status, setStatus] = useState("Opening plan…");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -72,6 +73,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
     }
   }, [loaded, calibrated, setTool]);
   function adopt(r: PlanResponse) {
+    if (r.latestExtractionVersion) setLatestExtractor(r.latestExtractionVersion);
     revision.current = r.revision;
     saved.current = JSON.stringify(r.model);
     live.current = r.model;
@@ -261,8 +263,14 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
     if (replacing && !envelope && !window.confirm("Replace the current plan with a fresh extraction? Saved revisions are kept in history.")) return;
     setBusy(true);
     setError("");
-    setStatus("Finding walls, doors and windows…");
     try {
+      if (replacing) {
+        if (saveDone.current) await saveDone.current;
+        const current = live.current;
+        if (current && JSON.stringify(current) !== saved.current && !await persist(current)) return;
+        expected = revision.current;
+      }
+      setStatus("Finding walls, doors and windows…");
       const r = await request<PlanResponse>(`/blueprints/${id}/plan/extract?expected_revision=${expected}`, {
         method: "POST",
         ...(envelope ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ envelope }) } : {}),
@@ -272,7 +280,10 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
       setFuture([]);
       setSelection(null);
       setFitNonce((n) => n + 1);
-      setStatus("Saved");
+      if (r.model) {
+        const {walls, openings, roomSymbols} = r.model;
+        setStatus(`Extracted · ${walls.length} wall segments · ${openings.length} openings · ${roomSymbols?.length ?? 0} objects`);
+      }
     } catch (e) {
       setError(String(e));
       setStatus("Extraction needs attention");
@@ -534,6 +545,10 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
     router.push(destination);
   }
   const openTour=()=>navigateAfterSave("/phone/showcase/" + encodeURIComponent(id) + "?from=editor");
+  const olderExtraction = (m.extractionVersion ?? 0) < latestExtractor;
+  const extractButton = <button disabled={busy} onClick={() => void extract(revision.current, true)}>
+    {olderExtraction ? "Run latest extraction" : "Re-extract from drawing"}
+  </button>;
   if(phone){
     const selectedWall=selection?.type==="wall"&&m.walls.find(w=>w.id===selection.id);
     const selectedOpening=selection?.type==="opening"?m.openings.find(o=>o.id===selection.id):undefined;
@@ -575,6 +590,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
             stair.id===selectedStair.id?{...stair,...patch}:stair)})}/>
         </details>}
         <div className="phone-plan-footer">
+          {extractButton}
           <button aria-pressed={view==="overlay"} onClick={()=>setView(view==="overlay"?"clean":"overlay")}>Original drawing</button>
           <button onClick={()=>void navigateAfterSave("/plan/"+encodeURIComponent(id))}>Full editor</button>
           {mpp?<button onClick={startScaleCheck}>Check scale</button>:<button onClick={measureScale}>Measure scale</button>}
@@ -591,6 +607,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
       <TopBar
         title={info?.filename || "Floor plan"}
         status={status}
+        extractionAction={olderExtraction ? extractButton : null}
         dirty={dirty}
         onSave={() => live.current && void persist(live.current)}
         canUndo={past.length > 0}

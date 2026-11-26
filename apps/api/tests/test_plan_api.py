@@ -227,7 +227,7 @@ def test_unavailable_configured_model_reports_runtime_problem_and_keeps_saved_pl
     result = c.post(path + "/extract?expected_revision=1")
     assert result.status_code == 503
     assert "configuration" in result.json()["detail"]
-    assert c.get(path).json() == {"revision": 1, "model": saved["model"]}
+    assert c.get(path).json() == saved
 
 
 def test_invalid_outline_does_not_run_extraction_or_replace_saved_model(client,monkeypatch):
@@ -299,3 +299,32 @@ def test_window_frame_and_stair_landing_round_trip(client):
     assert saved["stairs"][0]["treadsBelow"] == 1
     data["stairs"][0]["treadsBelow"] = 2
     assert c.put(url, json={"expectedRevision": 1, "model": data}).status_code == 422
+
+
+def test_refreshing_an_older_plan_marks_revision_and_keeps_new_room_tags(client, monkeypatch):
+    from app import plan_api
+    from app.plan_model import PlanModel
+    from app.plan_derive import derive
+
+    c, bid = client
+    path = f"/blueprints/{bid}/plan"
+    legacy = c.put(path, json={"expectedRevision": 0, "model": plan()})
+    assert legacy.status_code == 200
+    old = c.get(path).json()
+    assert not old["model"].get("extractionVersion")
+    assert old["latestExtractionVersion"] == plan_api.EXTRACTION_VERSION
+
+    async def worker(*args, **kwargs):
+        return derive(PlanModel.model_validate(plan(roomSymbols=[
+            {"kind": "cooktop", "position": {"x": 200, "y": 300}},
+            {"kind": "sofa", "position": {"x": 400, "y": 300}},
+            {"kind": "dining_table", "position": {"x": 500, "y": 350}},
+        ])))
+
+    monkeypatch.setattr(plan_api, "run_worker", worker)
+    response = c.post(path + "/extract?expected_revision=1")
+    assert response.status_code == 200
+    updated = c.get(path).json()
+    assert updated["model"]["extractionVersion"] == updated["latestExtractionVersion"]
+    assert updated["model"]["rooms"][0]["label"] == "Kitchen & living room"
+    assert len(c.get(path + "/history").json()) == 2
