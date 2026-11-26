@@ -115,8 +115,11 @@ class Opening(Base):
 
 
 class RoomSymbol(Base):
-    kind: Literal["car", "bed"]
+    kind: Literal["car", "bed", "sofa", "bar_stools", "cooktop", "dining_table", "coffee_table", "tree", "sink", "toilet", "patio_set", "cabinets", "tv_console", "bar_counter"]
     position: Pt
+    width_px: float | None = Field(default=None, gt=0)
+    depth_px: float | None = Field(default=None, gt=0)
+    rotation: int = Field(default=0, ge=-180, le=180)
 
 
 class Room(Base):

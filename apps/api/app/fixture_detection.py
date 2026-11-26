@@ -20,7 +20,7 @@ SIZES = {
     "bathtub": [(w, d) for w in (.57, .64, .72, .8) for d in (1.45, 1.62, 1.8, 1.9, 1.96, 2.04)],
     "shower": [(w, d) for w in (.78, .9, 1.02, 1.14) for d in (.78, .9, 1.02, 1.14)],
 }
-HEIGHT = {"bed": .9, "wardrobe": 2.2, "toilet": .8, "bathtub": .56, "shower": 2, "vanity": .86}
+HEIGHT = {"bed": .9, "wardrobe": 2.2, "toilet": .8, "bathtub": .56, "shower": 2, "vanity": .86, "sofa": .85, "dining_6": .86, "coffee_table": .42, "sink": .85, "cabinets": .9, "console_standing": .55, "island": .92}
 MIN_SCORE = {"bed": .32, "wardrobe": .34, "toilet": .36, "bathtub": .29, "shower": .47}
 
 
@@ -312,6 +312,14 @@ def for_plan(gray, model):
     regions = [*model.rooms, *model.room_zones]
     for i, room in enumerate(regions, 1):
         cv2.fillPoly(room_labels, [np.array([pt(p) for p in room.polygon], np.int32)], i)
+    # Strong agreement among independent fixtures identifies an open-plan kitchen.
+    # Reject unrelated bathroom and bed proposals from crossing dimension strokes.
+    evidence = {}
+    for symbol in model.room_symbols:
+        x, y = pt(symbol.position)
+        if 0 <= x < gray.shape[1] and 0 <= y < gray.shape[0]:
+            evidence.setdefault(room_labels[y,x], set()).add(symbol.kind)
+    open_living = {i for i, kinds in evidence.items() if i and {"sofa","cooktop","dining_table"} <= kinds}
     distance = cv2.distanceTransform(1-wall, cv2.DIST_L2, 5)*mpp
 
     def allowed(kind, cx, cy, w, d, rotation, score):
@@ -321,6 +329,8 @@ def for_plan(gray, model):
         i = room_labels[y,x]
         if i:
             room = regions[i-1]
+            if i in open_living and room.room_type in (None,"other","kitchen") and kind in ("bed","shower","bathtub","toilet"):
+                return False
             if room.room_type == "corridor":
                 return False
             if kind in ("shower","toilet","bathtub") and room.room_type in ("bedroom","kitchen"):
@@ -346,3 +356,22 @@ def for_plan(gray, model):
         return bool(corners) and min(corners) <= {"wardrobe":.23,"toilet":.34,"bed":.40,"shower":.30}[kind]
 
     return detect_fixtures(gray, mpp, obstacle, allowed)
+
+
+def furniture_symbol_hits(model):
+    """Convert measured source footprints to reviewable catalog items after calibration."""
+    kinds = {"dining_table": "dining_6", "sofa": "sofa", "coffee_table": "coffee_table",
+             "sink": "sink", "toilet": "toilet", "patio_set":"dining_6", "cabinets":"cabinets", "bar_counter":"island", "tv_console":"console_standing"}
+    scale = model.scale.meters_per_pixel
+    if not scale:
+        return []
+    hits = []
+    for symbol in model.room_symbols:
+        kind = kinds.get(symbol.kind)
+        if not kind or not symbol.width_px or not symbol.depth_px:
+            continue
+        width, depth = symbol.width_px * scale, symbol.depth_px * scale
+        if .05 < min(width, depth) and max(width, depth) <= 8:
+            hits.append(Hit(kind, 1, symbol.position.x, symbol.position.y,
+                            width, depth, symbol.rotation))
+    return hits

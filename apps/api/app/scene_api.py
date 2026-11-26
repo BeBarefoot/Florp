@@ -159,7 +159,7 @@ def save_scene(bid: str, body: SaveScene):
 @router.get("/scene/fixture-suggestions")
 def fixture_suggestions(bid: str, plan_revision: int):
     """Inspect the original local blueprint for reviewable scene objects."""
-    from .fixture_detection import HEIGHT, for_plan
+    from .fixture_detection import HEIGHT, for_plan, furniture_symbol_hits
 
     with Session(get_engine()) as s:
         bp = blueprint(s, bid)
@@ -178,6 +178,7 @@ def fixture_suggestions(bid: str, plan_revision: int):
             gray = np.array(image.convert("L"))
     except OSError as exc:
         raise HTTPException(404, "The blueprint image is not available.") from exc
+    measured = []
     source = "local-symbol-matcher"
     if settings.fixture_yolo_weights:
         from .fixture_weights import detect, contextual_hits
@@ -187,7 +188,12 @@ def fixture_suggestions(bid: str, plan_revision: int):
             raise HTTPException(503, "Fixture detector unavailable. Install the pretrained-yolo extra and configure trusted local FIXTURE_YOLO_WEIGHTS.") from exc
         source = "local-yolo-weights"
     else:
-        hits = for_plan(gray, model)
+        measured = furniture_symbol_hits(model)
+        hits = [hit for hit in for_plan(gray, model) if not any(
+            hit.kind == other.kind and
+            ((hit.x-other.x)**2 + (hit.y-other.y)**2)**.5 * model.scale.meters_per_pixel
+            < min(other.width, other.depth)*.6 for other in measured
+        )] + measured
     proposals = []
     for h in hits:
         # The ID is scoped to the blueprint by the scene record. It stays
@@ -201,7 +207,7 @@ def fixture_suggestions(bid: str, plan_revision: int):
                            mattress_depth=round(h.depth*.93, 2) if h.kind == "bed" else None)
         proposals.append(item.model_dump(by_alias=True))
     return {"planRevision": plan_revision, "suggestions": proposals, "source": source,
-            "orientationNeedsReview": bool(settings.fixture_yolo_weights)}
+            "orientationNeedsReview": bool(settings.fixture_yolo_weights or measured)}
 
 
 @router.get("/scene/render-settings")

@@ -20,7 +20,7 @@ from .plan_derive import derive
 from .plan_reconstruct import configured_config
 
 router = APIRouter()
-WORKER_BUDGET_S = 20
+WORKER_BUDGET_S = 60
 
 
 def get_engine():

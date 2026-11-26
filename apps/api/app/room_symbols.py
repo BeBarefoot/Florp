@@ -113,7 +113,15 @@ def tag_rooms(model, symbols):
             for s in symbols
             if cv2.pointPolygonTest(polygon, (s.position.x, s.position.y), False) > 0
         }
-        if len(kinds) == 1:
+        if {"cooktop", "sofa", "dining_table"} <= kinds and not kinds.intersection({"bed", "car"}):
+            room.room_type = "other"
+            room.label = "Kitchen & living room"
+            room.needs_semantic_review = True
+        elif "toilet" in kinds and not kinds.intersection({"bed","car","cooktop","sofa"}):
+            room.room_type = "bathroom"
+            room.label = "Bathroom"
+            room.needs_semantic_review = True
+        elif kinds in ({"car"}, {"bed"}):
             room.room_type = "garage" if kinds == {"car"} else "bedroom"
             room.label = room.room_type.title()
             room.needs_semantic_review = True

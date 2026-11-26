@@ -212,7 +212,7 @@ def build(path, roi=None, *, plan_id=None, reconstruct_config=None, detect_scale
             notes.append("Analyzed the soft scan at a reduced resolution and mapped geometry to the source.")
     stats = strips.stats
     w_wall = float(stats["w_wall"])
-    framed = None
+    framed = dimension_framed_crop(strips, image)
     if roi:
         polygon = [(float(x), float(y)) for x, y in roi]
         env_mask = mask_from_polygon(polygon, image.shape)
@@ -220,7 +220,6 @@ def build(path, roi=None, *, plan_id=None, reconstruct_config=None, detect_scale
         polygon, env_mask = building_envelope(strips.mask, w_wall)
         if polygon and stats.get("coloured_walls") and strips.boundary_mask is not None:
             polygon, env_mask = recover_notched_crop(polygon, env_mask, strips.boundary_mask | strips.blue, w_wall)
-        framed = dimension_framed_crop(strips, image)
         if framed:
             polygon = framed
             env_mask = mask_from_polygon(polygon,image.shape)
@@ -362,10 +361,14 @@ def build(path, roi=None, *, plan_id=None, reconstruct_config=None, detect_scale
         # A glazed facade may have no surviving raw horizontal run at its
         # corner. Its verified opening host can now identify the junction.
         _trim_photo_edge_leaders(objects, strips.boundary_mask | strips.blue, w_wall)
-    from .capped_returns import detect_returns
+    from .capped_returns import detect_returns, faint_painted_returns
     from .stair_detection import detect_stairs
 
     stairs = detect_stairs(native_image, np.asarray(polygon, dtype=np.float32) if roi else None)
+
+    returns = detect_returns(image, strips)
+    if framed:
+        returns.extend(faint_painted_returns(image, w_wall))
 
     doc = Document(
         width=w,
@@ -373,7 +376,7 @@ def build(path, roi=None, *, plan_id=None, reconstruct_config=None, detect_scale
         objects=objects,
         envelope=[Point(x=x, y=y) for x, y in polygon] if polygon else None,
         passages=[Point(x=x, y=y) for x, y in found.passages[:500]],
-        wall_returns=detect_returns(image, strips),
+        wall_returns=returns,
         stairs=stairs if resize is None else [],
         photo_wall_evidence=strips.boundary_mask is not None,
         warnings=notes
@@ -389,7 +392,13 @@ def build(path, roi=None, *, plan_id=None, reconstruct_config=None, detect_scale
     if strips.boundary_mask is not None:
         from .photo_boundary_repair import recover_photo_boundaries
 
-        model = recover_photo_boundaries(model, image, strips)
+        model = recover_photo_boundaries(model, image, strips, junctions=bool(framed))
+        if framed:
+            from .photo_boundary_repair import extend_glazed_returns
+            from .painted_openings import painted_swings, remove_dimension_hosts
+            model = extend_glazed_returns(model, image)
+            model = remove_dimension_hosts(model, image, strips)
+            model = painted_swings(model, image)
     if resize is not None:
         from .compact_plan_cleanup import clean_compact_plan
 
@@ -408,7 +417,28 @@ def build(path, roi=None, *, plan_id=None, reconstruct_config=None, detect_scale
         model = resize.model(model)
         model.stairs = stairs
         model.gardens = detect_gardens(native_image)
-    model = tag_rooms(model, detect_symbols(native_image, roi))
+    symbols = detect_symbols(native_image, roi)
+    if framed:
+        from .drafting_symbols import compound_symbols, tree_symbols, counter_basins, sanitary_symbols, kitchen_cabinets, patio_sets, media_consoles, bar_counters
+        matches = compound_symbols(native_image, roi)
+        matches.extend(counter_basins(native_image, matches))
+        matches.extend(kitchen_cabinets(native_image, matches, model))
+        matches.extend(patio_sets(native_image, model.gardens, matches))
+        matches.extend(media_consoles(native_image,matches,model))
+        matches.extend(bar_counters(native_image,matches))
+        matches.extend(sanitary_symbols(native_image, model))
+        matches.extend(tree_symbols(native_image))
+        outline = np.float32(roi) if roi else None
+        for symbol in matches:
+            if outline is not None and cv2.pointPolygonTest(
+                outline, (symbol.position.x, symbol.position.y), False
+            ) < 0:
+                continue
+            if not any(other.kind == symbol.kind and math.hypot(
+                    other.position.x-symbol.position.x, other.position.y-symbol.position.y
+            ) < w_wall*2 for other in symbols):
+                symbols.append(symbol)
+    model = tag_rooms(model, symbols[:256])
     return with_scale_proposal(model, source) if detect_scale else model
 
 

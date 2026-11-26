@@ -59,3 +59,54 @@ def test_parallel_parking_guide_is_outside_photo_garage_door_lane():
     assert _dashes(line, gap, band_factor=.5) == 0
     line[50] = line[39]
     assert _dashes(line, gap, band_factor=.5) > 0
+
+
+def test_pale_capped_pier_requires_two_faces_and_a_solid_host():
+    from app.capped_returns import faint_painted_returns, restore_returns
+    image = np.full((120,180,3), 210, np.uint8)
+    image[30:80,85:92] = (146,148,161)
+    image[30:80,85] = image[30:80,91] = image[79,85:92] = 60
+    nodes = [Node(id=str(i),x=x,y=y) for i,(x,y) in enumerate(((10,26),(160,26),(160,108)))]
+    plan = PlanModel(id="case",image_transform=ImageTransform(width=180,height=120),
+                     nodes=nodes,walls=[Wall(id="top",a="0",b="1",thickness_px=10),
+                                        Wall(id="side",a="1",b="2",thickness_px=10)])
+    result = restore_returns(plan,faint_painted_returns(image,10))
+    assert any(abs(n.x-88)<2 and abs(n.y-79)<2 for n in result.nodes)
+    image[30:79,91] = 210
+    assert restore_returns(plan,faint_painted_returns(image,10)) is plan
+
+
+def test_swing_drawn_on_continuous_concrete_needs_a_leaf_and_matching_arc():
+    import cv2
+    from app.painted_openings import painted_swings
+    nodes=[Node(id=str(i),x=x,y=y) for i,(x,y) in enumerate([(110,10),(110,170),(10,10),(10,170)])]
+    walls=[Wall(id="painted",a="0",b="1",material="concrete",thickness_px=12),
+           Wall(id="other",a="2",b="3",thickness_px=8)]
+    doors=[Opening(id=f"d{i}",kind="door",host_wall_id="other",width_px=40,
+                   offset_px=i*60,status="confirmed") for i in range(2)]
+    plan=PlanModel(id="case",image_transform=ImageTransform(width=200,height=190),nodes=nodes,walls=walls,openings=doors)
+    image=np.full((190,200,3),214,np.uint8)
+    cv2.line(image,(110,10),(110,170),(145,77,50),10)
+    cv2.line(image,(104,60),(64,60),(80,80,80),1)
+    assert painted_swings(plan,image) is plan
+    cv2.ellipse(image,(104,60),(40,40),0,90,180,(80,80,80),1)
+    changed=painted_swings(plan,image)
+    assert len(changed.openings)==3
+    door=changed.openings[-1]
+    assert door.host_wall_id=="painted" and door.status=="proposed"
+    assert abs(door.offset_px-50)<3 and abs(door.width_px-40)<4
+
+
+def test_dimension_line_must_continue_past_both_door_jambs():
+    import cv2
+    from app.painted_openings import remove_dimension_hosts
+    plan,image,strips=photo_case()
+    # Use a short inferred host inside the plan.
+    plan.walls=plan.walls[:1]
+    plan.openings=[Opening(id="door",kind="door",host_wall_id="wall0",offset_px=5,width_px=55)]
+    for node in plan.nodes[:2]:
+        node.x+=100
+    cv2.line(image,(70,35),(230,35),(60,60,60),1)
+    assert remove_dimension_hosts(plan,image,strips).walls==[]
+    image[32:39,195:]=245
+    assert remove_dimension_hosts(plan,image,strips) is plan

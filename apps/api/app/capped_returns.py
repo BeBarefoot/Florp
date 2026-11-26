@@ -128,3 +128,62 @@ def restore_returns(model, candidates):
     if len(walls) == len(model.walls):
         return model
     return _join_tees(model.model_copy(update={"nodes": list(nodes.values()), "walls": walls}))
+
+
+def faint_painted_returns(image, wall_width):
+    """Find narrow masonry filled with faded red ink between two darker faces."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.int16)
+    colour = image[:, :, 2].astype(np.int16) - image[:, :, 0]
+    candidates = []
+    for vertical in (True, False):
+        g, tint = (gray, colour) if vertical else (gray.T, colour.T)
+        for half in range(2, min(8, max(3, round(wall_width))) + 1):
+            mid = g[:, half:-half]
+            mask = np.zeros(g.shape, np.uint8)
+            mask[:, half:-half] = (
+                (mid - g[:, : -2 * half] > 24)
+                & (mid - g[:, 2 * half :] > 24)
+                & (tint[:, half:-half] > 7)
+            )
+            filled = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((7, 1), np.uint8))
+            minimum = max(14, 5 * half)
+            runs = cv2.morphologyEx(
+                filled, cv2.MORPH_OPEN, np.ones((minimum, 1), np.uint8)
+            )
+            _, _, stats, _ = cv2.connectedComponentsWithStats(runs)
+            for x, y, width, height, _ in stats[1:]:
+                if width > half or height > 24 * half:
+                    continue
+                lane = x + width // 2
+                if mask[y : y + height, lane].mean() < 0.60:
+                    continue
+                # The continuing centre ink must end at a crossbar joining both faces.
+                middle = np.median(g[y : y + height, lane])
+                for end, anchor, sign in (
+                    (y + height - 1, y, 1),
+                    (y, y + height - 1, -1),
+                ):
+                    for tip in range(end, end + sign * 7, sign):
+                        if not 0 <= tip < len(g):
+                            break
+                        if g[tip, lane - half : lane + half + 1].max() >= middle - 24:
+                            continue
+
+                        def point(pos):
+                            return (
+                                Point(x=lane, y=pos)
+                                if vertical
+                                else Point(x=pos, y=lane)
+                            )
+
+                        candidates.append(
+                            Segment(
+                                id=f"faint-{int(vertical)}-{lane}-{tip}",
+                                start=point(tip),
+                                end=point(anchor),
+                                thickness_px=2 * half,
+                                boundary_supported=True,
+                            )
+                        )
+                        break
+    return candidates[:100]
