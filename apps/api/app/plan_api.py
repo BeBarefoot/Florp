@@ -3,10 +3,13 @@
 from __future__ import annotations
 import asyncio, hashlib, json, logging, math, os, shutil, signal, sys, tempfile
 from io import BytesIO
+from contextvars import ContextVar
+from uuid import UUID
+from typing import Annotated
 from zipfile import BadZipFile, ZipFile
 from zlib import error as DeflateError
 from pathlib import Path
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Header, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -23,6 +26,12 @@ from .plan_reconstruct import configured_config
 router = APIRouter()
 WORKER_BUDGET_S = 120
 EXTRACTION_VERSION = 5
+
+
+# The local API runs in one process. Progress is scoped to the active request
+# and discarded when it ends. The revision response is the completion signal.
+_active_extractions: dict[tuple[str, UUID], dict] = {}
+_progress: ContextVar[dict | None] = ContextVar("extraction_progress", default=None)
 
 
 def get_engine():
@@ -67,6 +76,8 @@ async def run_worker(path: str, roi=None, *, plan_id: str) -> PlanModel:
     """Run extraction in an isolated, time-boxed subprocess (optional building outline ``roi``)."""
     with tempfile.TemporaryDirectory() as tmp:
         output = Path(tmp) / "result.json"
+        progress_file = Path(tmp) / "progress.json"
+        progress = _progress.get()
         extra = []
         if roi:
             roi_file = Path(tmp) / "roi.json"
@@ -89,10 +100,22 @@ async def run_worker(path: str, roi=None, *, plan_id: str) -> PlanModel:
             "--plan-id",
             plan_id,
             *([] if roi else ["--detect-scale"]),
+            *(["--progress-file", str(progress_file)] if progress is not None else []),
             env=env,
             start_new_session=True,
             stderr=asyncio.subprocess.PIPE,
         )
+        async def watch_progress():
+            while True:
+                try:
+                    stage = json.loads(progress_file.read_text())
+                    if stage["percent"] >= progress["percent"]:
+                        progress.update(stage)
+                except (OSError, ValueError):
+                    pass
+                await asyncio.sleep(.2)
+
+        watcher = asyncio.create_task(watch_progress()) if progress is not None else None
         try:
             _, stderr = await asyncio.wait_for(proc.communicate(), WORKER_BUDGET_S)
         except (asyncio.TimeoutError, asyncio.CancelledError):
@@ -104,6 +127,10 @@ async def run_worker(path: str, roi=None, *, plan_id: str) -> PlanModel:
             raise HTTPException(
                 504, "Extraction exceeded its budget; saved geometry is unchanged"
             )
+        finally:
+            if watcher is not None:
+                watcher.cancel()
+                await asyncio.gather(watcher, return_exceptions=True)
         if proc.returncode:
             logging.getLogger(__name__).error(
                 "Extraction worker failed (exit %s): %s",
@@ -247,7 +274,28 @@ class Extract(BaseModel):
 
 
 @router.post("/blueprints/{bid}/plan/extract")
-async def extract(bid: str, expected_revision: int = 0, body: Extract | None = None):
+async def extract(bid: str, expected_revision: int = 0, body: Extract | None = None, progress_id: Annotated[UUID | None, Header(alias="X-Florp-Progress-Id")] = None):
+    if progress_id is None:
+        return await extract_revision(bid, expected_revision, body)
+    key = (bid, progress_id)
+    if key in _active_extractions:
+        raise HTTPException(409, "This extraction is already running.")
+    progress = {"percent": 0, "stage": "Opening drawing"}
+    _active_extractions[key] = progress
+    token = _progress.set(progress)
+    try:
+        return await extract_revision(bid, expected_revision, body)
+    finally:
+        _progress.reset(token)
+        _active_extractions.pop(key, None)
+
+
+@router.get("/blueprints/{bid}/plan/extraction-progress/{progress_id}")
+async def extraction_progress(bid: str, progress_id: UUID):
+    return _active_extractions.get((bid, progress_id))
+
+
+async def extract_revision(bid: str, expected_revision: int, body: Extract | None):
     with Session(get_engine()) as s:
         bp = blueprint(s, bid)
         row = latest(s, bid)
@@ -266,6 +314,8 @@ async def extract(bid: str, expected_revision: int = 0, body: Extract | None = N
     except (OSError,ValueError) as exc:
         raise HTTPException(503,'Opening approval profile is unavailable or invalid; saved geometry is unchanged') from exc
     model = await run_worker(path, body.envelope if body else None, plan_id=bid)
+    if progress := _progress.get():
+        progress.update(percent=97, stage="Saving plan revision")
     model.extraction_version = EXTRACTION_VERSION
     if previous:
         proposal = model.scale.proposal

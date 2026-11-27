@@ -79,6 +79,7 @@ class WallFinishes(Data):
 
 
 class Scene(Data):
+    design_preset: Literal["hotel", "country", "monochrome", "plain", "scandinavian", "mediterranean"] | None = None
     floor_finish: Literal["default", "oak", "slate", "limestone"] = "default"
     floor_material: FloorMaterial | None = None
     room_floor_materials: dict[str, FloorMaterial] = Field(default_factory=dict, max_length=990)

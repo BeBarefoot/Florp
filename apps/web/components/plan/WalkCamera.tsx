@@ -169,7 +169,7 @@ export function WalkCamera({view, scale, frame, canMove, pose, keyboard, tapToWa
       if(tap?.id!==event.pointerId)return;
       const origin=tap.origin;
       tap=null;
-      if(event.type!=="pointerup"||Math.hypot(event.clientX-origin.x,event.clientY-origin.y)>=6)return;
+      if(event.defaultPrevented||event.type!=="pointerup"||Math.hypot(event.clientX-origin.x,event.clientY-origin.y)>=6)return;
       const bounds=canvas.getBoundingClientRect();
       ray.setFromCamera(new Vector2(
         2*(event.clientX-bounds.left)/bounds.width-1,

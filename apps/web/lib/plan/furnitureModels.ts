@@ -1,6 +1,7 @@
 import {BoxGeometry, CanvasTexture, CylinderGeometry, DoubleSide, LatheGeometry, MeshStandardMaterial,
   RepeatWrapping, SphereGeometry, SRGBColorSpace, Vector2} from "three";
 import {RoundedBoxGeometry} from "three/addons/geometries/RoundedBoxGeometry.js";
+import {homePresets, type HomePreset} from "./homePresets";
 import {diningSeats} from "./furnitureCatalog";
 import {itemBottom, type Item} from "./scene";
 
@@ -49,7 +50,8 @@ function materialMap(style:"weave"|"grain"){
   return texture;
 }
 
-export function makeFurnitureResources(){
+export function makeFurnitureResources(designPreset?:HomePreset|null){
+  const preset = designPreset ? homePresets[designPreset] : undefined;
   const shapes=new Map<Shape,import("three").BufferGeometry>();
   const materials=new Map<FurnitureFinish,MeshStandardMaterial>();
   const maps=new Map<"weave"|"grain",CanvasTexture>();
@@ -62,7 +64,11 @@ export function makeFurnitureResources(){
     material(finish:FurnitureFinish,environment:import("three").Texture|null=null){
       let material=materials.get(finish);
       if(!material){
-        const [color,roughness,metalness,style]=palette[finish];
+        const [base,roughness,metalness,style]=palette[finish];
+        const color = !preset ? base : finish==="oak"||finish==="walnut" ? preset.timber :
+          finish==="sage"||finish==="linen"||finish==="rust"||finish==="rug" ? preset.fabric :
+          finish==="chrome"||finish==="steel" ? preset.metal :
+          finish==="stone"||finish==="cream" ? preset.stone : base;
         let map=style?maps.get(style):undefined;
         if(style&&!map){map=materialMap(style);maps.set(style,map);}
         material=new MeshStandardMaterial({color,roughness,metalness,map:map??null,
@@ -84,8 +90,10 @@ export function makeFurnitureResources(){
   };
 }
 
-export function furnitureParts(o:Item):Part[]{
+export function furnitureParts(o:Item, designPreset?:HomePreset|null):Part[]{
   const parts:Part[]=[];
+  const boutique = designPreset === "hotel";
+  const country = designPreset === "country" || designPreset === "mediterranean";
   const add=(x:number,y:number,z:number,w:number,h:number,d:number,finish:FurnitureFinish,shape:Shape="soft",turn?:XYZ)=>{
     parts.push({position:[x*o.width,y*o.height+itemBottom(o),z*o.depth],
       size:[w*o.width,h*o.height,d*o.depth],finish,shape,turn});
@@ -177,9 +185,14 @@ export function furnitureParts(o:Item):Part[]{
     case "sofa":case "loveseat":case "chair": {
       const count=o.kind==="chair"?1:o.kind==="loveseat"?2:3;
       const fabric=o.kind==="chair"?"rust":"sage";
-      legs(.40,.36,.14,"walnut");
+      legs(.40,.36,.14,boutique?"chrome":"walnut");
       add(0,.33,0,.99,.41,.99,fabric,"upholstered");
       add(0,.68,-.395,.98,.63,.21,fabric,"upholstered");
+      if(boutique){
+        add(0,.22,.01,.96,.028,.96,"chrome");
+        add(0,.222,.48,.94,.026,.035,"chrome");
+      }
+      if(country) add(0,.245,.45,.93,.075,.06,"oak");
       for(const x of [-.441,.441])add(x,.52,.055,.118,.53,.88,fabric,"upholstered");
       for(let i=0;i<count;i++){
         const x=((i+.5)/count-.5)*.77;
@@ -187,6 +200,7 @@ export function furnitureParts(o:Item):Part[]{
         add(x,.747,-.273,.754/count,.494,.22,fabric,"upholstered",[-.14,0,0]);
       }
       if(count>1)add(.254,.73,-.19,.17,.31,.16,"linen","upholstered",[-.23,0,.13]);
+      if(boutique&&count>1)add(-.27,.73,-.17,.18,.33,.17,"linen","upholstered",[-.26,0,-.19]);
       break;
     }
     case "bed": {
@@ -219,6 +233,14 @@ export function furnitureParts(o:Item):Part[]{
     case "island":case "cabinets":
       add(0,.051,-.039,.92,.102,.80,"walnut");
       cabinet(o.kind==="island"?"oak":"cream",3,.09,.934,true);
+      if(boutique&&o.kind==="island"){
+        for(const x of [-.475,.475])add(x,.5,0,.05,.94,1,"stone");
+        add(0,.102,.473,.88,.018,.015,"chrome");
+      }
+      if(country) for(const x of [-.325,0,.325]){
+        add(x,.52,.499,.24,.65,.016,"oak");
+        add(x,.52,.505,.185,.55,.020,"cream");
+      }
       break;
     case "fridge":case "fridge_2":case "fridge_4": {
       add(0,.501,-.042,.98,.978,.905,"black");

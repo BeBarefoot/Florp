@@ -27,7 +27,7 @@ export function FloorPicker({scale,onPick}:{scale:number;onPick:(point:Pt|null,y
       move(event);
       const tap=start?.pointerId===event.pointerId;
       cancel(event);
-      if(!tap)return;
+      if(!tap||event.defaultPrevented)return;
       const bounds=canvas.getBoundingClientRect();
       const {camera,scene}=get();
       ray.setFromCamera(new Vector2(

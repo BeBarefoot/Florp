@@ -341,3 +341,36 @@ def test_extraction_diagnostics_include_saved_model_source_and_runtime(client):
         assert bundle.read("preview.png").startswith(b"\x89PNG")
         assert json.loads(bundle.read("plan.json"))["model"] == response.json()["model"]
         assert json.loads(bundle.read("runtime.json"))["opencv"]
+
+
+def test_analysis_reports_worker_progress_during_the_active_extraction(client, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from uuid import uuid4
+
+    from app import plan_api
+    from app.plan_model import PlanModel
+
+    c, bid = client
+    path = f"/blueprints/{bid}/plan"
+    token = str(uuid4())
+    started, finish = Event(), Event()
+
+    async def work(*args, **kwargs):
+        import asyncio
+        plan_api._progress.get().update(percent=78, stage="Recognizing furniture and fixtures")
+        started.set()
+        await asyncio.to_thread(finish.wait, 5)
+        return PlanModel.model_validate(plan())
+
+    monkeypatch.setattr(plan_api, "run_worker", work)
+    with ThreadPoolExecutor() as workers:
+        future = workers.submit(c.post, path + "/extract", headers={"X-Florp-Progress-Id": token})
+        try:
+            assert started.wait(5)
+            status = c.get(f"{path}/extraction-progress/{token}")
+            assert status.json() == {"percent": 78, "stage": "Recognizing furniture and fixtures"}
+        finally:
+            finish.set()
+        assert future.result().status_code == 200
+    assert c.get(f"{path}/extraction-progress/{token}").json() is None

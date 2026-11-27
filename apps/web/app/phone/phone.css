@@ -192,3 +192,17 @@
 .phone-plan-properties .opening-stair-fields {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding-bottom:10px}
 .phone-plan-properties .opening-stair-fields label {display:grid;gap:4px;min-width:0;font-size:12px}
 .phone-plan-properties .opening-stair-fields :is(input,select,button) {width:100%;min-width:0;min-height:44px}
+
+.walk-object-tools {
+  position:absolute;z-index:5;right:max(12px, env(safe-area-inset-right));bottom:max(76px, calc(env(safe-area-inset-bottom) + 60px));
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:9px;max-width:calc(100% - 24px);
+  border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);
+  box-shadow:0 8px 24px #282d2930;
+}
+.walk-object-tools strong {padding-inline:5px;font-size:13px}
+.walk-object-tools :is(button,select) {min-height:40px;border-radius:9px;padding-inline:8px;font:inherit;font-size:13px}
+.walk-object-tools a {display:inline-flex;align-items:center;min-height:40px;padding-inline:8px;font-size:13px;color:inherit}
+.style-presets button {display:grid;justify-items:start;gap:6px;min-height:54px}
+.style-presets button[aria-pressed=true] {outline:2px solid var(--pine);outline-offset:-2px}
+.style-swatches {display:flex;gap:3px}
+.style-swatches i {display:block;width:15px;height:15px;border-radius:50%;border:1px solid #0002}

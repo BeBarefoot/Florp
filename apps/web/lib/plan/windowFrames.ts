@@ -1,9 +1,9 @@
 import {BoxGeometry, DoubleSide, Group, Mesh, MeshPhysicalMaterial, MeshStandardMaterial, PlaneGeometry, type Texture} from "three";
 import {metersPerPixel, openingEnds} from "./derive";
-import type {PlanModel} from "./model";
+import type {WindowFrame, PlanModel} from "./model";
 import {windowFrameFor} from "./windowStyle";
 
-export function makeWindows(model: PlanModel, environment: Texture|null = null, shadows = false) {
+export function makeWindows(model: PlanModel, environment: Texture|null = null, shadows = false, frameFinish?: Pick<WindowFrame,"material"|"color">) {
   const scale=metersPerPixel(model);
   const group=new Group();
   const resources=new Set<{dispose:()=>void}>();
@@ -15,7 +15,7 @@ export function makeWindows(model: PlanModel, environment: Texture|null = null, 
     const width=Math.hypot(b.x-a.x,b.y-a.y)*scale;
     const height=opening.heightM;
     if(width<=0||height<=0)continue;
-    const frame=windowFrameFor(opening);
+    const frame=opening.windowFrame??{...windowFrameFor(opening),...frameFinish};
     const rail=Math.min(frame.widthM,width*.21,height*.21);
     const wall=model.walls.find(w=>w.id===opening.hostWallId);
     const reveal=Math.max(.025,(wall?.thicknessPx??0)*scale);
@@ -40,7 +40,7 @@ export function makeWindows(model: PlanModel, environment: Texture|null = null, 
       part.position.set(x,y,z);
       part.castShadow=shadows&&!isGlass;
       part.receiveShadow=shadows&&!isGlass;
-      part.userData={maskId:1,glass:isGlass};
+      part.userData={maskId:1,glass:isGlass,openingId:opening.id};
       unit.add(part);
     }
     for(const side of [-1,1]){

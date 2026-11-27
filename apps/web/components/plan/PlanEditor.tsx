@@ -1,4 +1,6 @@
 "use client";
+import {ExtractionProgress} from "./ExtractionProgress";
+import {extractWithProgress, type ExtractionProgress as ExtractionState} from "../../lib/plan/extractionProgress";
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
@@ -30,6 +32,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
   const [latestExtractor, setLatestExtractor] = useState(0);
   const [status, setStatus] = useState("Opening plan…");
   const [error, setError] = useState("");
+  const [extraction, setExtraction] = useState<ExtractionState | null>(null);
   const [busy, setBusy] = useState(false);
   const [tool, setToolState] = useState<Tool>("select");
   const [selection, setSelection] = useState<Selection>(null);
@@ -64,7 +67,13 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
   const loaded = !!model;
   useEffect(() => {
     if (!loaded) return;
-    const setup = new URLSearchParams(window.location.search).get("setup");
+    const params = new URLSearchParams(window.location.search);
+    const openingId = params.get("opening");
+    if (openingId && live.current?.openings.some(opening=>opening.id===openingId)) {
+      setSelection({type:"opening",id:openingId});
+      return;
+    }
+    const setup = params.get("setup");
     if (setup !== "floor" && setup !== "finishes" && setup !== "furniture") return;
     if (calibrated) setDisplay("3d");
     else {
@@ -271,10 +280,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
         expected = revision.current;
       }
       setStatus("Finding walls, doors and windows…");
-      const r = await request<PlanResponse>(`/blueprints/${id}/plan/extract?expected_revision=${expected}`, {
-        method: "POST",
-        ...(envelope ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ envelope }) } : {}),
-      });
+      const r = await extractWithProgress(`/blueprints/${id}`, expected, setExtraction, envelope);
       adopt(r);
       setPast([]);
       setFuture([]);
@@ -288,6 +294,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
       setError(String(e));
       setStatus("Extraction needs attention");
     } finally {
+      setExtraction(null);
       setBusy(false);
     }
   }
@@ -371,7 +378,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
   if (!model)
     return (
       <main className="fe-loading">
-        {busy && <progress />}
+        {extraction && <ExtractionProgress state={extraction}/>}
         <p>{error || status}</p>
         {error && <button onClick={() => void extract(revision.current, false)}>Try again</button>}
       </main>
@@ -559,7 +566,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
         <h1>Edit floor</h1>
         <button disabled={busy} onClick={()=>void openTour()}>Done</button>
       </div>
-      <main className="fe-stage">{canvas}</main>
+      <main className="fe-stage">{extraction && <ExtractionProgress state={extraction}/>} {canvas}</main>
       <div className="phone-plan-tools">
         <p role="status">{error||(tool==="select"?(selectedName?`${selectedName} selected`:"Tap a wall, door, window or stair.") :
           tool==="measure"?(checkingScale?"Tap both ends of a second known distance.":"Tap both ends of a known distance."):tool==="wall"?"Tap both ends of the wall.":"Tap both ends of the opening along a wall.")}</p>
@@ -580,7 +587,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
             setSelection(null);setTool("select");setError("");
           }}><Trash2 size={18}/>Remove {selectedName.toLowerCase()}</button>}
         </div>
-        {selectedOpening?.kind==="window"&&<details key={selectedOpening.id} className="phone-plan-properties">
+        {selectedOpening?.kind==="window"&&<details key={selectedOpening.id} className="phone-plan-properties" open>
           <summary>Window dimensions and frame</summary>
           <WindowFields model={m} opening={selectedOpening} onPatch={patch=>edit(patchOpening(m,selectedOpening.id,patch))}/>
         </details>}
@@ -650,6 +657,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
         onReextract={() => void extract(revision.current, true)}
       />
       <main className="fe-stage">
+        {extraction && <ExtractionProgress state={extraction}/>}
         {error && (
           <div className="fe-error" role="alert">
             <span>{error}</span>

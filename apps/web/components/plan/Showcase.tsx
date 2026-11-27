@@ -11,6 +11,8 @@ import {request} from "../../lib/api";
 import {Maximize2,LayoutGrid,Box,MapPin,Pause,Play,SkipBack,SkipForward,Image as ImageIcon,FileDown,ImageDown,Bookmark,MapPinPlus,X,PencilRuler,Layers,Armchair} from "lucide-react";
 import {MAX_HORIZONTAL_FOV_DEG} from "../../lib/plan/camera";
 import {downloadPrompt,renderPrompt} from "../../lib/plan/renderPrompt";
+import {homePresets, presetFloor, type HomePreset} from "../../lib/plan/homePresets";
+import {WalkthroughObjects, ObjectHighlight} from "./WalkthroughObjects";
 import {SceneMesh} from "./SceneMesh";
 import {metersPerPixel,scaleCheck} from "../../lib/plan/derive";
 import {WalkCamera} from "./WalkCamera";
@@ -22,7 +24,7 @@ import FurnishSheet from "./FurnishSheet";
 import {scrollTourRail} from "./scrollTourRail";
 import {FurniturePlacement} from "./FurniturePlacement";
 import {fitsFloor,furnitureFit} from "../../lib/plan/furnitureFit";
-import {tvDimensions,yardKinds} from "../../lib/plan/furnitureCatalog";
+import {objectName, furnitureRooms, tvDimensions,yardKinds, type ObjectKind} from "../../lib/plan/furnitureCatalog";
 import { floorMaterialFor, materialDefaults, unmatchedFloorFinishes } from "../../lib/plan/floorMaterials";
 import { contains, footprint, newItem } from "../../lib/plan/scene";
 import type {PlanModel,Pt} from "../../lib/plan/model";
@@ -114,7 +116,7 @@ function FitOverlay({points,scale,color}:{points:Pt[];scale:number;color:string}
   </mesh>;
 }
 
-export default function Showcase({plan,scene,title,edit,sample=false,approximate=false,renders={},saveView,saveFinishes,saveFurniture}:{plan:PlanModel;scene:Scene;title:string;edit?:string;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View,initial?:View)=>Promise<View>;saveFinishes?:(finishes:FloorStyles)=>Promise<void>;saveFurniture?:(objects:Item[])=>Promise<void>}){
+export default function Showcase({plan,scene,title,edit,sample=false,approximate=false,renders={},saveView,saveFinishes,saveFurniture,savePreset}:{plan:PlanModel;scene:Scene;title:string;edit?:string;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View,initial?:View)=>Promise<View>;saveFinishes?:(finishes:FloorStyles)=>Promise<void>;saveFurniture?:(objects:Item[])=>Promise<void>;savePreset?:(preset:HomePreset|null)=>Promise<void>}){
   const [localViews,setLocalViews]=useState<View[]>([]);
   const [freeView,setFreeView]=useState<View|null>(null);
   const [adding,setAdding]=useState(false);
@@ -133,8 +135,14 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   const [finishScope,setFinishScope]=useState("");
   const [finishDraft,setFinishDraft]=useState<FloorStyles|null>(null);
   const [sessionFinishes,setSessionFinishes]=useState<FloorStyles|null>(null);
+  const [stylesOpen,setStylesOpen]=useState(false);
+  const [presetDraft,setPresetDraft]=useState<HomePreset|null|undefined>(undefined);
+  const [sessionPreset,setSessionPreset]=useState<HomePreset|null|undefined>(undefined);
+  const designPreset=presetDraft!==undefined?presetDraft:sessionPreset!==undefined?sessionPreset:scene.designPreset;
+  const [hoveredId,setHoveredId]=useState("");
   const [finishNotice,setFinishNotice]=useState("");
   const [furnishing,setFurnishing]=useState(false);
+  const [hiddenDetections,setHiddenDetections]=useState<string[]>([]);
   const [showDetections,setShowDetections]=useState(true);
   const [detected,setDetected]=useState<{planRevision:number;suggestions:Item[]}|null>(null);
   useEffect(()=>{
@@ -159,13 +167,18 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   const localDetections=useMemo(()=>detectedPreviewItems(plan,scale),[plan,scale]);
   const suggestions=useMemo(()=>visibleDetections(
     detected?.planRevision===plan.revision?detected.suggestions:localDetections,
-    objects,scale,scene.dismissedFixtureIds
-  ),[detected,plan.revision,localDetections,objects,scale,scene.dismissedFixtureIds]);
+    objects,scale,[...(scene.dismissedFixtureIds??[]),...hiddenDetections]
+  ),[detected,plan.revision,localDetections,objects,scale,scene.dismissedFixtureIds,hiddenDetections]);
+  const hovered=objects.find(item=>item.id===hoveredId)??(showDetections?suggestions.find(item=>item.id===hoveredId):undefined);
+  const hoveredOpening=hoveredId.startsWith("opening:")?plan.openings.find(item=>item.id===hoveredId.slice(8)):undefined;
+  const alternatives=hovered ? [...new Set(furnitureRooms.flatMap(room=>room.groups
+    .filter(group=>(group.items as readonly ObjectKind[]).includes(hovered.kind)).flatMap(group=>[...group.items])))]
+    .filter(kind=>kind!==hovered.kind) : [];
   const editableObjects=dragPreview?[...objects.filter(item=>item.id!==dragPreview.id),dragPreview]:objects;
   const walkScene=useMemo(()=>furnitureDraft?{...tourScene,objects:furnitureDraft}:tourScene,[tourScene,furnitureDraft]);
-  const styledScene={...scene,...sessionFinishes,...finishDraft,objects};
+  const styledScene={...scene,...sessionFinishes,...finishDraft,objects,designPreset};
   const needsFinishReview=unmatchedFloorFinishes(styledScene,rooms).length>0;
-  const material=floorMaterialFor(styledScene,finishScope)??materialDefaults.wood;
+  const material=floorMaterialFor(styledScene,finishScope)??presetFloor(designPreset,rooms.find(room=>room.id===finishScope)?.roomType)??materialDefaults.wood;
   function changeFinish(next:FloorMaterial){
     setFinishDraft(finishScope ?
       {floorMaterial:styledScene.floorMaterial,roomFloorMaterials:{...styledScene.roomFloorMaterials,[finishScope]:next}} :
@@ -207,10 +220,48 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     window.addEventListener("keydown",cancel);
     return ()=>window.removeEventListener("keydown",cancel);
   },[furnishing,selectFurniture]);
+  async function applyPreset(){
+    if(presetDraft===undefined||savingRef.current)return;
+    savingRef.current=true;setSaving(true);
+    try{
+      if(savePreset)await savePreset(presetDraft);
+      else setSessionPreset(presetDraft);
+      setPresetDraft(undefined);setStylesOpen(false);
+    }catch(error){setNotice(String(error));}
+    finally{savingRef.current=false;setSaving(false);}
+  }
   function openFurnish(){
     setPlaying(false);setRendered(false);setAdding(false);setNotice("");
+    setStylesOpen(false);setPresetDraft(undefined);setFinishesOpen(false);
     if(view&&pose.current?.id===view.id)setFreeView(pose.current);
     setFurnishing(true);
+  }
+  function editHovered(action:"properties"|"rotate"|"remove"|"replace", kind?:ObjectKind){
+    if(!hovered||saving||(!objects.some(item=>item.id===hovered.id)&&objects.length>=100))return;
+    const current=hovered;
+    if(action==="remove"&&!objects.some(item=>item.id===current.id)){
+      setHiddenDetections(hidden=>[...hidden,current.id]);
+      setHoveredId("");
+      return;
+    }
+    openFurnish();
+    setHoveredId("");
+    if(action==="remove"){
+      setFurnitureDraft(objects.filter(item=>item.id!==current.id));
+      selectFurniture("");
+      return;
+    }
+    const replacement=kind?newItem(kind,current.position):current;
+    const item={...replacement,id:current.id,
+      rotation:action==="rotate"?(current.rotation+90)%360:current.rotation};
+    if(action==="properties"){
+      if(!objects.some(object=>object.id===item.id))setFurnitureDraft([...objects,item]);
+      selectFurniture(item.id);
+    }else if(action==="rotate"){
+      updateFurniture(item);
+    }else if(updateFurniture(item)){
+      selectFurniture(item.id);
+    }
   }
   function closeFurnish(){
     setFurnishing(false);setFurnitureDraft(null);setFurnitureId("");setPlacement(null);setFurnitureNotice("");
@@ -360,7 +411,9 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     <div ref={stage} className="show-stage"><Canvas shadows frameloop="demand" dpr={[1,1.6]} camera={{near:.005,far:2000}} fallback={<p>Enable WebGL to view this tour.</p>}>
       <color attach="background" args={[view?"#d4e3e9":"#d8d9cb"]}/>
       <SceneMesh m={plan} objects={editableObjects} detectedObjects={showDetections?suggestions:undefined} closedDoorIds={scene.closedDoorIds} floorStyle={styledScene}
-        wallFinishes={scene.wallFinishes} presentation cutaway={!view}/>
+        wallFinishes={scene.wallFinishes} designPreset={designPreset} presentation cutaway={!view}/>
+      {!rendered&&!sample&&!furnishing&&!stylesOpen&&!finishesOpen&&!adding&&<WalkthroughObjects onHover={setHoveredId} onTap={setHoveredId}/>}
+      {hovered&&!furnishing&&!stylesOpen&&!finishesOpen&&!rendered&&<ObjectHighlight item={hovered} scale={scale}/>}
       {sample&&<SampleFurniture interior={!!view}/>}
       {view?<ShowcaseWalk key={view.id} plan={plan} scene={walkScene} view={view} sample={sample} pose={pose} onFrame={setViewport} keyboard={!rendered}/>:
         <><OverviewCamera plan={plan}/>{!furnishing&&<FloorPicker scale={scale} onPick={land}/>}</>}
@@ -385,6 +438,33 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     </div>
     {view&&rendered&&renders[view.id]&&<div className="show-render"><img src={renders[view.id]} alt={"Saved design render for "+view.name}/></div>}
     {view&&<button type="button" className="show-overview" data-tour-tools onClick={()=>select(-1)}><Box size={18}/>Overview</button>}
+    {edit&&hoveredOpening&&!furnishing&&!stylesOpen&&!finishesOpen&&!rendered&&<div className="walk-object-tools" role="group" aria-label={hoveredOpening.kind} data-tour-tools>
+      <strong>{hoveredOpening.kind==="window"?"Window":"Door"}</strong>
+      <Link href={"/phone/edit/"+encodeURIComponent(plan.id)+"?opening="+encodeURIComponent(hoveredOpening.id)}>Edit opening</Link>
+      <button onClick={()=>setHoveredId("")} aria-label="Close object controls"><X size={16}/></button>
+    </div>}
+    {hovered&&!furnishing&&!stylesOpen&&!finishesOpen&&!rendered&&<div className="walk-object-tools" role="group" aria-label={objectName(hovered.kind)} data-tour-tools>
+      <strong>{objectName(hovered.kind)}</strong>
+      <button onClick={()=>editHovered("properties")}>Edit</button>
+      <button onClick={()=>editHovered("rotate")}>Rotate</button>
+      {!!alternatives.length&&<select aria-label="Replace object" value="" onChange={event=>editHovered("replace",event.target.value as ObjectKind)}>
+        <option value="" disabled>Replace</option>
+        {alternatives.map(kind=><option key={kind} value={kind}>{objectName(kind)}</option>)}
+      </select>}
+      <button onClick={()=>editHovered("remove")}>Remove</button>
+      <button onClick={()=>setHoveredId("")} aria-label="Close object controls"><X size={16}/></button>
+    </div>}
+    {stylesOpen&&<section className="finish-sheet style-sheet" aria-label="Whole-home style" data-tour-tools onWheel={scrollTourRail}>
+      <div className="finish-heading"><h2>Whole-home style</h2><button aria-label="Close styles" onClick={()=>{setPresetDraft(undefined);setStylesOpen(false);}}><X size={18}/></button></div>
+      <div className="tour-rail style-presets">
+        {Object.entries(homePresets).map(([key,preset])=><button key={key} aria-pressed={designPreset===key}
+          onClick={()=>setPresetDraft(key as HomePreset)}>
+          <span className="style-swatches" aria-hidden>{[preset.floor.color,preset.fabric,preset.door].map((color,i)=><i key={i} style={{background:color}}/>)}</span>{preset.name}
+        </button>)}
+        <button aria-pressed={!designPreset} onClick={()=>setPresetDraft(null)}>Original</button>
+      </div>
+      <button className="finish-save" disabled={saving||presetDraft===undefined} onClick={()=>void applyPreset()}>Apply style</button>
+    </section>}
     {furnishing?<FurnishSheet objects={objects} selected={selectedFurniture} previewReason={previewReason}
       detected={suggestions}
       onInsertDetected={item=>{
@@ -446,8 +526,9 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
         </button>
         <div id="show-tour-actions" className="show-list" role="group" aria-label="Tour actions" hidden={!toolsOpen&&!pickingRoom} onWheel={scrollTourRail}>
           {pickingRoom?<button onClick={()=>{setPickingRoom(false);setFinishesOpen(true);}}><X/>Cancel room selection</button>:<>
+          {!sample&&<button disabled={saving} onClick={()=>{setPlaying(false);setRendered(false);setFinishesOpen(false);closeFurnish();setStylesOpen(true);setToolsOpen(false);}}><Layers/>Styles</button>}
           {hasFloor&&<button disabled={saving} onClick={()=>{
-            setPlaying(false);setRendered(false);setAdding(false);setFinishesOpen(true);
+            setPlaying(false);setRendered(false);setAdding(false);setStylesOpen(false);setPresetDraft(undefined);closeFurnish();setFinishesOpen(true);
           }}><Layers/>Finishes</button>}
           {!!suggestions.length&&<button type="button" aria-pressed={showDetections} onClick={()=>setShowDetections(shown=>!shown)}>
             <Armchair/>Detected preview

@@ -8,10 +8,12 @@ import {yardColor,yardShapes} from "./plan/yard";
 import { roomSurfaces, stairPieces } from "./plan/stairs";
 import {stairCutouts} from "./plan/stairLevels";
 import { makeWindows } from "./plan/windowFrames";
+import { doorLeaves } from "./plan/doorLeaves";
 import { floorMaterialFor, floorSurface, floorTexture, loadFloorPhotos } from "./plan/floorMaterials";
 import { floorFinishes, type Scene } from "./plan/scene";
 import {furnitureParts,makeFurnitureResources} from "./plan/furnitureModels";
 import {loadFurnitureAsset,scaledFurnitureAsset} from "./plan/furnitureAssets";
+import {homePresets, presetFloor} from "./plan/homePresets";
 import {objectName} from "./plan/furnitureCatalog";
 import { wallChunkGeometry, wallSurfaceMaterials } from "./plan/wallMaterials";
 
@@ -22,9 +24,11 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
   if (m.openings.some((o) => o.status === "proposed"))
     throw Error("Approve or reject every proposed door and window before exporting 3D.");
   const scene = new THREE.Scene();
+  const designPreset=config?.designPreset;
+  const preset=designPreset?homePresets[designPreset]:undefined;
   const textures: THREE.Texture[] = [];
   let wallTile: THREE.Texture|null=null;
-  scene.userData = {planRevision:m.revision, architectureReview:review};
+  scene.userData = {planRevision:m.revision, architectureReview:review,designPreset};
   for (const piece of wallPieces(m)) {
     const group = new THREE.Group();
     group.name = piece.id;
@@ -39,7 +43,7 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
     group.position.set(piece.centre[0], 0, piece.centre[1]);
     group.rotation.y = piece.angle;
     const [front,back]=wallSurfaceMaterials(piece,config?.wallFinishes);
-    const base=new THREE.MeshStandardMaterial({color:"#cbd9d5"});
+    const base=new THREE.MeshStandardMaterial({color:preset?.wall??"#cbd9d5"});
     const sides=[front,back].map(finish=>{
       if(!finish)return base;
       if(finish.kind==="tile"&&!wallTile){
@@ -68,7 +72,7 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
   }
   const rooms=roomsOf(m);
   const cutouts=stairCutouts(m);
-  const finishes = rooms.map(room=>config && floorMaterialFor(config,room.id));
+  const finishes = rooms.map(room=>(config && floorMaterialFor(config,room.id)) ?? presetFloor(designPreset,room.roomType));
   const kinds = [...new Set(finishes.flatMap(finish=>finish ? [finish.kind] : []))];
   const photos = new Map(await Promise.all(kinds.map(async kind=>[kind,await loadFloorPhotos(kind)] as const)));
   const surfaces = new Map<string,ReturnType<typeof floorSurface>>();
@@ -125,12 +129,22 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
     }
     scene.add(group);
   }
-  const windows=makeWindows(m);
+  const windows=makeWindows(m,null,false,preset?.frame);
   scene.add(windows.group);
-  const furniture=makeFurnitureResources();
+  for (const door of doorLeaves(m,scale,config?.closedDoorIds)) {
+    const leaf=new THREE.Mesh(new THREE.BoxGeometry(door.length,door.height,.04),
+      new THREE.MeshStandardMaterial({color:preset?.door??"#b9a58d",roughness:.62}));
+    leaf.name=door.id;
+    leaf.userData={kind:"door",id:door.id};
+    leaf.position.set(door.x+Math.cos(door.angle)*door.length/2,door.height/2,
+      door.z-Math.sin(door.angle)*door.length/2);
+    leaf.rotation.y=door.angle;
+    scene.add(leaf);
+  }
+  const furniture=makeFurnitureResources(designPreset);
   const items=config?.objects??[];
   const assets=new Map(await Promise.all([...new Set(items.map(item=>item.kind))].map(async kind=>
-    [kind,await loadFurnitureAsset(kind)] as const
+    [kind,designPreset?null:await loadFurnitureAsset(kind)] as const
   )));
   for (const item of items) {
     const group=new THREE.Group();
@@ -140,7 +154,7 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
     group.rotation.y=-item.rotation*Math.PI/180;
     const asset=assets.get(item.kind);
     if(asset) group.add(scaledFurnitureAsset(asset,item));
-    else for (const part of furnitureParts(item)) {
+    else for (const part of furnitureParts(item,designPreset)) {
       const mesh=new THREE.Mesh(furniture.geometry(part.shape),furniture.material(part.finish));
       mesh.position.set(...part.position);
       mesh.scale.set(...part.size);

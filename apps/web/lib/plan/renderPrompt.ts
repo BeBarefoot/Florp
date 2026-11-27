@@ -1,3 +1,4 @@
+import {homePresets} from "./homePresets";
 import {savedPose} from "./camera";
 import {metersPerPixel, nodeMap, openingEnds, wallEnds} from "./derive";
 import type {PlanModel, Pt} from "./model";
@@ -59,7 +60,7 @@ export function renderPrompt(plan:PlanModel, scene:Scene, view:View, frame:{widt
     const percent=100*region.pixels/(frame.width*frame.height);
     return [`Visible ${objectName(object.kind).toLowerCase()} occupies ${percent.toFixed(2)}% of the image, within pixels (${left}, ${top}) to (${right}, ${bottom}) from the upper left. Preserve that visible portion.`];
   });
-  return [promptFor(view,facts,scene.style),
+  return [promptFor(view,facts,[scene.designPreset ? homePresets[scene.designPreset].name : "",scene.style].filter(Boolean).join(". ")),
     `Camera eye [X,Y,Z] = [${pose.position.join(", ")}] m, looking along [${pose.direction.join(", ")}]. Frame ${frame.width} × ${frame.height} px.`,
     ...framing,
     "Use each room’s specified floor material, colour and pattern dimensions on its visible floor.",

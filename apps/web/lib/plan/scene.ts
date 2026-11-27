@@ -1,3 +1,4 @@
+import type { HomePreset } from "./homePresets";
 import { newUuid } from "../uuid";
 import type { Pt } from "./model";
 import { dimensions, tvDimensions, type ObjectKind } from "./furnitureCatalog";
@@ -18,6 +19,7 @@ export type FloorMaterial = { kind: "wood" | "concrete" | "marble" | "tile"; col
 export type WallSide = "a" | "b";
 export type WallMaterial = {kind:"paint"|"tile";color:string};
 export type Scene = {
+  designPreset?: HomePreset | null;
   floorFinish?: FloorFinish;
   floorMaterial?: FloorMaterial | null;
   roomFloorMaterials?: Record<string, FloorMaterial>;

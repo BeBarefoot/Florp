@@ -4,7 +4,8 @@ import { useThree } from "@react-three/fiber";
 import * as T from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { PlanModel } from "../../lib/plan/model";
-import { metersPerPixel, openingEnds } from "../../lib/plan/derive";
+import { metersPerPixel } from "../../lib/plan/derive";
+import { doorLeaves } from "../../lib/plan/doorLeaves";
 import { wallPieces } from "../../lib/plan/mesh";
 import { roomsOf } from "../../lib/plan/walkSpace";
 import {yardColor,yardShapes} from "../../lib/plan/yard";
@@ -13,6 +14,7 @@ import {stairCutouts, stairHeadroom} from "../../lib/plan/stairLevels";
 import { makeWindows } from "../../lib/plan/windowFrames";
 import { savedPose } from "../../lib/plan/camera";
 import { floorFinishes, type Capture, type Frame, type Item, type Scene, type View } from "../../lib/plan/scene";
+import {homePresets, presetFloor, type HomePreset} from "../../lib/plan/homePresets";
 import { furnitureParts, makeFurnitureResources } from "../../lib/plan/furnitureModels";
 import { loadFurnitureAsset, scaledFurnitureAsset } from "../../lib/plan/furnitureAssets";
 import { floorMaterialFor, floorSurface, floorTexture, loadFloorPhotos, type PhotoFloor } from "../../lib/plan/floorMaterials";
@@ -75,12 +77,12 @@ function useMaterialEnvironment(enabled: boolean) {
   return texture;
 }
 
-function WallChunk({piece,chunk,wallIndex,presentation,finishes,tileMap}:{
+function WallChunk({piece,chunk,wallIndex,presentation,finishes,tileMap,wallColor}:{
   piece:WallPiece;chunk:Chunk;wallIndex:number;presentation:boolean;
-  finishes:Scene["wallFinishes"];tileMap:T.Texture|null;
+  finishes:Scene["wallFinishes"];tileMap:T.Texture|null;wallColor?:string;
 }){
   const [front,back]=wallSurfaceMaterials(piece,finishes);
-  const base=presentation?(piece.material==="concrete"?"#c7c5be":"#efeae0"):(piece.material==="concrete"?"#98a9b6":"#c9d6db");
+  const base=wallColor??(presentation?(piece.material==="concrete"?"#c7c5be":"#efeae0"):(piece.material==="concrete"?"#98a9b6":"#c9d6db"));
   const geometry=useMemo(()=>wallChunkGeometry(piece,chunk),[piece,chunk]);
   useEffect(()=>()=>geometry.dispose(),[geometry]);
   return <mesh geometry={geometry} castShadow={presentation} receiveShadow={presentation}
@@ -112,7 +114,7 @@ function CatalogFurniture({asset,item,maskId,presentation,environment}:{asset:No
       const glass=material.transparent;
       if(glass) material.depthWrite=false;
       object.material=material;
-      object.userData={maskId,furnitureId:maskId?id:undefined,glass};
+      object.userData={maskId,furnitureId:maskId?id:undefined,pickFixtureId:maskId?undefined:id,glass};
       object.castShadow=presentation&&!glass&&kind!=="rug";
       object.receiveShadow=presentation;
     });
@@ -122,13 +124,13 @@ function CatalogFurniture({asset,item,maskId,presentation,environment}:{asset:No
   return <primitive object={model}/>;
 }
 
-function FurnitureMeshes({objects,scale,presentation,environment,preview=false}:{objects:Item[];scale:number;presentation:boolean;environment:T.Texture|null;preview?:boolean}){
-  const resources=useMemo(()=>makeFurnitureResources(),[]);
+function FurnitureMeshes({objects,scale,presentation,environment,preview=false,designPreset}:{objects:Item[];scale:number;presentation:boolean;environment:T.Texture|null;preview?:boolean;designPreset?:HomePreset|null}){
+  const resources=useMemo(()=>makeFurnitureResources(designPreset),[designPreset]);
   useEffect(()=>()=>resources.dispose(),[resources]);
   const [assets,setAssets]=useState<Partial<Record<Item["kind"],FurnitureAsset>>>({});
   const kinds=[...new Set(objects.map(item=>item.kind))].sort().join(",");
   useEffect(()=>{
-    if(!kinds) return;
+    if(!kinds||designPreset) return;
     let active=true;
     for(const kind of kinds.split(",") as Item["kind"][]){
       void loadFurnitureAsset(kind).then(asset=>{
@@ -136,30 +138,31 @@ function FurnitureMeshes({objects,scale,presentation,environment,preview=false}:
       });
     }
     return ()=>{active=false;};
-  },[kinds]);
+  },[kinds,designPreset]);
   return objects.map((item,index)=>{
-    const asset=assets[item.kind];
+    const asset=designPreset?undefined:assets[item.kind];
     return <group key={item.id} position={[item.position.x*scale,0,item.position.y*scale]}
       rotation={[0,-item.rotation*Math.PI/180,0]}>
     {asset?<CatalogFurniture asset={asset} item={item} maskId={preview?0:1000+index} presentation={presentation} environment={environment}/>:
-      furnitureParts(item).map((part,i)=><mesh key={i} geometry={resources.geometry(part.shape)}
+      furnitureParts(item,designPreset).map((part,i)=><mesh key={i} geometry={resources.geometry(part.shape)}
       material={resources.material(part.finish,environment)} dispose={null}
       castShadow={presentation&&part.finish!=="glass"&&item.kind!=="rug"} receiveShadow={presentation}
       position={part.position} scale={part.size} rotation={part.turn??[0,0,0]}
-      userData={{maskId:preview?0:1000+index,furnitureId:preview?undefined:item.id,glass:part.finish==="glass"}}/>)}
+      userData={{maskId:preview?0:1000+index,furnitureId:preview?undefined:item.id,pickFixtureId:preview?item.id:undefined,glass:part.finish==="glass"}}/>)}
     </group>;
   });
 }
 
-function Windows({plan,environment,shadows}:{plan:PlanModel;environment:T.Texture|null;shadows:boolean}){
-  const windows=useMemo(()=>makeWindows(plan,environment,shadows),[plan,environment,shadows]);
+function Windows({plan,environment,shadows,designPreset}:{plan:PlanModel;environment:T.Texture|null;shadows:boolean;designPreset?:HomePreset|null}){
+  const windows=useMemo(()=>makeWindows(plan,environment,shadows,designPreset?homePresets[designPreset].frame:undefined),[plan,environment,shadows,designPreset]);
   useEffect(()=>windows.dispose,[windows]);
   return <primitive object={windows.group}/>;
 }
 
-export function SceneMesh({m, objects, detectedObjects = [], closedDoorIds, floorStyle={}, wallFinishes, presentation=false, cutaway=false}: {m: PlanModel; objects: Item[]; detectedObjects?: Item[]; closedDoorIds?: string[]; floorStyle?:FloorStyle; wallFinishes?:Scene["wallFinishes"]; presentation?:boolean; cutaway?:boolean}) {
+export function SceneMesh({m, objects, detectedObjects = [], closedDoorIds, floorStyle={}, wallFinishes, designPreset, presentation=false, cutaway=false}: {m: PlanModel; objects: Item[]; detectedObjects?: Item[]; closedDoorIds?: string[]; floorStyle?:FloorStyle; wallFinishes?:Scene["wallFinishes"]; designPreset?:HomePreset|null; presentation?:boolean; cutaway?:boolean}) {
   const scale = metersPerPixel(m)!;
   const {floorFinish="default",floorMaterial,roomFloorMaterials}=floorStyle;
+  const preset=designPreset?homePresets[designPreset]:undefined;
   const width=m.imageTransform.width*scale, depth=m.imageTransform.height*scale;
   const sunTarget=useMemo(()=>{const target=new T.Object3D();target.position.set(width/2,0,depth/2);return target;},[width,depth]);
   const shadowSize=Math.max(4,width,depth)*.8;
@@ -176,8 +179,9 @@ export function SceneMesh({m, objects, detectedObjects = [], closedDoorIds, floo
       ceilings:roomSurfaces(room.polygon,scale,stairHeadroom(m,room.ceilingHeightM??2.8))}));
   },[m,scale]);
   const materials = useMemo(()=>rooms.map(({room})=>
-    floorMaterialFor({floorFinish,floorMaterial,roomFloorMaterials},room.id)
-  ),[rooms,floorFinish,floorMaterial,roomFloorMaterials]);
+    floorMaterialFor({floorFinish,floorMaterial,roomFloorMaterials},room.id) ??
+      presetFloor(designPreset,room.roomType)
+  ),[rooms,floorFinish,floorMaterial,roomFloorMaterials,designPreset]);
   const wood = useFloorPhotos("wood", materials.some(material=>material?.kind==="wood"));
   const marble = useFloorPhotos("marble", materials.some(material=>material?.kind==="marble"));
   const tile = useFloorPhotos("tile", materials.some(material=>material?.kind==="tile"));
@@ -232,25 +236,18 @@ export function SceneMesh({m, objects, detectedObjects = [], closedDoorIds, floo
     })}
     {walls.map((p,wallIndex)=><group key={p.id} position={[p.centre[0],0,p.centre[1]]} rotation={[0,p.angle,0]}>
       {p.chunks.map((chunk,i)=><WallChunk key={i} piece={p} chunk={chunk} wallIndex={wallIndex}
-        presentation={presentation} finishes={wallFinishes} tileMap={wallTiles}/>)}
+        presentation={presentation} finishes={wallFinishes} tileMap={wallTiles} wallColor={preset?.wall}/>)}
     </group>)}
-    <Windows plan={m} environment={environment} shadows={presentation}/>
-    {m.openings.filter(o=>o.status==="confirmed"&&o.kind==="door").map(o=>{
-      const endpoints=openingEnds(m,o);
-      if(!endpoints) return null;
-      const [a,b]=endpoints, length=Math.hypot(b.x-a.x,b.y-a.y)*scale;
-      const angle=Math.atan2(b.y-a.y,b.x-a.x);
-      // The cut remains open; draw a leaf swung 90 degrees when swing evidence exists.
-      const closed=closedDoorIds?.includes(o.id);
-      if(!o.swing&&!closed) return null;
-      const end=o.hinge==="end", hinge=end?b:a;
-      const swung=closed?angle+(end?Math.PI:0):angle+(o.swing==="left"?1:-1)*Math.PI/2;
-      return <group key={o.id} position={[hinge.x*scale,0,hinge.y*scale]} rotation={[0,-swung,0]}>
-        <mesh userData={{maskId:1}} position={[length/2,o.heightM/2,0]}>
-          <boxGeometry args={[length,o.heightM,.04]}/><meshStandardMaterial color="#b9a58d"/>
+    <Windows plan={m} environment={environment} shadows={presentation} designPreset={designPreset}/>
+    {doorLeaves(m,scale,closedDoorIds).map(door=>
+      <group key={door.id} position={[door.x,0,door.z]} rotation={[0,door.angle,0]}>
+        <mesh userData={{maskId:1,openingId:door.id}} position={[door.length/2,door.height/2,0]}>
+          <boxGeometry args={[door.length,door.height,.04]}/><meshStandardMaterial color={preset?.door??"#b9a58d"} roughness={.62}/>
         </mesh>
-      </group>;
-    })}
+        <mesh userData={{maskId:1,openingId:door.id}} position={[door.length*.87,door.height*.47,0]}>
+          <boxGeometry args={[.095,.023,.092]}/><meshStandardMaterial color={preset?.metal??"#77726a"} metalness={.68} roughness={.3}/>
+        </mesh>
+      </group>)}
     {stairs.map(stair=><group key={stair.id}>{stair.steps.map((step,i)=><group key={i} rotation={[-Math.PI/2,0,0]} position={[0,step.bottom,0]}>
       <mesh castShadow={presentation} receiveShadow={presentation} userData={{maskId:1}}>
         <extrudeGeometry args={[step.shape,{depth:step.height,bevelEnabled:false}]}/><meshStandardMaterial color="#a39b8d" roughness={.83}/>
@@ -268,9 +265,9 @@ export function SceneMesh({m, objects, detectedObjects = [], closedDoorIds, floo
         </mesh>
       </group>)}
     </group>)}
-    <FurnitureMeshes objects={objects} scale={scale} presentation={presentation} environment={environment}/>
+    <FurnitureMeshes designPreset={designPreset} objects={objects} scale={scale} presentation={presentation} environment={environment}/>
     {detectedObjects.length>0&&<group name="Detected furniture preview" userData={{fixturePreview:true}}>
-      <FurnitureMeshes preview objects={detectedObjects} scale={scale} presentation={presentation} environment={environment}/>
+      <FurnitureMeshes preview designPreset={designPreset} objects={detectedObjects} scale={scale} presentation={presentation} environment={environment}/>
     </group>}
   </>;
 }

@@ -184,7 +184,18 @@ def dimension_framed_crop(strips, image, guides=None):
     return [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
 
 
+_progress_file: Path | None = None
+
+
+def _stage(percent, stage):
+    if _progress_file is not None:
+        temporary = _progress_file.with_suffix(".tmp")
+        temporary.write_text(json.dumps({"percent": percent, "stage": stage}))
+        temporary.replace(_progress_file)
+
+
 def build(path, roi=None, *, plan_id=None, reconstruct_config=None, detect_scale=False):
+    _stage(5, "Reading source image")
     source = decode(Path(path).read_bytes())
     return _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, path=path)
 
@@ -201,6 +212,7 @@ def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, p
     if settings.workspace_semantic_source or settings.workspace_semantic_weights:
         from .semantic_workspace import build as semantic_build
 
+        _stage(20, "Analyzing drawing")
         doc = semantic_build(image)
         doc.warnings.extend(notes)
         if plan_id is None:
@@ -212,6 +224,7 @@ def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, p
     from .structural_runs import structural_runs, join_intersections
     from . import openings as gap_openings
 
+    _stage(15, "Separating walls from annotations")
     strips = wall_strips(image)
     resize = None
     if (
@@ -292,6 +305,7 @@ def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, p
             ):
                 continue
             if not geometry_only:
+                _stage(78, "Recognizing furniture and fixtures")
                 from .drafting_symbols import site_symbols
 
                 checked = tag_rooms(
@@ -377,6 +391,7 @@ def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, p
         notes.append("No wall strips found; monochrome fallback: review structural runs against the source.")
     classes = stats["classes"]
     coloured = bool(strips.red.any() or strips.blue.any())
+    _stage(32, "Tracing walls")
     objects = structural_runs(
         mask,
         min_length=max(7, round(0.8 * min(classes))) if coloured else max(7, int(1.4 * min(classes))),
@@ -466,6 +481,7 @@ def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, p
         notes.append(
             "Local detector unavailable; openings come from walls and drawing symbols and need review against the original. Add missing openings with two clicks."
         )
+    _stage(48, "Locating doors and windows")
     found = gap_openings.detect(
         image, [o for o in objects if o.kind == "wall"], strips, boxes, exterior_zone, framed_site=bool(framed)
     )
@@ -522,6 +538,7 @@ def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, p
             doc = resize.document(doc)
             doc.stairs = stairs
         return doc
+    _stage(65, "Closing room boundaries")
     model = original = reconstruct(doc, plan_id, reconstruct_config, strips=strips, image=image)
     if strips.boundary_mask is not None:
         from .photo_boundary_repair import recover_photo_boundaries
@@ -601,6 +618,7 @@ def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, p
                     from .painted_openings import remove_dimension_hosts
 
                     model = remove_dimension_hosts(reconciled, image, strips)
+    _stage(78, "Recognizing furniture and fixtures")
     symbols = detect_symbols(native_image, roi)
     if framed:
         from .drafting_symbols import site_symbols
@@ -635,6 +653,7 @@ def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, p
 def with_scale_proposal(model, source):
     from .plan_scale_proposal import propose_scale
 
+    _stage(90, "Checking printed dimensions")
     model.scale.proposal = propose_scale(source)
     return model
 
@@ -647,6 +666,8 @@ if __name__ == "__main__":
     parser.add_argument("roi", type=Path, nargs="?")
     parser.add_argument("--plan-id")
     parser.add_argument("--detect-scale", action="store_true")
+    parser.add_argument("--progress-file", type=Path)
     args = parser.parse_args()
+    _progress_file = args.progress_file
     roi = json.loads(args.roi.read_text()) if args.roi else None
     args.output.write_text(build(args.path, roi, plan_id=args.plan_id, detect_scale=args.detect_scale).model_dump_json())
