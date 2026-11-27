@@ -165,3 +165,8 @@ class FloorPair(SQLModel, table=True):
 class FloorAlignment(SQLModel, table=True):
     project_id: str = Field(primary_key=True, foreign_key="project.id")
     transform: dict = Field(sa_type=JSON)
+
+
+class StairLandings(SQLModel, table=True):
+    project_id: str = Field(primary_key=True, foreign_key="project.id")
+    endpoints: dict = Field(default_factory=dict, sa_type=JSON)

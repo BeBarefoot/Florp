@@ -742,3 +742,36 @@ test("desktop wall editing uses one compact row centered above the bottom edge",
   expect(color.x).toBeGreaterThan(material.x+material.width);
   expect(color.y).toBeCloseTo(material.y,0);
 });
+
+test("confirmed stair landings connect both floors and resume after refresh", async ({page})=>{
+  test.setTimeout(110_000);
+  const poses:Record<string,{x:number;y:number;yaw:number;revision:number}>={};
+  const levels=["ground","upper"];
+  await page.route("**/projects/stair-test/**",route=>{
+    const last=new URL(route.request().url()).pathname.split("/").at(-1)!;
+    if(route.request().method()==="PUT")poses[last]=route.request().postDataJSON();
+    return route.fulfill({json:last==="floor-pair"?{first:"ground",second:"upper"}:poses});
+  });
+  await page.route("**/blueprints/**",route=>{
+    const [, ,id,endpoint]=new URL(route.request().url()).pathname.split("/");
+    const level=levels.indexOf(id)+1;
+    const start={...sampleScene.views[0],id:"start",position:{x:300,y:350},yaw:level===1?-90:90};
+    return route.fulfill({json:endpoint==="plan"?{revision:1,model:{...samplePlan,id}}:endpoint==="info"?
+      {id,filename:id,project_id:"stair-test",floor:{level,otherId:levels[2-level],regions:[]}}:
+      new URL(route.request().url()).pathname.endsWith("/renders")?[]:
+      {revision:1,planRevision:1,config:{objects:[],views:[start],style:""}}});
+  });
+  for(const id of levels){
+    await page.goto(`/studio/${id}#view=start`);
+    await page.getByRole("button",{name:"Set stair landing"}).click({timeout:25_000});
+    await page.getByRole("button",{name:"Use this landing"}).click();
+    await expect.poll(()=>poses[id]?.x).toBe(300);
+  }
+  await page.getByRole("link",{name:"Go downstairs"}).click();
+  await expect(page.getByRole("heading",{name:"Stair landing"})).toBeAttached({timeout:25_000});
+  await page.reload();
+  await expect(page.getByRole("heading",{name:"Stair landing"})).toBeAttached({timeout:25_000});
+  await page.getByRole("link",{name:"Go upstairs"}).click();
+  await expect(page.getByRole("heading",{name:"Stair landing"})).toBeAttached({timeout:25_000});
+  await expect(page).toHaveURL(/\/studio\/upper$/);
+});

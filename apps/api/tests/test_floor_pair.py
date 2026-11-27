@@ -94,3 +94,24 @@ def test_open_sided_patio_keeps_its_surface_and_rejects_unrelated_warm_fill():
     assert shape.contains(Point(175/1100, 250/408))
     assert not shape.contains(Point(220/1100, 350/408))
     assert not shape.contains(Point(450/1100, 150/408))
+
+
+def test_stair_landings_link_confirmed_floors_and_invalidate_on_plan_changes(client, monkeypatch, tmp_path):
+    from test_plan_api import plan
+    c, first = client
+    monkeypatch.setattr(settings, "storage_path", str(tmp_path))
+    pid = c.get("/projects").json()[0]["id"]
+    second = c.post(f"/projects/{pid}/blueprints", files={"file": ("upper.png", (tmp_path / "plan.png").read_bytes())}).json()["id"]
+    for bid in (first, second):
+        assert c.put(f"/blueprints/{bid}/plan", json={"expectedRevision": 0, "model": plan()}).status_code == 200
+    path = f"/projects/{pid}/stair-landings"
+    landing = {"x": 240, "y": 190, "yaw": -45, "revision": 1}
+    assert c.put(f"{path}/{first}", json=landing).status_code == 404
+    assert c.put(f"/projects/{pid}/floor-pair", json={"first": first, "second": second, "regions": {first: [], second: []}}).status_code == 200
+    assert c.put(f"{path}/{first}", json=landing).status_code == 200
+    assert c.put(f"{path}/{second}", json={**landing, "x": 900}).status_code == 422
+    assert c.put(f"{path}/{second}", json={**landing, "yaw": 90}).status_code == 200
+    assert c.get(path).json() == {first: landing, second: {**landing, "yaw": 90}}
+    assert c.put(f"/blueprints/{second}/plan", json={"expectedRevision": 1, "model": plan()}).status_code == 200
+    assert c.get(path).json() == {first: landing}
+    assert c.put(f"{path}/{second}", json=landing).status_code == 409

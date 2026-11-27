@@ -12,6 +12,7 @@ import type {Job,Saved,Scene,View,WalkthroughEdit} from "../../lib/plan/scene";
 import {metersPerPixel} from "../../lib/plan/derive";
 import {samplePlan,sampleScene} from "../../lib/plan/showcaseSample";
 
+import type {StairLanding} from "../../lib/plan/stairLink";
 import type {HouseOverview} from "../../lib/plan/houseOverview";
 
 const emptyScene:Scene={views:[],objects:[],style:""};
@@ -73,6 +74,16 @@ export default function ShowcasePage({desktop = false}: {desktop?: boolean}){
     return ()=>{live=false;};
   },[data,id]);
   const blueprint = data?.[2];
+  const [landings,setLandings]=useState<Record<string,StairLanding>>({});
+  const stairsPath = desktop && blueprint?.floor ? `/projects/${encodeURIComponent(blueprint.project_id)}/stair-landings` : "";
+  useEffect(()=>{
+    setLandings({});
+    if(!stairsPath)return;
+    const controller=new AbortController();
+    request<Record<string,StairLanding>>(stairsPath,{signal:controller.signal})
+      .then(result=>{if(!controller.signal.aborted)setLandings(result);}).catch(()=>{});
+    return ()=>controller.abort();
+  },[stairsPath,id]);
   useEffect(() => {
     setHouse(null);
     setHouseStatus("");
@@ -162,7 +173,13 @@ export default function ShowcasePage({desktop = false}: {desktop?: boolean}){
       ground:house.upperIsActive ? house.other : activeLevel, upper:house.upperIsActive ? activeLevel : house.other,
       alignment:house.alignment, provisionalOrder:house.provisionalOrder,
     } : undefined;
-    return <Player key={id} house={overview} houseStatus={houseStatus} alignmentHref={`/project/${encodeURIComponent(project_id)}#${floor?"floor-alignment":"floor-review"}`}
+    const stairs=floor&&stairsPath?{
+      id:floor.otherId, level:floor.level, regions:floor.regions, local:landings[id],
+      destination:landings[floor.otherId],
+      save:async (landing:StairLanding)=>setLandings(await request<Record<string,StairLanding>>(
+        stairsPath+"/"+encodeURIComponent(id),{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(landing)})),
+    }:undefined;
+    return <Player key={id} stairs={stairs} house={overview} houseStatus={houseStatus} alignmentHref={`/project/${encodeURIComponent(project_id)}#${floor?"floor-alignment":"floor-review"}`}
       levelAction={levelAction} plan={plan} scene={scene} desktop={desktop} stale={!!priorScene.revision&&!currentScene&&!approximate}
       approximate={approximate} renders={currentScene?renders:undefined} title={data[2].filename}
       edit={"/plan/"+id}

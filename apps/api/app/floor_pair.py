@@ -73,3 +73,10 @@ def suggest(a, b):
             first = a if gardens[0] else b
             reason = 'Possible first floor based on garden shading. Confirm the level.'
     return {'first':first.id if first else None,'regions':regions,'reason':reason}
+
+
+class StairLanding(BaseModel):
+    revision: int = Field(gt=0)
+    x: float = Field(ge=0, le=1e7)
+    y: float = Field(ge=0, le=1e7)
+    yaw: float = Field(ge=-180, le=180)

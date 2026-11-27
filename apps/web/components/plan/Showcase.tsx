@@ -36,6 +36,8 @@ import { contains, footprint, newItem } from "../../lib/plan/scene";
 import type {PlanModel,Pt} from "../../lib/plan/model";
 import type {FloorMaterial,Frame,Item,Scene,View,WalkthroughEdit} from "../../lib/plan/scene";
 import {styledWindowFrame} from "../../lib/plan/windowStyle";
+import {nearStairs,type StairLanding} from "../../lib/plan/stairLink";
+import type {SiteRegion} from "../../lib/api";
 import {housePlacement, type HouseOverview} from "../../lib/plan/houseOverview";
 import {setWallSurface} from "../../lib/plan/wallMaterials";
 
@@ -143,7 +145,7 @@ function FitOverlay({points,scale,color}:{points:Pt[];scale:number;color:string}
   </mesh>;
 }
 
-export default function Showcase({plan,scene,title,edit,levelAction,house,houseStatus,alignmentHref,desktop=false,stale=false,sample=false,approximate=false,renders={},saveView,moveView,saveFinishes,saveFurniture,savePreset,saveWalkEdit}:{plan:PlanModel;scene:Scene;title:string;edit?:string;levelAction?:{href:string;label:string;importing:boolean};house?:HouseOverview;houseStatus?:string;alignmentHref?:string;desktop?:boolean;stale?:boolean;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View,initial?:View)=>Promise<View>;moveView?:(id:string,position:Pt)=>Promise<void>;saveFinishes?:(finishes:FloorStyles)=>Promise<void>;saveFurniture?:(objects:Item[])=>Promise<void>;savePreset?:(preset:HomePreset|null)=>Promise<void>;saveWalkEdit?:(change:WalkthroughEdit)=>Promise<void>}){
+export default function Showcase({plan,scene,title,edit,levelAction,stairs,house,houseStatus,alignmentHref,desktop=false,stale=false,sample=false,approximate=false,renders={},saveView,moveView,saveFinishes,saveFurniture,savePreset,saveWalkEdit}:{plan:PlanModel;scene:Scene;title:string;edit?:string;levelAction?:{href:string;label:string;importing:boolean};stairs?:{id:string;level:1|2;regions:SiteRegion[];local?:StairLanding;destination?:StairLanding;save:(landing:StairLanding)=>Promise<void>};house?:HouseOverview;houseStatus?:string;alignmentHref?:string;desktop?:boolean;stale?:boolean;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View,initial?:View)=>Promise<View>;moveView?:(id:string,position:Pt)=>Promise<void>;saveFinishes?:(finishes:FloorStyles)=>Promise<void>;saveFurniture?:(objects:Item[])=>Promise<void>;savePreset?:(preset:HomePreset|null)=>Promise<void>;saveWalkEdit?:(change:WalkthroughEdit)=>Promise<void>}){
   const previewKey = `florp-preview-views:${plan.id}:${plan.revision}`;
   const [previewViews, setPreviewViews] = useState<{views:View[];positions:Record<string,Pt>}>(() => {
     if (!saveView && !sample) {
@@ -413,6 +415,39 @@ export default function Showcase({plan,scene,title,edit,levelAction,house,houseS
   const latestViews=useRef(views);
   useEffect(()=>{latestViews.current=views;},[views]);
   const pose=useRef<View|null>(null);
+  const landing=stairs?.local;
+  const [atStairs,setAtStairs]=useState(false);
+  const [stairSetup,setStairSetup]=useState(false);
+  const [stairMessage,setStairMessage]=useState("");
+  const [savingStair,setSavingStair]=useState(false);
+  const landingAvailable=landing?.revision===plan.revision&&space.clearFloor(landing);
+  useEffect(()=>{
+    if(!stairs||!view){setAtStairs(false);return;}
+    const tick=()=>{
+      const current=pose.current;
+      setAtStairs(!!current && (landingAvailable
+        ? Math.hypot(current.position.x-landing!.x,current.position.y-landing!.y)*scale<=1.8
+        : nearStairs(current.position,(plan.stairs??[]).flatMap(stair=>stair.treads),stairs.regions,
+          plan.imageTransform.width,plan.imageTransform.height,scale)));
+    };
+    tick();
+    const timer=setInterval(tick,200);
+    return ()=>clearInterval(timer);
+  },[view,plan,stairs,landing,landingAvailable,scale]);
+  async function confirmLanding(){
+    const current=pose.current;
+    if(!stairs||!current||!space.clearFloor(current.position)){
+      setStairMessage("Stand on a clear spot beside the stairs.");
+      return;
+    }
+    setSavingStair(true);setStairMessage("");
+    try{
+      await stairs.save({...current.position,yaw:current.yaw,revision:plan.revision});
+      setStairSetup(false);
+      setStairMessage(stairs.destination?"Stairs connected":"Confirm the landing on the other floor.");
+    }catch(error){setStairMessage(String(error));}
+    finally{setSavingStair(false);}
+  }
   const [viewport,setViewport]=useState<WalkFrame|null>(null);
   useEffect(()=>{
     const read=()=>{
@@ -427,6 +462,12 @@ export default function Showcase({plan,scene,title,edit,levelAction,house,houseS
     };
     read();window.addEventListener("hashchange",read);return ()=>window.removeEventListener("hashchange",read);
   },[studioPoseKey]);
+  useEffect(()=>{
+    if(location.hash!=="#stairs"||!landingAvailable||!landing)return;
+    setFreeView({id:"stair-landing",name:"Stair landing",...wideView,
+      position:{x:landing.x,y:landing.y},yaw:landing.yaw});
+    history.replaceState(history.state,"",location.pathname+location.search);
+  },[landing,landingAvailable]);
   const rememberStudioPose = useCallback(() => {
     if (!studioPoseKey) return;
     const previous = view ? (pose.current?.id===view.id ? pose.current : view) : lastWalkPose.current;
@@ -629,6 +670,18 @@ export default function Showcase({plan,scene,title,edit,levelAction,house,houseS
         </Link>}
       </div>
     </header> : view&&<button type="button" className="show-overview" data-tour-tools onClick={()=>select(-1)}><Box size={18}/>Overview</button>}
+    {desktop&&view&&stairs&&<div className="studio-stair-controls" data-tour-tools>
+      {atStairs&&landingAvailable&&stairs.destination&&<Link className="desktop-action primary"
+        href={`/studio/${encodeURIComponent(stairs.id)}#stairs`} onClick={rememberStudioPose}>
+        {stairs.level===1?"Go upstairs":"Go downstairs"}
+      </Link>}
+      {stairSetup ? <><button className="desktop-action primary" disabled={savingStair} onClick={()=>void confirmLanding()}>Use this landing</button>
+        <button className="desktop-action" onClick={()=>setStairSetup(false)}>Cancel</button></> :
+        <button className="desktop-action" onClick={()=>{setStairSetup(true);setStairMessage("Stand beside the stairs and face into the floor.");}}>
+          {landingAvailable?"Change stair landing":"Set stair landing"}
+        </button>}
+      {stairMessage&&<span role="status">{stairMessage}</span>}
+    </div>}
     {desktop&&!view&&house&&<div className="studio-house-controls" data-tour-tools>
       <div role="group" aria-label="Overview scope">
         <button aria-pressed={wholeHouse} onClick={()=>{

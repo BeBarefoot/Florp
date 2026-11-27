@@ -344,3 +344,7 @@
   .studio-header:has(.studio-floor-controls a) + .studio-house-controls{top:102px;left:10px;max-width:calc(100% - 20px)}
   .desktop-object-tools header strong{max-width:10ch}
 }
+.studio-stair-controls{position:absolute;z-index:4;top:76px;right:20px;display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap;max-width:min(500px,calc(100% - 40px))}
+.studio-stair-controls span{padding:6px 9px;border-radius:8px;background:var(--desk-surface);font-size:12px}
+.desktop-studio .studio-stair-controls .desktop-action{min-height:34px;padding:5px 10px}
+@media(max-width:700px){.studio-stair-controls{top:102px}}

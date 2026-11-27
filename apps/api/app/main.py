@@ -29,8 +29,8 @@ from .mask_topology import region_wall_lines
 from .wall_run_normalization import consolidate_wall_runs
 from .evidence_fusion import fuse_evidence
 
-from .floor_pair import Alignment, Pair, suggest
-from .models import FloorAlignment, FloorPair, SceneRevision, SceneRenderJob, PlanReview
+from .floor_pair import Alignment, Pair, StairLanding, suggest
+from .models import FloorAlignment, FloorPair, StairLandings, SceneRevision, SceneRenderJob, PlanReview
 
 Path(settings.storage_path).mkdir(parents=True,exist_ok=True)
 if settings.database_url.startswith('sqlite:///'):
@@ -106,6 +106,8 @@ def delete_project(pid:str):
             for table in (PlanReview,SceneRenderJob,SceneRevision,PlanRevision,WorkspaceRevision,Render,ModelWallCorrection,WallAnnotation,FusionCandidateReview,ExtractionEvaluation,PlanGraphRevision,Layout):
                 for row in s.exec(select(table).where(table.blueprint_id==bid)).all():
                     s.delete(row)
+        landings=s.get(StairLandings,pid)
+        if landings:s.delete(landings)
         alignment=s.get(FloorAlignment,pid)
         if alignment:s.delete(alignment)
         pair=s.get(FloorPair,pid)
@@ -152,6 +154,10 @@ def save_floor_pair(pid: str, body: Pair):
         row = s.get(FloorPair,pid) or FloorPair(project_id=pid)
         alignment = s.get(FloorAlignment, pid)
         same_order = row.first == body.first and row.second == body.second
+        if not same_order:
+            landings = s.get(StairLandings, pid)
+            if landings:
+                s.delete(landings)
         if body.alignment is not None:
             transform = body.alignment.model_dump(mode="json")
             if alignment is None:
@@ -169,6 +175,48 @@ def save_floor_pair(pid: str, body: Pair):
         s.add(row)
         s.commit()
         return body
+
+
+def current_stair_landings(session, pair, record):
+    from .plan_api import latest
+
+    if not record:
+        return {}
+    active = {}
+    for bid in (pair.first, pair.second):
+        endpoint = record.endpoints.get(bid)
+        plan = latest(session, bid)
+        if endpoint and plan and endpoint["revision"] == plan.revision:
+            active[bid] = endpoint
+    return active
+
+
+@app.get("/projects/{pid}/stair-landings")
+def stair_landings(pid: str):
+    with Session(engine) as session:
+        pair = session.get(FloorPair, pid)
+        return current_stair_landings(session, pair, session.get(StairLandings, pid)) if pair else {}
+
+
+@app.put("/projects/{pid}/stair-landings/{bid}")
+def save_stair_landing(pid: str, bid: str, landing: StairLanding):
+    from .plan_api import latest
+
+    with Session(engine) as session:
+        pair = session.get(FloorPair, pid)
+        if not pair or bid not in (pair.first, pair.second):
+            raise HTTPException(404, "Confirm the two floors before linking stairs.")
+        bp = session.get(Blueprint, bid)
+        plan = latest(session, bid)
+        if not plan or plan.revision != landing.revision:
+            raise HTTPException(409, "The floor changed. Reopen Walk before confirming its landing.")
+        if not bp or landing.x > bp.width or landing.y > bp.height:
+            raise HTTPException(422, "Choose a landing inside the drawing.")
+        record = session.get(StairLandings, pid) or StairLandings(project_id=pid)
+        record.endpoints = {**current_stair_landings(session, pair, record), bid: landing.model_dump()}
+        session.add(record)
+        session.commit()
+        return record.endpoints
 
 
 @app.get('/projects/{pid}/blueprints',response_model=list[Blueprint])
