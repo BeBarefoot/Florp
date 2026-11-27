@@ -20,6 +20,7 @@ import { WalkCamera } from "./WalkCamera";
 import { unmatchedFloorFinishes } from "../../lib/plan/floorMaterials";
 import { setWallSurface } from "../../lib/plan/wallMaterials";
 import {sceneReview,type ReviewIssue} from "../../lib/plan/sceneReview";
+import ClosetDesigner from "./ClosetDesigner";
 import RenderComparison from "./RenderComparison";
 
 type Mode = "camera" | "aim" | "sight" | "object" | "move" | "move-view" | "zone" | null;
@@ -33,8 +34,8 @@ const points = (poly:Pt[]) => poly.map(p=>`${p.x},${p.y}`).join(" ");
 const sleepPollMs=3000;
 const fixtureName = (o: Item) => o.kind==="wardrobe"?"Closet":objectName(o.kind);
 
-export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, savePlan}:{
-  model:PlanModel;phone?:boolean;dirty?:boolean;onPlanEdit?:(m:PlanModel)=>void;savePlan?:()=>Promise<PlanModel|null>;
+export default function Plan3D({model:m, phone=false, dirty=false, designerOpen=false, onPlanEdit, savePlan}:{
+  model:PlanModel;designerOpen?:boolean; phone?:boolean;dirty?:boolean;onPlanEdit?:(m:PlanModel)=>void;savePlan?:()=>Promise<PlanModel|null>;
 }) {
   const scale=metersPerPixel(m)!;
   const check=scaleCheck(m);
@@ -456,6 +457,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
         <button disabled={!edited&&!dirty} onClick={()=>void save()}>Save scene</button>
         <button disabled={!undo.length} onClick={()=>{setScene(undo[undo.length-1]);setUndo(undo.slice(0,-1));}}>Undo scene edit</button>
       </div>
+      {!phone&&<ClosetDesigner open={designerOpen} plan={m} scene={scene} disabled={dirty||needsReview}/>}
       <label>Floor finish <select value={scene.floorMaterial?"custom":scene.floorFinish??"default"}
         onChange={e=>change({...scene,floorFinish:e.target.value as FloorFinish,floorMaterial:null})}>
         {scene.floorMaterial&&<option value="custom" disabled>Custom walkthrough finish</option>}

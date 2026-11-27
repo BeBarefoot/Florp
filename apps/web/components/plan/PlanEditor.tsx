@@ -25,6 +25,7 @@ const Plan3D = dynamic(() => import("./Plan3D"), { ssr: false });
 
 export default function PlanEditor({ id, phone=false }: { id: string; phone?: boolean }) {
   const router = useRouter();
+  const [designerOpen,setDesignerOpen]=useState(false);
   const [guided, setGuided] = useState(false);
   const reviewButton = useRef<HTMLButtonElement>(null);
   const closeGuided = useCallback(() => {
@@ -82,7 +83,8 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
       return;
     }
     const setup = params.get("setup");
-    if (setup !== "floor" && setup !== "finishes" && setup !== "furniture") return;
+    if (setup !== "floor" && setup !== "finishes" && setup !== "furniture" && setup !== "designer") return;
+    if(setup==="designer")setDesignerOpen(true);
     if (calibrated) setDisplay("3d");
     else {
       setView("original");
@@ -642,6 +644,11 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
         onWalkthrough={() => void navigateAfterSave("/studio/" + encodeURIComponent(id))}
         onPhoneWalkthrough={() => void openTour()}
         onOverview={() => void navigateAfterSave("/studio/" + encodeURIComponent(id) + "#overview")}
+        onDesigner={()=>{
+          setDesignerOpen(true);
+          if(mpp)setDisplay("3d");
+          else measureScale();
+        }}
         reviewAction={<button ref={reviewButton} aria-pressed={guided} onClick={() => {
           setDisplay("2d");
           setGuided(open => !open);
@@ -716,7 +723,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
             setView("overlay");
             setTool("door");
           }}/>}
-        {display !== "2d" && mpp && <Plan3D key={m.id} model={m} dirty={dirty} onPlanEdit={edit}
+        {display !== "2d" && mpp && <Plan3D key={m.id} designerOpen={designerOpen} model={m} dirty={dirty} onPlanEdit={edit}
           savePlan={async () => live.current && await persist(live.current) ? live.current : null} />}
       </main>
       <Inspector

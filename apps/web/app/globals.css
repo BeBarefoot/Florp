@@ -351,3 +351,7 @@
 .scene-change-review{padding:12px;border:1px solid var(--desk-line,#ded9cb);border-radius:12px;background:var(--desk-paper,#f5f2e9)}
 .scene-change-review h3{margin:0 0 6px}
 .scene-change-review .scene-actions span{flex:1 1 200px}
+.closet-designer summary{font-weight:650;cursor:pointer}
+.closet-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(235px,100%),1fr));gap:12px}
+.closet-options article{padding:10px;border:1px solid var(--desk-line);border-radius:10px;background:var(--desk-surface)}
+.closet-options svg{display:block;width:100%;height:155px;background:var(--desk-paper)}

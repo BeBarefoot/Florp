@@ -24,6 +24,7 @@ export default function TopBar(p: {
   onWalkthrough: () => void;
   onPhoneWalkthrough: () => void;
   onOverview: () => void;
+  onDesigner: () => void;
   reviewAction: React.ReactNode;
   walkthroughBusy: boolean;
   exportBlocker: string | null;
@@ -55,6 +56,7 @@ export default function TopBar(p: {
           <button role="radio" aria-checked={p.display === "3d"} disabled={!p.scaled} title={p.scaled ? "" : "Set one measurement first"} onClick={() => p.setDisplay("3d")}><Box size={14} /> 3D</button>
         </div>
         {p.reviewAction}
+        <button onClick={p.onDesigner}>Designer</button>
         {p.extractionAction}
         <span className="fe-spacer"/>
         <button aria-label="Phone walkthrough" title="Phone walkthrough" disabled={p.walkthroughBusy} onClick={p.onPhoneWalkthrough}><Smartphone size={17}/></button>

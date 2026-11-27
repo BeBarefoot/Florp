@@ -9,6 +9,7 @@ import {connectedWallFace} from '../lib/plan/wallFaces';
 import {samplePlan} from '../lib/plan/showcaseSample';
 import {housePlacement} from '../lib/plan/houseOverview';
 import {sceneReview} from "../lib/plan/sceneReview";
+import {closetOptions} from "../lib/plan/closetDesigner";
 import {dimensions,objectName} from '../lib/plan/furnitureCatalog';
 import {fitsFloor} from '../lib/plan/furnitureFit';
 import {furnitureParts,makeFurnitureResources} from '../lib/plan/furnitureModels';
@@ -121,4 +122,19 @@ test("scene review finds a blocked view, an orphaned finish and a newly clipped 
   expect.objectContaining({kind:"view",id:"view"}),
   expect.objectContaining({kind:"room",id:"bedroom",missing:true}),
  ]));
+});
+
+test("closet designer keeps the baseline and offers two measured walk-through layouts", () => {
+ const plan={...samplePlan,openings:[]};
+ const scene:import("../lib/plan/scene").Scene={views:[],objects:[],style:""};
+ const options=closetOptions(plan,scene,"living",false);
+ expect(options).toHaveLength(2);
+ for(const option of options){
+  expect(option.plan.walls).toHaveLength(plan.walls.length+1);
+  expect(option.plan.openings).toEqual(plan.openings);
+  expect(option.passage).toBeGreaterThanOrEqual(.92);
+  expect(option.storage.depth).toBe(.6);
+ }
+ expect(scene.objects).toHaveLength(0);
+ expect(plan.walls).toHaveLength(samplePlan.walls.length);
 });
