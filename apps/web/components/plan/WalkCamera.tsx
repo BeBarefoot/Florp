@@ -14,7 +14,7 @@ const movementKeys = new Map([
 
 export function WalkCamera({view, scale, frame, canMove, pose, keyboard, tapToWalk=false}: {
   keyboard?: boolean; tapToWalk?: boolean;
-  pose: {current: View|null}; view: View; scale: number; frame: Frame; canMove: (p: Pt) => boolean;
+  pose: {current: View|null}; view: View; scale: number; frame: Frame; canMove: (to: Pt,from:Pt) => boolean;
 }) {
   const camera = useMemo(() => makeCamera(view, scale, {width:1,height:1,configured:false,model:"",provider:""}), [view, scale]);
   const {gl, get, set, invalidate} = useThree();
@@ -59,7 +59,8 @@ export function WalkCamera({view, scale, frame, canMove, pose, keyboard, tapToWa
       const steps = Math.ceil(Math.hypot(dx,dz) / .05);
       if (!steps) return false;
       dx/=steps;dz/=steps;
-      const clear=(nextX:number,nextZ:number)=>walkable.current({x:nextX/scale,y:nextZ/scale});
+      const clear=(nextX:number,nextZ:number)=>walkable.current({x:nextX/scale,y:nextZ/scale},
+        {x:camera.position.x/scale,y:camera.position.z/scale});
       for(let i=0;i<steps;i++){
         const x=camera.position.x+dx,z=camera.position.z+dz;
         if(clear(x,z)){camera.position.x=x;camera.position.z=z;}
@@ -171,12 +172,13 @@ export function WalkCamera({view, scale, frame, canMove, pose, keyboard, tapToWa
       tap=null;
       if(event.defaultPrevented||event.type!=="pointerup"||Math.hypot(event.clientX-origin.x,event.clientY-origin.y)>=6)return;
       const bounds=canvas.getBoundingClientRect();
+      camera.updateMatrixWorld();
       ray.setFromCamera(new Vector2(
         2*(event.clientX-bounds.left)/bounds.width-1,
         1-2*(event.clientY-bounds.top)/bounds.height,
       ),camera);
       const surface=ray.intersectObjects(get().scene.children).find(hit=>!hit.object.userData.glass);
-      if(surface?.object.userData.walkFloor){
+      if(surface&&(surface.object.userData.walkFloor||surface.object.userData.furnishGround)){
         destination={x:surface.point.x,y:surface.point.z};
         wake();
       }

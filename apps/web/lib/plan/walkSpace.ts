@@ -19,7 +19,8 @@ export function walkSpace(m: PlanModel, scale: number, scene: Scene, eye = 1.6,
       const v=-x*Math.sin(a)+z*Math.cos(a);
       for(const c of wall.chunks) {
         if(c.low>(walking?eye+.12:eye)||c.high<(walking ? .02 : eye))continue;
-        nearest=Math.min(nearest,Math.hypot(Math.max(0,c.start-u,u-c.end),Math.max(0,Math.abs(v)-wall.thicknessM/2)));
+        const along=Math.max(c.start-u,u-c.end), across=Math.abs(v)-wall.thicknessM/2;
+        nearest=Math.min(nearest,Math.hypot(Math.max(0,along),Math.max(0,across))+Math.min(0,Math.max(along,across)));
       }
     }
     for(const o of m.openings) {
@@ -29,7 +30,7 @@ export function walkSpace(m: PlanModel, scale: number, scene: Scene, eye = 1.6,
       const [a,b]=ends, dx=b.x-a.x, dy=b.y-a.y, len2=dx*dx+dy*dy;
       if(len2<1e-8)continue;
       const t=Math.min(1,Math.max(0,((p.x-a.x)*dx+(p.y-a.y)*dy)/len2));
-      nearest=Math.min(nearest,Math.max(0,Math.hypot(p.x-a.x-t*dx,p.y-a.y-t*dy)*scale-.02));
+      nearest=Math.min(nearest,Math.hypot(p.x-a.x-t*dx,p.y-a.y-t*dy)*scale-.02);
     }
     return nearest;
   }
@@ -49,12 +50,24 @@ export function walkSpace(m: PlanModel, scale: number, scene: Scene, eye = 1.6,
       return along*scale>=.3 && (length-along)*scale>=.3 && across<=wall.thicknessPx/2+.5;
     });
   }
-  function validCamera(p:Pt, walking=false){
-    return (rooms.some(r=>contains(p,r.polygon)) || inDoorway(p)) && clearance(p,walking)>=.3 &&
+  const obstacles=objects.filter(obstructsMovement).map(item=>groundFootprint(item,scale));
+  function clearFloor(p:Pt,walking=false){
+    return clearance(p,walking)>=.3 &&
       !drops.some(polygon=>contains(p,polygon)) &&
-      !objects.some(o=>obstructsMovement(o)&&contains(p,groundFootprint(o,scale)));
+      !obstacles.some(polygon=>contains(p,polygon));
   }
-  return { clearance, validCamera };
+  function validCamera(p:Pt, walking=false){
+    return (rooms.some(r=>contains(p,r.polygon)) || inDoorway(p))&&clearFloor(p,walking);
+  }
+  function canWalk(from:Pt,to:Pt){
+    // Room polygons describe finishes. Walls and obstacles govern movement,
+    // even when extraction left a gap or the camera starts outside a room.
+    const minimum=Math.min(.3,clearance(from,true));
+    return clearance(to,true)>=minimum-1e-8 &&
+      !drops.some(polygon=>contains(to,polygon)&&!contains(from,polygon)) &&
+      !obstacles.some(polygon=>contains(to,polygon)&&!contains(from,polygon));
+  }
+  return { clearance, clearFloor, validCamera, canWalk };
 }
 
 export function findRoomView(polygon: Pt[], scale: number, valid: (p: Pt, walking: boolean) => boolean, near?: Pt) {

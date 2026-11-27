@@ -9,6 +9,7 @@ type Grab = {height:number;offset:Pt};
 type Props = {
   scale:number;
   walkthrough:boolean;
+  direct?:boolean;
   disabled:boolean;
   pending:Item|null;
   objects:Item[];
@@ -43,13 +44,13 @@ export function FurniturePlacement(props:Props){
     }
     function ground(event:{clientX:number;clientY:number},movingId:string,grab?:Grab){
       const {scale,walkthrough}=latest.current;
+      const bounds=canvas.getBoundingClientRect();
+      if(event.clientX<bounds.left||event.clientX>=bounds.right||event.clientY<bounds.top||event.clientY>=bounds.bottom)return null;
       const intersections=hits(event);
       if(grab){
         heightPlane.constant=-grab.height;
         const point=ray.ray.intersectPlane(heightPlane,planePoint);
-        const usedSurface=intersections.find(({object})=>!object.userData.glass&&object.userData.furnitureId!==movingId);
-        if(!point||!intersections.length||
-          (walkthrough&&usedSurface&&usedSurface.distance+0.02<point.distanceTo(ray.ray.origin)))return null;
+        if(!point)return null;
         return {x:point.x/scale+grab.offset.x,y:point.z/scale+grab.offset.y};
       }
       const hit=intersections.find(({object})=>{
@@ -61,27 +62,40 @@ export function FurniturePlacement(props:Props){
       return {x:hit.point.x/scale,y:hit.point.z/scale};
     }
     function down(event:PointerEvent){
-      const {disabled,objects,pending,scale}=latest.current;
+      const {disabled,objects,pending,scale,direct}=latest.current;
       if(disabled||event.button!==0)return;
-      if(gesture){event.stopImmediatePropagation();return;}
-      const hit=pending?undefined:hits(event).find(({object})=>!object.userData.glass||object.userData.furnitureId);
-      const item=pending??objects.find(object=>object.id===hit?.object.userData.furnitureId);
+      if(gesture){
+        if(direct&&!gesture.moving)gesture=null;
+        else event.stopImmediatePropagation();
+        return;
+      }
+      if(direct&&!event.isPrimary)return;
+      const hit=pending?undefined:hits(event).find(({object})=>object.visible&&
+        (!object.userData.glass||object.userData.furnitureId||object.userData.pickFixtureId));
+      const item=pending??objects.find(object=>
+        object.id===(hit?.object.userData.furnitureId??hit?.object.userData.pickFixtureId));
       const start={x:event.clientX,y:event.clientY};
       if(!item){
-        emptyTap=emptyTap?null:{id:event.pointerId,start};
+        if(!direct)emptyTap=emptyTap?null:{id:event.pointerId,start};
         return;
       }
       emptyTap=null;
       const grab=hit&&{height:hit.point.y,offset:{x:item.position.x-hit.point.x/scale,y:item.position.y-hit.point.z/scale}};
       gesture={id:event.pointerId,start,item,grab,moving:false};
-      event.stopImmediatePropagation();
-      canvas.setPointerCapture(event.pointerId);
+      if(!direct){
+        event.stopImmediatePropagation();
+        canvas.setPointerCapture(event.pointerId);
+      }
     }
     function move(event:PointerEvent){
       if(emptyTap?.id===event.pointerId&&Math.hypot(event.clientX-emptyTap.start.x,event.clientY-emptyTap.start.y)>=6)emptyTap=null;
       if(gesture?.id!==event.pointerId)return;
+      if(!gesture.moving&&Math.hypot(event.clientX-gesture.start.x,event.clientY-gesture.start.y)<6){
+        if(!latest.current.direct)event.stopImmediatePropagation();
+        return;
+      }
+      if(!gesture.moving&&latest.current.direct)canvas.setPointerCapture(event.pointerId);
       event.stopImmediatePropagation();
-      if(!gesture.moving&&Math.hypot(event.clientX-gesture.start.x,event.clientY-gesture.start.y)<6)return;
       gesture.moving=true;
       const {item,grab}=gesture;
       const point=ground(event,item.id,grab);
@@ -96,7 +110,10 @@ export function FurniturePlacement(props:Props){
       if(gesture?.id!==event.pointerId)return;
       const {item,grab,moving}=gesture;
       gesture=null;
-      event.stopImmediatePropagation();
+      if(latest.current.direct){
+        if(!moving)return;
+        event.preventDefault();
+      }else event.stopImmediatePropagation();
       const {onPreview,onPlace,onSelect}=latest.current;
       onPreview(null);
       if(event.type!=="pointerup")return;

@@ -112,7 +112,7 @@ function ShowcaseWalk({plan,scene,view,sample,pose,onFrame,keyboard}:{
   const space=useMemo(()=>walkSpace(plan,scale,scene,view.eyeHeight),[plan,scene,scale,view.eyeHeight]);
   const frame=useMemo<Frame>(()=>({width:size.width,height:Math.max(1,size.height),configured:false,model:"",provider:""}),[size.width,size.height]);
   return <WalkCamera view={view} scale={scale} frame={frame} pose={pose} keyboard={keyboard} tapToWalk={keyboard}
-    canMove={p=>space.validCamera(p,true)&&(!sample||clearSampleFloor(p,scale))}/>;
+    canMove={(to,from)=>space.canWalk(from,to)&&(!sample||clearSampleFloor(to,scale))}/>;
 
 }
 
@@ -189,6 +189,14 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     objects,scale,[...(scene.dismissedFixtureIds??[]),...hiddenDetections]
   ),[detected,plan.revision,localDetections,objects,scale,scene.dismissedFixtureIds,hiddenDetections]);
   const displayedObjects=showDetections?[...objects,...suggestions]:objects;
+  function inDrawing(point:Pt){
+    const {width,height}=plan.imageTransform;
+    return point.x>=0&&point.x<=width&&point.y>=0&&point.y<=height;
+  }
+  function canPlaceFurniture(item:Item){
+    return inDrawing(item.position)&&(displayedObjects.some(object=>object.id===item.id)||
+      (!rooms.length&&!yardKinds.has(item.kind))||fitsFloor(plan,item,scale));
+  }
   const hovered=target?.kind==="object"?displayedObjects.find(item=>item.id===target.id):undefined;
   const hoveredOpening=target?.kind==="opening"?plan.openings.find(item=>item.id===target.id):undefined;
   const alternatives=hovered ? [...new Set(furnitureRooms.flatMap(room=>room.groups
@@ -220,6 +228,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   const fit=useMemo(()=>furnishing&&selectedFurniture?furnitureFit(plan,selectedFurniture,objects,scale):null,
     [furnishing,selectedFurniture,objects,plan,scale]);
   const fitWarnings=fit?[
+    ...(selectedFurniture&&!fitsFloor(plan,selectedFurniture,scale)?["Footprint extends beyond the detected floor."]:[]),
     ...(fit.overlaps.length?["Overlaps another object."]:[]),
     ...(fit.swing.length?["Blocks a door swing."]:[]),
     ...(fit.clearance.length?["Obstructs the 60 cm doorway approach."]:[]),
@@ -259,6 +268,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   }
   async function applyQuickEdit(change:WalkthroughEdit){
     if(savingRef.current)return;
+    if(view&&pose.current?.id===view.id)setFreeView(pose.current);
     savingRef.current=true;setSaving(true);setQuickNotice("");
     try{
       if(change.objects){
@@ -273,7 +283,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   function applyQuickFurniture(item:Item){
     const exists=objects.some(object=>object.id===item.id);
     if(!exists&&objects.length>=100){setQuickNotice("This tour already has 100 objects.");return;}
-    if(!fitsFloor(plan,item,scale)){setQuickNotice("The object needs to fit on the floor.");return;}
+    if(!inDrawing(item.position)){setQuickNotice("Place the object within the drawing.");return;}
     void applyQuickEdit({objects:exists?objects.map(object=>object.id===item.id?item:object):[...objects,item]});
   }
   function removeQuickFurniture(item:Item){
@@ -285,7 +295,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     setDragPreview(null);catalogDrag.current=null;
   }
   function updateFurniture(item:Item){
-    if(!fitsFloor(plan,item,scale)){
+    if(!canPlaceFurniture(item)){
       setFurnitureNotice(item.kind==="car"?"Choose a spot in a garage or yard where the car fits.":yardKinds.has(item.kind)
         ?"Choose a position where the whole object fits in a yard or balcony."
         :"Choose a position where the whole object fits inside one room.");
@@ -329,9 +339,12 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   const views=useMemo(()=>{
     if(scene.views.length||localViews.length)return [...scene.views,...localViews].map(view=>
       Object.hasOwn(localPinPositions,view.id)?{...view,position:localPinPositions[view.id]}:view);
-    const start=findWalkStart(plan,scale,canFrame);
+    const {width,height}=plan.imageTransform;
+    const floor=findWalkStart(plan,scale,canFrame);
+    const fallback=floor?undefined:findRoomFloorPoint([{x:0,y:0},{x:width,y:0},{x:width,y:height},{x:0,y:height}],space.clearFloor);
+    const start=floor??(fallback&&{position:fallback,yaw:0});
     return start?[{id:"walk-start",name:"Walkthrough",...wideView,...start}]:[];
-  },[plan,scene.views,localViews,localPinPositions,scale,canFrame]);
+  },[plan,scene.views,localViews,localPinPositions,scale,canFrame,space]);
   const [playing,setPlaying]=useState(false),[notice,setNotice]=useState("");
   const [rendered,setRendered]=useState(false),[toolsOpen,setToolsOpen]=useState(false);
   const stop=selectedId==="overview"?-1:selectedId===null?(views.length?0:-1):views.findIndex(v=>v.id===selectedId);
@@ -502,19 +515,25 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     <h1 className="show-current-view">{view?.name??"Dollhouse view"}</h1>
     <div ref={stage} className="show-stage"><Canvas shadows frameloop="demand" dpr={[1,1.6]} camera={{near:.005,far:2000}} fallback={<p>Enable WebGL to view this tour.</p>}>
       <color attach="background" args={[view?"#d4e3e9":"#d8d9cb"]}/>
-      <SceneMesh m={plan} objects={editableObjects} detectedObjects={showDetections?suggestions:undefined} closedDoorIds={tourScene.closedDoorIds} floorStyle={styledScene}
-        wallFinishes={tourScene.wallFinishes} windowFinishes={tourScene.windowFinishes} designPreset={designPreset} presentation cutaway={!view}/>
+      <SceneMesh m={plan} objects={editableObjects}
+        detectedObjects={showDetections?suggestions.filter(item=>item.id!==dragPreview?.id):undefined}
+        closedDoorIds={tourScene.closedDoorIds} floorStyle={styledScene}
+        wallFinishes={tourScene.wallFinishes} windowFinishes={tourScene.windowFinishes} designPreset={designPreset}
+        presentation cutaway={!view} walkGround={!!view&&!sample}/>
       {canSelect&&<WalkthroughObjects onHover={next=>setPointed(current=>targetKey(current)===targetKey(next)?current:next)}
         onTap={chooseTarget}/>}
       {editor&&target&&<WalkTargetAnchor key={targetKey(target)} target={target} element={menu}/>}
-      {selectionOutline()}
+      {!dragPreview&&selectionOutline()}
       {sample&&<SampleFurniture interior={!!view}/>}
       {view?<ShowcaseWalk key={view.id} plan={plan} scene={walkScene} view={view} sample={sample} pose={pose} onFrame={setViewport} keyboard={!rendered}/>:
         <><OverviewCamera plan={plan}/>{!furnishing&&<FloorPicker scale={scale} roomPicking={adding||pickingRoom} onPick={land}/>}</>}
-      {furnishing&&<FurniturePlacement scale={scale} walkthrough={!!view} disabled={saving} pending={placement}
-        objects={objects} catalogDrag={catalogDrag}
-        onPreview={item=>setDragPreview(item&&fitsFloor(plan,item,scale)?item:null)}
-        onPlace={placeFurniture} onSelect={selectFurniture}/>}
+      {(furnishing||canSelect)&&<FurniturePlacement scale={scale} walkthrough={!!view} disabled={saving} pending={placement}
+        direct={!furnishing} objects={displayedObjects} catalogDrag={catalogDrag}
+        onPreview={item=>setDragPreview(item&&canPlaceFurniture(item)?item:null)}
+        onPlace={(item,point)=>{
+          if(furnishing)placeFurniture(item,point);
+          else if(point)applyQuickFurniture({...item,position:point});
+        }} onSelect={selectFurniture}/>}
       {!dragPreview&&fit&&selectedFurniture&&<>
         <FitOverlay points={footprint({...selectedFurniture,width:selectedFurniture.width+.08,depth:selectedFurniture.depth+.08},scale)}
           scale={scale} color={fitWarnings.length?"#af5035":"#477b63"}/>
@@ -610,7 +629,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
           {!!suggestions.length&&<button type="button" aria-pressed={showDetections} onClick={()=>setShowDetections(shown=>!shown)}>
             <Armchair/>Detected preview
           </button>}
-          {(hasFloor||!!plan.gardens?.length)&&!sample&&<button disabled={saving} onClick={openFurnish}><Armchair/>Furnish</button>}
+          {!sample&&<button disabled={saving} onClick={openFurnish}><Armchair/>Furnish</button>}
           {views.map((v,i)=><button key={v.id} aria-pressed={view===v} onClick={()=>select(i)}><MapPin/>{v.name}</button>)}
           {view&&renders[view.id]&&<button aria-pressed={rendered} onClick={()=>{setPlaying(false);setRendered(!rendered);}}>
             {rendered?<Box/>:<ImageIcon/>}{rendered?"Return to 3D":"Show saved design"}
@@ -647,7 +666,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
         </div>
       </div>
       {(pinNotice||(toolsOpen||adding||pickingRoom)&&(!hasFloor||notice||needsFinishReview))&&
-        <p role="status">{pinNotice||notice||(!hasFloor?"No walkable floor was found.":"Some saved floor finishes need review. Open Finishes.")}</p>}
+        <p role="status">{pinNotice||notice||(!hasFloor?"Using a preview floor.":"Some saved floor finishes need review. Open Finishes.")}</p>}
       {toolsOpen&&check?.mismatch&&<p role="alert" className="show-scale-warning">Scale measurements differ by {(check.difference*100).toFixed(1)}%. Check scale in Edit floor.</p>}
     </section>}
   </main>;

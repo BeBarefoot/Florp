@@ -1,4 +1,5 @@
 import {expect,test} from "@playwright/test";
+import {readFile} from "node:fs/promises";
 import {PerspectiveCamera,Vector3} from "three";
 import {dimensions} from "../lib/plan/furnitureCatalog";
 import {samplePlan} from "../lib/plan/showcaseSample";
@@ -169,6 +170,55 @@ test("hover outlines furniture and a click opens its walkthrough menu", async ({
   await expect(page.getByRole("heading",{name:"Dollhouse view"})).toBeVisible();
   await pin.click();
   await expect(page.getByRole("heading",{name:"Living room",exact:true})).toBeVisible();
+});
+
+test("incomplete room geometry allows walking and editing detected furniture",async({page})=>{
+  test.setTimeout(60_000);
+  await page.setViewportSize({width:900,height:760});
+  const id="incomplete-room";
+  const plan={...samplePlan,id,rooms:samplePlan.rooms.slice(1),
+    roomSymbols:[{kind:"sofa",position:{x:300,y:340},widthPx:220,depthPx:92,rotation:0}]};
+  const view={id:"camera",name:"Living room",position:{x:300,y:570},yaw:-90,pitch:-24,horizontalFov:85,eyeHeight:1.6};
+  const detected={id:"detected-sofa",kind:"sofa",position:{x:300,y:340},width:2.2,depth:.92,height:.9,rotation:0};
+  let current:import("../lib/plan/scene").Saved={revision:1,planRevision:1,config:{views:[view],objects:[],style:""}};
+  await page.route(`**/blueprints/${id}/plan`,route=>route.fulfill({json:{model:plan,revision:1}}));
+  await page.route(`**/blueprints/${id}/info`,route=>route.fulfill({json:{id,filename:"Incomplete.png",project_id:"s"}}));
+  await page.route(`**/blueprints/${id}/scene/renders`,route=>route.fulfill({json:[]}));
+  await page.route(`**/blueprints/${id}/scene/fixture-suggestions?*`,route=>
+    route.fulfill({json:{planRevision:1,suggestions:[detected]}}));
+  await page.route(`**/blueprints/${id}/scene`,route=>{
+    if(route.request().method()==="PUT")current={...current,revision:current.revision+1,config:route.request().postDataJSON().config};
+    return route.fulfill({json:current});
+  });
+  await page.goto(`/phone/showcase/${id}#view=${view.id}`);
+  const canvas=page.locator("canvas");
+  await canvas.screenshot();
+  await canvas.click({position:{x:450,y:380}});
+  const menu=page.getByRole("group",{name:"Sofa",exact:true});
+  await menu.getByLabel("Replace object").selectOption("loveseat");
+  await menu.getByLabel("Width (cm)").fill("160");
+  await menu.getByRole("button",{name:"Rotate",exact:true}).click();
+  await menu.getByRole("button",{name:"Place detected object"}).click();
+  await expect.poll(()=>current.config.objects[0]).toMatchObject({kind:"loveseat",width:1.6,rotation:90});
+  await expect(menu).toHaveCount(0);
+  await page.mouse.move(450,380);
+  await page.mouse.down();
+  await page.mouse.move(525,380,{steps:8});
+  await page.mouse.up();
+  await expect.poll(()=>current.config.objects[0].position.x).toBeGreaterThan(320);
+  await page.getByRole("button",{name:"Open tour tools"}).click();
+  async function cameraPosition(){
+    const event=page.waitForEvent("download");
+    await page.getByRole("button",{name:"Download view prompt"}).click();
+    const file=await readFile((await(await event).path())!,"utf8");
+    return JSON.parse(file.trim().split("\n").at(-1)!).camera.eyeXYZ as number[];
+  }
+  const before=await cameraPosition();
+  await page.mouse.move(140,480);
+  await page.mouse.down();
+  await page.mouse.move(140,400,{steps:5});
+  await page.mouse.up();
+  expect((await cameraPosition())[2]).toBeLessThan(before[2]-.15);
 });
 
 test.describe("touch walkthrough",()=>{

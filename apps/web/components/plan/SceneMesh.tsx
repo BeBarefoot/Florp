@@ -159,7 +159,7 @@ function Windows({plan,environment,shadows,designPreset,finishes}:{plan:PlanMode
   return <primitive object={windows.group}/>;
 }
 
-export function SceneMesh({m, objects, detectedObjects = [], closedDoorIds, floorStyle={}, wallFinishes, windowFinishes, designPreset, presentation=false, cutaway=false}: {m: PlanModel; objects: Item[]; detectedObjects?: Item[]; closedDoorIds?: string[]; floorStyle?:FloorStyle; wallFinishes?:Scene["wallFinishes"]; windowFinishes?:Scene["windowFinishes"]; designPreset?:HomePreset|null; presentation?:boolean; cutaway?:boolean}) {
+export function SceneMesh({m, objects, detectedObjects = [], closedDoorIds, floorStyle={}, wallFinishes, windowFinishes, designPreset, presentation=false, cutaway=false, walkGround=false}: {m: PlanModel; objects: Item[]; detectedObjects?: Item[]; closedDoorIds?: string[]; floorStyle?:FloorStyle; wallFinishes?:Scene["wallFinishes"]; windowFinishes?:Scene["windowFinishes"]; designPreset?:HomePreset|null; presentation?:boolean; cutaway?:boolean; walkGround?:boolean}) {
   const scale = metersPerPixel(m)!;
   const {floorFinish="default",floorMaterial,roomFloorMaterials}=floorStyle;
   const preset=designPreset?homePresets[designPreset]:undefined;
@@ -173,11 +173,13 @@ export function SceneMesh({m, objects, detectedObjects = [], closedDoorIds, floo
   const yards=useMemo(()=>yardShapes(m),[m]);
   const stairs = useMemo(()=>stairPieces(m),[m]);
   useEffect(()=>()=>stairs.forEach(stair=>stair.wells.forEach(well=>well.walls.dispose())),[stairs]);
-  const rooms = useMemo(()=>{
+  const {rooms,ground} = useMemo(()=>{
     const cutouts=stairCutouts(m);
-    return roomsOf(m).map(room=>({room, surfaces:roomSurfaces(room.polygon,scale,cutouts),
+    const rooms=roomsOf(m).map(room=>({room, surfaces:roomSurfaces(room.polygon,scale,cutouts),
       ceilings:roomSurfaces(room.polygon,scale,stairHeadroom(m,room.ceilingHeightM??2.8))}));
-  },[m,scale]);
+    const {width,height}=m.imageTransform;
+    return {rooms,ground:walkGround?roomSurfaces([{x:0,y:0},{x:width,y:0},{x:width,y:height},{x:0,y:height}],scale,cutouts):[]};
+  },[m,scale,walkGround]);
   const materials = useMemo(()=>rooms.map(({room})=>
     floorMaterialFor({floorFinish,floorMaterial,roomFloorMaterials},room.id) ??
       presetFloor(designPreset,room.roomType)
@@ -217,6 +219,10 @@ export function SceneMesh({m, objects, detectedObjects = [], closedDoorIds, floo
         shadow-camera-left={-shadowSize} shadow-camera-right={shadowSize} shadow-camera-top={shadowSize}
         shadow-camera-bottom={-shadowSize} shadow-camera-far={shadowSize*4} shadow-normalBias={.022} shadow-bias={-.0001}/>
     </>:<><ambientLight intensity={1.25}/><directionalLight position={[5,10,3]} intensity={2}/></>}
+    {ground.map((shape,index)=><mesh key={"walk-ground-"+index} rotation={[-Math.PI/2,0,0]} position={[0,-.03,0]}
+      receiveShadow userData={{furnishGround:true}}>
+      <shapeGeometry args={[shape]}/><meshStandardMaterial color="#dad8ce" roughness={.92} side={T.DoubleSide}/>
+    </mesh>)}
     {yards.map(({shape,surface},i)=><mesh key={"yard"+i} rotation={[-Math.PI/2,0,0]} position={[0,-.01,0]} receiveShadow userData={{maskId:1,furnishGround:true}}>
       <shapeGeometry args={[shape]}/><meshStandardMaterial color={yardColor[surface]} side={T.DoubleSide}/>
     </mesh>)}
