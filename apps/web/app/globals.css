@@ -302,3 +302,45 @@
   .studio-header:has(.studio-floor-controls a) {flex-wrap:wrap}
   .studio-header:has(.studio-floor-controls a) + .studio-status {top:100px}
 }
+
+.floor-alignment{display:grid;gap:11px;min-width:0;padding:16px;margin:8px 0;border:1px solid var(--desk-line);border-radius:14px;background:var(--desk-paper);scroll-margin-top:20px}
+.floor-alignment h3,.floor-alignment p{margin:0}
+.floor-alignment h3{font:normal 25px Georgia,serif}
+.floor-alignment p,.floor-alignment-legend{color:var(--desk-muted);font-size:13px}
+.floor-alignment-legend{display:flex;flex-wrap:wrap;gap:14px}
+.floor-alignment-legend span::before{content:"";display:inline-block;width:10px;height:10px;margin-right:5px;border:1px solid #666b60}
+.floor-alignment-legend span:last-child::before{border-color:#2e654f;background:#deecdf}
+.floor-alignment-overlay{width:100%;height:clamp(230px,45vw,440px);display:block;background:#e7e8de;border:1px solid var(--desk-line);border-radius:10px;cursor:grab;touch-action:none;user-select:none}
+.floor-alignment-overlay:active{cursor:grabbing}
+.floor-alignment-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(132px,100%),1fr));gap:10px}
+.project-library .floor-alignment-controls label{display:grid;align-content:start;gap:5px;min-width:0;font-size:12px;color:var(--desk-muted)}
+.floor-alignment-controls input{width:100%;min-width:0;accent-color:var(--desk-forest)}
+.floor-alignment-controls input[type=range]{padding:0}
+.floor-alignment-controls label span{font-variant-numeric:tabular-nums}
+.floor-alignment-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.project-library fieldset:disabled .floor-alignment-overlay{pointer-events:none}
+
+.studio-house-controls{position:absolute;top:76px;left:22px;z-index:4;display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:5px 8px;border:1px solid var(--desk-line);border-radius:11px;background:var(--desk-surface);color:var(--desk-forest)}
+.studio-house-controls [role=group]{display:flex;gap:3px}
+.desktop-studio .studio-house-controls button{min-height:32px;padding:5px 10px;border-radius:7px;background:transparent;color:var(--desk-forest);font-size:12px}
+.desktop-studio .studio-house-controls [aria-pressed=true]{background:var(--desk-forest);color:var(--desk-surface)}
+.studio-house-controls a,.studio-house-controls small{font-size:12px}
+.studio-house-controls a{padding:5px;text-decoration:underline}
+.desktop-studio .desktop-object-tools{visibility:visible;top:auto;bottom:18px;left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100% - 24px);grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;padding:7px 8px;border-radius:13px}
+.desktop-studio .desktop-object-tools header{display:contents;margin:0}
+.desktop-object-tools header strong{grid-column:1;grid-row:1;padding:0 2px 0 5px;white-space:nowrap;max-width:18ch;overflow:hidden;text-overflow:ellipsis}
+.desktop-studio .desktop-object-tools header button{grid-column:3;grid-row:1;display:grid;place-items:center;width:34px;padding:0;background:var(--desk-wash);color:var(--desk-forest)}
+.desktop-object-tools fieldset{grid-column:2;grid-row:1;overflow-x:auto;scrollbar-width:thin;overscroll-behavior-x:contain}
+.desktop-object-tools .walk-edit-fields,.desktop-object-tools .walk-edit-grid,.desktop-object-tools .walk-edit-actions{display:flex;flex-wrap:nowrap;align-items:flex-end;gap:6px;width:max-content;white-space:nowrap}
+.desktop-object-tools .walk-edit-grid label{font-size:10px;gap:2px}
+.desktop-studio .desktop-object-tools :is(button,input,select,a){min-height:34px;font-size:12px;border-radius:7px}
+.desktop-studio .desktop-object-tools input[type=number]{width:62px}
+.desktop-studio .desktop-object-tools input[type=color]{width:42px;padding:4px}
+.desktop-studio .desktop-object-tools :is(button,select,a){padding:5px 8px}
+.desktop-object-tools p{grid-column:1/-1;grid-row:2;white-space:normal}
+.desktop-studio .showcase-player[data-desktop-edit=true] .show-panel{display:none}
+
+@media(max-width:700px){
+  .studio-header:has(.studio-floor-controls a) + .studio-house-controls{top:102px;left:10px;max-width:calc(100% - 20px)}
+  .desktop-object-tools header strong{max-width:10ch}
+}

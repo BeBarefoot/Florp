@@ -43,6 +43,15 @@ def test_unordered_pair_site_and_stair_review(client, monkeypatch, tmp_path):
     assert c.put(path,json={**pair,'second':lower}).status_code == 422
     other = c.post('/projects',json={'title':'Other'}).json()['id']
     assert c.put(f'/projects/{other}/floor-pair',json=pair).status_code == 404
+    transform = {'centerX': 245.5, 'centerY': 410, 'rotationDeg': -17.5, 'scale': 0.86}
+    saved = c.put(path, json={**pair, 'alignment': transform})
+    assert saved.status_code == 200
+    assert c.get(path).json()['alignment'] == transform
+    assert c.put(path, json=pair).json()['alignment'] == transform
+    bad = c.put(path, json={**pair, 'alignment': {**transform, 'scale': 0}})
+    assert bad.status_code == 422
+    assert c.put(path, json={**pair, 'first': upper, 'second': lower}).json()['alignment'] is None
+    assert c.get(path).json()['alignment'] is None
     assert name_level('second_floor.jpg') == 2
     assert name_level('קומת קרקע.png') == 1
 

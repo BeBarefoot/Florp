@@ -1,4 +1,5 @@
 // Mirrors apps/api/app/plan_model.py (PlanModel v2). Pixel space only.
+export type Alignment = { centerX: number; centerY: number; rotationDeg: number; scale: number };
 export type Pt = { x: number; y: number };
 export type Node = { id: string; x: number; y: number };
 export type Wall = {

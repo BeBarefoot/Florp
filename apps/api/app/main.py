@@ -29,8 +29,8 @@ from .mask_topology import region_wall_lines
 from .wall_run_normalization import consolidate_wall_runs
 from .evidence_fusion import fuse_evidence
 
-from .floor_pair import Pair, suggest
-from .models import FloorPair, SceneRevision, SceneRenderJob, PlanReview
+from .floor_pair import Alignment, Pair, suggest
+from .models import FloorAlignment, FloorPair, SceneRevision, SceneRenderJob, PlanReview
 
 Path(settings.storage_path).mkdir(parents=True,exist_ok=True)
 if settings.database_url.startswith('sqlite:///'):
@@ -106,6 +106,8 @@ def delete_project(pid:str):
             for table in (PlanReview,SceneRenderJob,SceneRevision,PlanRevision,WorkspaceRevision,Render,ModelWallCorrection,WallAnnotation,FusionCandidateReview,ExtractionEvaluation,PlanGraphRevision,Layout):
                 for row in s.exec(select(table).where(table.blueprint_id==bid)).all():
                     s.delete(row)
+        alignment=s.get(FloorAlignment,pid)
+        if alignment:s.delete(alignment)
         pair=s.get(FloorPair,pid)
         if pair:s.delete(pair)
         for bp in plans:s.delete(bp)
@@ -129,7 +131,11 @@ def pair_members(s, pid, first, second):
 @app.get('/projects/{pid}/floor-pair')
 def get_floor_pair(pid: str):
     with Session(engine) as s:
-        return s.get(FloorPair,pid)
+        pair = s.get(FloorPair, pid)
+        if pair is None:
+            return None
+        alignment = s.get(FloorAlignment, pid)
+        return {**pair.model_dump(), "alignment": alignment.transform if alignment else None}
 
 
 @app.get('/projects/{pid}/floor-pair/suggestions')
@@ -144,8 +150,22 @@ def save_floor_pair(pid: str, body: Pair):
     with Session(engine) as s:
         pair_members(s,pid,body.first,body.second)
         row = s.get(FloorPair,pid) or FloorPair(project_id=pid)
+        alignment = s.get(FloorAlignment, pid)
+        same_order = row.first == body.first and row.second == body.second
+        if body.alignment is not None:
+            transform = body.alignment.model_dump(mode="json")
+            if alignment is None:
+                alignment = FloorAlignment(project_id=pid, transform=transform)
+            else:
+                alignment.transform = transform
+            s.add(alignment)
+        elif alignment is not None:
+            if same_order and "alignment" not in body.model_fields_set:
+                body.alignment = Alignment.model_validate(alignment.transform)
+            else:
+                s.delete(alignment)
         row.first, row.second = body.first, body.second
-        row.regions = body.model_dump(mode='json')['regions']
+        row.regions = body.model_dump(mode="json")["regions"]
         s.add(row)
         s.commit()
         return body

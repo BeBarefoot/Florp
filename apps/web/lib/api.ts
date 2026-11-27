@@ -6,7 +6,7 @@ export type Opening={id:string;source_detection_id?:string|null;reviewed?:boolea
 export type Geometry={structure_reviewed?:boolean;scale_source?:'unknown'|'provisional_auto'|'user_confirmed';width_px:number;height_px:number;px_per_meter:number|null;rooms:Room[];walls:Wall[];openings:Opening[];warnings:string[]};
 export type Project={id:string;title:string};
 export type SiteRegion={kind:"garden"|"stairs";points:[number,number][];holes?:[number,number][][];surface?:"paving"|null};
-export type Blueprint={floor?:{level:1|2;otherId:string;regions:SiteRegion[]}|null;id:string;project_id:string;filename:string;width:number;height:number};
+export type Blueprint={floor?:{level:1|2;otherId:string;regions:SiteRegion[]}|null;id:string;project_id:string;filename:string;width:number;height:number;created_at?:string};
 export type Layout={id:string;blueprint_id:string;version:number;verified:boolean;geometry:Geometry};
 export async function request<T>(path:string,init?:RequestInit):Promise<T>{
  const res=await fetch(API+path,{...init,cache:'no-store'});

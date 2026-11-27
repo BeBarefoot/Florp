@@ -7,6 +7,7 @@ import {wallPieces} from '../lib/plan/mesh';
 import {moveNode,deleteWall,addWall} from '../lib/plan/ops';
 import {connectedWallFace} from '../lib/plan/wallFaces';
 import {samplePlan} from '../lib/plan/showcaseSample';
+import {housePlacement} from '../lib/plan/houseOverview';
 import {dimensions,objectName} from '../lib/plan/furnitureCatalog';
 import {fitsFloor} from '../lib/plan/furnitureFit';
 import {furnitureParts,makeFurnitureResources} from '../lib/plan/furnitureModels';
@@ -88,4 +89,20 @@ test('nearly parallel walls of different thickness bevel the room inset',()=>{
   return sum+(p.x*q.y-q.x*p.y)/2;
  },0);
  expect(area).toBeCloseTo(fixture.expectedAreaPx2,7);
+});
+
+test("whole-house placement converts and rotates the upper drawing in ground-floor units", () => {
+ const scene={views:[],objects:[],style:""};
+ const upper={...samplePlan,scale:{...samplePlan.scale,reference:{
+   ...samplePlan.scale.reference!,lengthMeters:samplePlan.scale.reference!.lengthMeters*2,
+ }}};
+ const placement=housePlacement({ground:{plan:samplePlan,scene},upper:{plan:upper,scene},provisionalOrder:false,
+   alignment:{centerX:420,centerY:560,rotationDeg:90,scale:1.5}});
+ expect(placement.center[0]).toBeCloseTo(4.2);
+ expect(placement.center[1]).toBeCloseTo(2.8);
+ expect(placement.center[2]).toBeCloseTo(5.6);
+ expect(placement.upperCenter).toEqual([10,6.8]);
+ expect(placement.horizontalScale).toBeCloseTo(.75);
+ expect(placement.rotation).toBeCloseTo(Math.PI/2);
+ expect(placement.span).toBeGreaterThan(11);
 });

@@ -1,4 +1,4 @@
-"""Review two plan images in their own normalized coordinate systems."""
+"""Review two plan images and register the second drawing to the first."""
 import re
 from pathlib import Path
 from typing import Annotated
@@ -12,10 +12,20 @@ from .gardens import Region, detect_gardens
 from .stair_detection import detect_stairs
 
 
+class Alignment(BaseModel):
+    # Position of the second image center in first-image pixels. Positive rotation is clockwise.
+    centerX: float = Field(ge=-1e9, le=1e9)
+    centerY: float = Field(ge=-1e9, le=1e9)
+    rotationDeg: float = Field(ge=-180, le=180)
+    scale: float = Field(ge=.001, le=1000)
+
+
 class Pair(BaseModel):
     first: str
     second: str
     regions: dict[str, Annotated[list[Region], Field(max_length=100)]] = Field(default_factory=dict)
+
+    alignment: Alignment | None = None
 
     @model_validator(mode='after')
     def distinct(self):

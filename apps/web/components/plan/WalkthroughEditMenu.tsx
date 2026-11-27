@@ -66,7 +66,7 @@ function WallFields({editor}:{editor:Extract<WalkEditor,{kind:"wall"}>}){
       </select></label>
       <label>Color<input type="color" value={color} onChange={event=>{setColor(event.target.value);if(!kind)setKind("paint");}}/></label>
     </div>
-    <div className="walk-edit-actions"><button><PaintRoller size={15} aria-hidden/>Apply finish</button></div>
+    <div className="walk-edit-actions"><button aria-label="Apply finish"><PaintRoller size={15} aria-hidden/><span>Apply finish</span></button></div>
   </form>;
 }
 
@@ -88,11 +88,11 @@ function WindowFields({editor}:{editor:Extract<WalkEditor,{kind:"window"}>}){
   </form>;
 }
 
-export function WalkthroughEditMenu({editor,menu,busy,message,close}:{
-  editor:WalkEditor;menu:RefObject<HTMLDivElement|null>;busy:boolean;message:string;close:()=>void;
+export function WalkthroughEditMenu({editor,menu,busy,message,close,desktop=false}:{
+  editor:WalkEditor;desktop?:boolean;menu:RefObject<HTMLDivElement|null>;busy:boolean;message:string;close:()=>void;
 }){
   const name=editor.kind==="object"?objectName(editor.item.kind):editor.kind[0].toUpperCase()+editor.kind.slice(1);
-  return <div ref={menu} className="walk-object-tools" role="group" aria-label={name} data-tour-tools
+  return <div ref={menu} className={desktop?"walk-object-tools desktop-object-tools":"walk-object-tools"} role="group" aria-label={name} data-tour-tools
     onKeyDown={event=>{if(event.key==="Escape"){event.stopPropagation();close();}}}>
     <header><strong>{name}</strong><button type="button" onClick={close} aria-label="Close object controls"><X size={16}/></button></header>
     <fieldset disabled={busy}>

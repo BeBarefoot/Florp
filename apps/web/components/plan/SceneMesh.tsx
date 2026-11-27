@@ -159,7 +159,7 @@ function Windows({plan,environment,shadows,designPreset,finishes}:{plan:PlanMode
   return <primitive object={windows.group}/>;
 }
 
-export function SceneMesh({m, objects, detectedObjects = [], closedDoorIds, floorStyle={}, wallFinishes, windowFinishes, designPreset, presentation=false, cutaway=false, walkGround=false}: {m: PlanModel; objects: Item[]; detectedObjects?: Item[]; closedDoorIds?: string[]; floorStyle?:FloorStyle; wallFinishes?:Scene["wallFinishes"]; windowFinishes?:Scene["windowFinishes"]; designPreset?:HomePreset|null; presentation?:boolean; cutaway?:boolean; walkGround?:boolean}) {
+export function SceneMesh({m, objects, detectedObjects = [], closedDoorIds, floorStyle={}, wallFinishes, windowFinishes, designPreset, presentation=false, cutaway=false, walkGround=false, lights=true, showYard=true}: {m: PlanModel; objects: Item[]; detectedObjects?: Item[]; closedDoorIds?: string[]; floorStyle?:FloorStyle; wallFinishes?:Scene["wallFinishes"]; windowFinishes?:Scene["windowFinishes"]; designPreset?:HomePreset|null; presentation?:boolean; cutaway?:boolean; walkGround?:boolean; lights?:boolean; showYard?:boolean}) {
   const scale = metersPerPixel(m)!;
   const {floorFinish="default",floorMaterial,roomFloorMaterials}=floorStyle;
   const preset=designPreset?homePresets[designPreset]:undefined;
@@ -232,18 +232,18 @@ export function SceneMesh({m, objects, detectedObjects = [], closedDoorIds, floo
     (objects.length>0||detectedObjects.length>0||m.openings.some(o=>o.kind==="window"&&o.status==="confirmed")||
       floors.finishes.some(finish=>"normalMap" in finish && !!finish.normalMap)));
   return <>
-    {presentation?<><hemisphereLight color="#fff6ea" groundColor="#b4b3aa" intensity={1.45}/>
+    {lights&&(presentation?<><hemisphereLight color="#fff6ea" groundColor="#b4b3aa" intensity={1.45}/>
       <primitive object={sunTarget}/>
       <directionalLight color="#fff0d6" intensity={2} castShadow target={sunTarget}
         position={[width*.25,shadowSize*1.5,-depth*.25]} shadow-mapSize={[1024,1024]}
         shadow-camera-left={-shadowSize} shadow-camera-right={shadowSize} shadow-camera-top={shadowSize}
         shadow-camera-bottom={-shadowSize} shadow-camera-far={shadowSize*4} shadow-normalBias={.022} shadow-bias={-.0001}/>
-    </>:<><ambientLight intensity={1.25}/><directionalLight position={[5,10,3]} intensity={2}/></>}
+    </>:<><ambientLight intensity={1.25}/><directionalLight position={[5,10,3]} intensity={2}/></>)}
     {ground.map((shape,index)=><mesh key={"walk-ground-"+index} rotation={[-Math.PI/2,0,0]} position={[0,-.03,0]}
       receiveShadow userData={{furnishGround:true}}>
       <shapeGeometry args={[shape]}/><meshStandardMaterial color="#dad8ce" roughness={.92} side={T.DoubleSide}/>
     </mesh>)}
-    {yards.map(({shape,surface},i)=><mesh key={"yard"+i} rotation={[-Math.PI/2,0,0]} position={[0,-.01,0]} receiveShadow userData={{maskId:1,furnishGround:true}}>
+    {showYard&&yards.map(({shape,surface},i)=><mesh key={"yard"+i} rotation={[-Math.PI/2,0,0]} position={[0,-.01,0]} receiveShadow userData={{maskId:1,furnishGround:true}}>
       <shapeGeometry args={[shape]}/><meshStandardMaterial color={yardColor[surface]} side={T.DoubleSide}/>
     </mesh>)}
     {ceilings.map(({shape,height},index)=><mesh key={index} receiveShadow={presentation}

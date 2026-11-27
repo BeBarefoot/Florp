@@ -7,10 +7,12 @@ import {useParams} from "next/navigation";
 import {useEffect,useMemo,useState} from "react";
 import type {HomePreset} from "../../lib/plan/homePresets";
 import {API,request,type Blueprint} from "../../lib/api";
-import type {PlanModel,PlanResponse} from "../../lib/plan/model";
+import type {Alignment,PlanModel,PlanResponse} from "../../lib/plan/model";
 import type {Job,Saved,Scene,View,WalkthroughEdit} from "../../lib/plan/scene";
 import {metersPerPixel} from "../../lib/plan/derive";
 import {samplePlan,sampleScene} from "../../lib/plan/showcaseSample";
+
+import type {HouseOverview} from "../../lib/plan/houseOverview";
 
 const emptyScene:Scene={views:[],objects:[],style:""};
 function previewScale(plan:PlanModel):PlanModel {
@@ -41,6 +43,9 @@ export default function ShowcasePage({desktop = false}: {desktop?: boolean}){
   const {id}=useParams<{id:string}>();
   const [extraction,setExtraction]=useState<ExtractionState|null>(null);
   const [data,setData]=useState<[PlanResponse,Saved,Blueprint]|null>(null),[error,setError]=useState("");
+  const [house, setHouse] = useState<{ id: string; upperIsActive: boolean; other: HouseOverview["upper"];
+    alignment?: Alignment | null; provisionalOrder: boolean } | null>(null);
+  const [houseStatus, setHouseStatus] = useState("");
   const [renders,setRenders]=useState<Record<string,string>>({});
   useEffect(()=>{
     setError("");setData(null);setRenders({});setExtraction(null);
@@ -67,6 +72,51 @@ export default function ShowcasePage({desktop = false}: {desktop?: boolean}){
     }).catch(()=>{});
     return ()=>{live=false;};
   },[data,id]);
+  const blueprint = data?.[2];
+  useEffect(() => {
+    setHouse(null);
+    setHouseStatus("");
+    if (!desktop || blueprint?.id !== id || !blueprint.project_id) return;
+    let active = true;
+    let foundOtherFloor = false;
+    const project = "/projects/" + encodeURIComponent(blueprint.project_id);
+    async function loadHouse() {
+      if (!blueprint) return;
+      const pair = blueprint.floor;
+      let otherId = pair?.otherId;
+      let upperIsActive = pair?.level === 2;
+      if (!otherId) {
+        const floors = await request<Blueprint[]>(project + "/blueprints");
+        if (!Array.isArray(floors) || floors.length !== 2 || !floors.some(floor => floor.id === id)) return;
+        const [first, second] = [...floors].sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""));
+        upperIsActive = second.id === id;
+        otherId = upperIsActive ? first.id : second.id;
+      }
+      foundOtherFloor = true;
+      if (active) setHouseStatus("Preparing the other floor…");
+      const base = "/blueprints/" + encodeURIComponent(otherId);
+      const [result, saved, pairing] = await Promise.all([
+        openPlan(base, progress => { if (active) setHouseStatus("Preparing the other floor · " + progress.percent + "%"); }),
+        request<Saved>(base + "/scene"),
+        pair ? request<{first:string; second:string; alignment?:Alignment|null} | null>(project + "/floor-pair") : null,
+      ]);
+      if (!active) return;
+      const other = result.model && previewScale(result.model);
+      if (!other?.walls.length || !metersPerPixel(other)) {
+        setHouseStatus("The other floor needs walls before it can appear in 3D.");
+        return;
+      }
+      const first = upperIsActive ? otherId : id, second = upperIsActive ? id : otherId;
+      const alignment = pairing?.first === first && pairing.second === second ? pairing.alignment : null;
+      setHouse({id,upperIsActive,other:{plan:other,scene:saved.planRevision===other.revision?saved.config:emptyScene},
+        alignment,provisionalOrder:!pair});
+      setHouseStatus("");
+    }
+    void loadHouse().catch(error => {
+      if (active) setHouseStatus(foundOtherFloor || blueprint.floor ? String(error) : "");
+    });
+    return () => { active = false; };
+  }, [blueprint,desktop,id]);
   const original=data?.[0].model;
   const plan=useMemo(()=>original?previewScale(original):null,[original]);
   if(id==="sample")return <Player plan={samplePlan} scene={sampleScene} title="Courtyard apartment" sample desktop={desktop}/>;
@@ -103,9 +153,17 @@ export default function ShowcasePage({desktop = false}: {desktop?: boolean}){
     const {floor,project_id}=data[2];
     const levelAction = desktop && project_id ? floor
       ? {href:`/studio/${encodeURIComponent(floor.otherId)}#overview`, label:floor.level===1?"Second floor":"First floor", importing:false}
-      : {href:`/project/${encodeURIComponent(project_id)}#add-floor`, label:"Import second floor", importing:true}
+      : house?.id===id
+        ? {href:`/studio/${encodeURIComponent(house.other.plan.id)}#overview`, label:house.upperIsActive?"First floor":"Second floor", importing:false}
+        : {href:`/project/${encodeURIComponent(project_id)}#add-floor`, label:"Import second floor", importing:true}
       : undefined;
-    return <Player key={id} levelAction={levelAction} plan={plan} scene={scene} desktop={desktop} stale={!!priorScene.revision&&!currentScene&&!approximate}
+    const activeLevel = {plan,scene};
+    const overview = house?.id === id ? {
+      ground:house.upperIsActive ? house.other : activeLevel, upper:house.upperIsActive ? activeLevel : house.other,
+      alignment:house.alignment, provisionalOrder:house.provisionalOrder,
+    } : undefined;
+    return <Player key={id} house={overview} houseStatus={houseStatus} alignmentHref={`/project/${encodeURIComponent(project_id)}#${floor?"floor-alignment":"floor-review"}`}
+      levelAction={levelAction} plan={plan} scene={scene} desktop={desktop} stale={!!priorScene.revision&&!currentScene&&!approximate}
       approximate={approximate} renders={currentScene?renders:undefined} title={data[2].filename}
       edit={"/plan/"+id}
       saveFinishes={canSave?saveDesign:undefined}

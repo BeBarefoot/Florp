@@ -159,3 +159,9 @@ class FloorPair(SQLModel, table=True):
     first: str
     second: str
     regions: dict = Field(default_factory=dict, sa_type=JSON)
+
+
+
+class FloorAlignment(SQLModel, table=True):
+    project_id: str = Field(primary_key=True, foreign_key="project.id")
+    transform: dict = Field(sa_type=JSON)

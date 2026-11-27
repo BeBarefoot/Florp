@@ -739,6 +739,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
           <label><input type="checkbox" checked={showSite} onChange={e=>setShowSite(e.target.checked)}/> Garden and stair outlines</label>
           {info.floor.regions.filter(r=>r.kind==="garden").map((r,i)=><p key={i}>{r.surface==="paving"?"Patio":"Lawn"} · {mpp?
             regionArea(r,info.width,info.height,mpp).toFixed(1)+" m²":"Set a known distance to estimate area"}</p>)}
+          <button onClick={() => void navigateAfterSave("/project/"+encodeURIComponent(info.project_id)+"#floor-alignment")}>Align floors</button>
           <a href={"/plan/"+info.floor.otherId} target="_blank" rel="noopener noreferrer">Open {info.floor.level===1?"second":"first"} floor in a new tab</a>
         </section>}<PlanReview id={id} revision={m.revision} dirty={dirty}/></>}
         model={m}

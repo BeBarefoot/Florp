@@ -713,3 +713,32 @@ test("desktop keeps a moved draft pin and the live walk camera after refresh",as
   await expect(page.getByRole("heading",{name:"Upper floor.png"})).toBeVisible();
   await expect(page.getByRole("button",{name:"Identify floors, garden and stairs"})).toBeEnabled();
 });
+
+test("desktop wall editing uses one compact row centered above the bottom edge",async({page})=>{
+  test.setTimeout(60_000);
+  await page.setViewportSize({width:1000,height:760});
+  const id="desktop-wall";
+  const view={...sampleScene.views[0],id:"wall",position:{x:315,y:350},yaw:-90,pitch:0};
+  await page.route(`**/blueprints/${id}/*`,route=>{
+    const endpoint=new URL(route.request().url()).pathname.split("/").at(-1);
+    return route.fulfill({json:endpoint==="plan"?{revision:1,model:{...samplePlan,id}}:
+      endpoint==="scene"?{revision:1,planRevision:1,config:{...sampleScene,views:[view],objects:[]}}:
+      endpoint==="renders"?[]:{id,project_id:"home",filename:"Drawing"}});
+  });
+  await page.route("**/projects/home/blueprints",route=>route.fulfill({json:[{id}]}));
+  await page.goto(`/studio/${id}#view=wall`);
+  await expect(page.getByRole("button",{name:"Walk",exact:true})).toHaveAttribute("aria-pressed","true",{timeout:25_000});
+  const canvas=page.locator("canvas");
+  await canvas.screenshot();
+  await canvas.click({position:{x:460,y:380}});
+  const controls=page.getByRole("group",{name:"Wall",exact:true});
+  await expect(controls).toBeVisible();
+  const panel=(await controls.boundingBox())!;
+  const material=(await controls.getByLabel("Material").boundingBox())!;
+  const color=(await controls.getByLabel("Color").boundingBox())!;
+  expect(panel.x+panel.width/2).toBeCloseTo(500,0);
+  expect(760-panel.y-panel.height).toBeCloseTo(18,0);
+  expect(panel.height).toBeLessThan(90);
+  expect(color.x).toBeGreaterThan(material.x+material.width);
+  expect(color.y).toBeCloseTo(material.y,0);
+});

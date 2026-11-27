@@ -36,6 +36,7 @@ import { contains, footprint, newItem } from "../../lib/plan/scene";
 import type {PlanModel,Pt} from "../../lib/plan/model";
 import type {FloorMaterial,Frame,Item,Scene,View,WalkthroughEdit} from "../../lib/plan/scene";
 import {styledWindowFrame} from "../../lib/plan/windowStyle";
+import {housePlacement, type HouseOverview} from "../../lib/plan/houseOverview";
 import {setWallSurface} from "../../lib/plan/wallMaterials";
 
 type FloorStyles = Pick<Scene,"floorMaterial"|"roomFloorMaterials">;
@@ -71,19 +72,37 @@ function SampleFurniture({interior}:{interior:boolean}){
   </>;
 }
 
-function OverviewCamera({plan}:{plan:PlanModel}){
+function OverviewCamera({plan,house}:{plan:PlanModel;house?:ReturnType<typeof housePlacement>}){
   const {camera,size}=useThree();
   const scale=metersPerPixel(plan)!;
   const {eye,target}=useMemo(()=>{
     const aspect=size.width/Math.max(1,size.height);
-    const span=Math.max(1,plan.imageTransform.width*scale,plan.imageTransform.height*scale);
-    const target=new Vector3(plan.imageTransform.width*scale/2,.65,plan.imageTransform.height*scale/2);
+    const span=house?.span??Math.max(1,plan.imageTransform.width*scale,plan.imageTransform.height*scale);
+    const target=house?new Vector3(...house.target):new Vector3(plan.imageTransform.width*scale/2,.65,plan.imageTransform.height*scale/2);
     const distance=span*1.90/Math.min(1,aspect);
     return {target,eye:target.clone().addScaledVector(new Vector3(.82,1.1,1.22).normalize(),distance)};
-  },[plan,scale,size.width,size.height]);
+  },[plan,house,scale,size.width,size.height]);
   const perspective=camera as import("three").PerspectiveCamera;
   return <><primitive object={perspective} position={eye} fov={45} onUpdate={()=>perspective.updateProjectionMatrix()}/>
     <OrbitNavigation target={target} zoomToCursor rotateSpeed={.65} minDistance={.65} minPolarAngle={.08} maxPolarAngle={Math.PI*.47}/></>;
+}
+
+function HouseModel({house, placement}: {house: HouseOverview; placement: ReturnType<typeof housePlacement>}) {
+  function level({plan,scene}:HouseOverview["ground"], ground:boolean) {
+    const detections=visibleDetections(detectedPreviewItems(plan,metersPerPixel(plan)!),scene.objects,metersPerPixel(plan)!,
+      scene.dismissedFixtureIds??[]);
+    return <SceneMesh m={plan} objects={scene.objects} detectedObjects={detections} closedDoorIds={scene.closedDoorIds}
+      floorStyle={scene} wallFinishes={scene.wallFinishes} windowFinishes={scene.windowFinishes}
+      designPreset={scene.designPreset} cutaway presentation lights={ground} showYard={ground}/>;
+  }
+  const {center, rotation, horizontalScale, upperCenter}=placement;
+  return <>
+    <group name="Ground floor">{level(house.ground,true)}</group>
+    <group name="Upper floor" position={center} rotation={[0,-rotation,0]} scale={[horizontalScale,1,horizontalScale]}>
+      <group position={[-upperCenter[0],0,-upperCenter[1]]}>{level(house.upper,false)}</group>
+    </group>
+    <OverviewCamera plan={house.ground.plan} house={placement}/>
+  </>;
 }
 
 type WalkFrame = {viewId:string;width:number;height:number;image:()=>string};
@@ -124,7 +143,7 @@ function FitOverlay({points,scale,color}:{points:Pt[];scale:number;color:string}
   </mesh>;
 }
 
-export default function Showcase({plan,scene,title,edit,levelAction,desktop=false,stale=false,sample=false,approximate=false,renders={},saveView,moveView,saveFinishes,saveFurniture,savePreset,saveWalkEdit}:{plan:PlanModel;scene:Scene;title:string;edit?:string;levelAction?:{href:string;label:string;importing:boolean};desktop?:boolean;stale?:boolean;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View,initial?:View)=>Promise<View>;moveView?:(id:string,position:Pt)=>Promise<void>;saveFinishes?:(finishes:FloorStyles)=>Promise<void>;saveFurniture?:(objects:Item[])=>Promise<void>;savePreset?:(preset:HomePreset|null)=>Promise<void>;saveWalkEdit?:(change:WalkthroughEdit)=>Promise<void>}){
+export default function Showcase({plan,scene,title,edit,levelAction,house,houseStatus,alignmentHref,desktop=false,stale=false,sample=false,approximate=false,renders={},saveView,moveView,saveFinishes,saveFurniture,savePreset,saveWalkEdit}:{plan:PlanModel;scene:Scene;title:string;edit?:string;levelAction?:{href:string;label:string;importing:boolean};house?:HouseOverview;houseStatus?:string;alignmentHref?:string;desktop?:boolean;stale?:boolean;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View,initial?:View)=>Promise<View>;moveView?:(id:string,position:Pt)=>Promise<void>;saveFinishes?:(finishes:FloorStyles)=>Promise<void>;saveFurniture?:(objects:Item[])=>Promise<void>;savePreset?:(preset:HomePreset|null)=>Promise<void>;saveWalkEdit?:(change:WalkthroughEdit)=>Promise<void>}){
   const previewKey = `florp-preview-views:${plan.id}:${plan.revision}`;
   const [previewViews, setPreviewViews] = useState<{views:View[];positions:Record<string,Pt>}>(() => {
     if (!saveView && !sample) {
@@ -140,6 +159,8 @@ export default function Showcase({plan,scene,title,edit,levelAction,desktop=fals
     setPreviewViews(next);
     if(!sample)try { localStorage.setItem(previewKey,JSON.stringify(next)); } catch {}
   }
+  const [houseScope,setHouseScope]=useState<"house"|"floor">("house");
+  const placementInHouse = useMemo(()=>house&&housePlacement(house),[house]);
   const [pinNotice,setPinNotice]=useState("");
   const [freeView,setFreeView]=useState<View|null>(null);
   const [adding,setAdding]=useState(false);
@@ -521,7 +542,8 @@ export default function Showcase({plan,scene,title,edit,levelAction,desktop=fals
     if(hovered)return {kind:"object",item:hovered,suggestion:!objects.some(item=>item.id===hovered.id),
       alternatives,onApply:applyQuickFurniture,onRemove:()=>removeQuickFurniture(hovered)};
   }
-  const canSelect=!sample&&!furnishing&&!stylesOpen&&!finishesOpen&&!rendered&&!playing&&!adding&&!pickingRoom;
+  const wholeHouse = !!house && !view && houseScope==="house" && !furnishing && !finishesOpen && !stylesOpen && !adding && !pickingRoom;
+  const canSelect=!wholeHouse&&!sample&&!furnishing&&!stylesOpen&&!finishesOpen&&!rendered&&!playing&&!adding&&!pickingRoom;
   const editor=quickEditor();
   const highlight=canSelect?(editor?target:pointed):null;
   const selected=!!editor;
@@ -549,15 +571,16 @@ export default function Showcase({plan,scene,title,edit,levelAction,desktop=fals
       height={opening.heightM} depth={.11} selected={selected}/>;
   }
   return <main className="showcase-player" data-furnishing={furnishing} data-placing={!!placement||adding}
-    data-pointing={canSelect&&!!pointed} aria-label="3D showcase"
+    data-desktop-edit={desktop&&!!editor} data-pointing={canSelect&&!!pointed} aria-label="3D showcase"
     onPointerDownCapture={event=>{
       if(event.button===0&&furnishing&&event.target instanceof Element&&!event.target.closest(".furnish-sheet,canvas")){
         selectFurniture("");
       }
     }}>
-    <h1 className="show-current-view">{view?.name??"Dollhouse view"}</h1>
+    <h1 className="show-current-view">{view?.name??(wholeHouse?"Whole house overview":"Dollhouse view")}</h1>
     <div ref={stage} className="show-stage"><Canvas shadows frameloop="demand" dpr={[1,1.6]} camera={{near:.005,far:2000}} fallback={<p>Enable WebGL to view this tour.</p>}>
       <color attach="background" args={[view?"#d4e3e9":"#d8d9cb"]}/>
+      {wholeHouse&&house&&placementInHouse ? <HouseModel house={house} placement={placementInHouse}/> : <>
       <SceneMesh m={plan} objects={editableObjects}
         detectedObjects={showDetections?suggestions.filter(item=>item.id!==dragPreview?.id):undefined}
         closedDoorIds={tourScene.closedDoorIds} floorStyle={styledScene}
@@ -565,7 +588,7 @@ export default function Showcase({plan,scene,title,edit,levelAction,desktop=fals
         presentation cutaway={!view} walkGround={!!view&&!sample}/>
       {canSelect&&<WalkthroughObjects onHover={next=>setPointed(current=>targetKey(current)===targetKey(next)?current:next)}
         onTap={chooseTarget}/>}
-      {editor&&target&&<WalkTargetAnchor key={targetKey(target)} target={target} element={menu}/>}
+      {!desktop&&editor&&target&&<WalkTargetAnchor key={targetKey(target)} target={target} element={menu}/>}
       {!dragPreview&&selectionOutline()}
       {sample&&<SampleFurniture interior={!!view}/>}
       {view?<ShowcaseWalk key={view.id} plan={plan} scene={walkScene} view={view} sample={sample} pose={pose} onFrame={setViewport} keyboard={!rendered}/>:
@@ -588,6 +611,7 @@ export default function Showcase({plan,scene,title,edit,levelAction,desktop=fals
       </Html>)}
       {!view&&!adding&&!pickingRoom&&!furnishing&&<ShowcaseViewPins views={views} scale={scale} portal={stage} disabled={saving}
         onVisit={select} onMove={(view,position)=>void repositionView(view,position)}/>}
+      </>}
     </Canvas>
     </div>
     {view&&rendered&&renders[view.id]&&<div className="show-render"><img src={renders[view.id]} alt={"Saved design render for "+view.name}/></div>}
@@ -605,10 +629,22 @@ export default function Showcase({plan,scene,title,edit,levelAction,desktop=fals
         </Link>}
       </div>
     </header> : view&&<button type="button" className="show-overview" data-tour-tools onClick={()=>select(-1)}><Box size={18}/>Overview</button>}
-    {desktop&&(approximate||stale||notice)&&<div className="studio-status" role="status">
+    {desktop&&!view&&house&&<div className="studio-house-controls" data-tour-tools>
+      <div role="group" aria-label="Overview scope">
+        <button aria-pressed={wholeHouse} onClick={()=>{
+          chooseTarget(null);closeFurnish();setFinishesOpen(false);setStylesOpen(false);
+          setAdding(false);setPickingRoom(false);setHouseScope("house");
+        }}>Whole house</button>
+        <button aria-pressed={!wholeHouse} onClick={()=>setHouseScope("floor")}>This floor</button>
+      </div>
+      {wholeHouse&&<small>{house.alignment?"2 floors":house.provisionalOrder?"2 floors · Confirm floor order":"2 floors · Approximate alignment"}</small>}
+      {wholeHouse&&alignmentHref&&<Link href={alignmentHref}>{house.provisionalOrder?"Review floor pair":"Align floors"}</Link>}
+    </div>}
+    {desktop&&!view&&!house&&houseStatus&&<div className="studio-status" role="status">{houseStatus}</div>}
+    {desktop&&(!wholeHouse&&!(houseStatus&&!view))&&(approximate||stale||notice)&&<div className="studio-status" role="status">
       {approximate?"Approximate scale":stale?<Link href={(edit??"/")+"?setup=furniture"}>Review scene against the updated plan</Link>:notice}
     </div>}
-    {editor&&<WalkthroughEditMenu key={targetKey(target)} editor={editor} menu={menu} busy={saving} message={quickNotice} close={()=>chooseTarget(null)}/>}
+    {editor&&<WalkthroughEditMenu key={targetKey(target)} editor={editor} desktop={desktop} menu={menu} busy={saving} message={quickNotice} close={()=>chooseTarget(null)}/>}
     {stylesOpen&&<section className="finish-sheet style-sheet" aria-label="Whole-home style" data-tour-tools onWheel={scrollTourRail}>
       <div className="finish-heading"><h2>Whole-home style</h2><button aria-label="Close styles" onClick={()=>{setPresetDraft(undefined);setStylesOpen(false);}}><X size={18}/></button></div>
       <div className="tour-rail style-presets">
@@ -681,14 +717,14 @@ export default function Showcase({plan,scene,title,edit,levelAction,desktop=fals
         </button>
         <div id="show-tour-actions" className="show-list" role="group" aria-label="Tour actions" hidden={!toolsOpen&&!pickingRoom} onWheel={scrollTourRail}>
           {pickingRoom?<button onClick={()=>{setPickingRoom(false);setFinishesOpen(true);}}><X/>Cancel room selection</button>:<>
-          {!sample&&<button disabled={saving} onClick={()=>{setPlaying(false);setRendered(false);setFinishesOpen(false);closeFurnish();setStylesOpen(true);setToolsOpen(false);}}><Layers/>Styles</button>}
-          {hasFloor&&<button disabled={saving} onClick={()=>{
+          {!wholeHouse&&!sample&&<button disabled={saving} onClick={()=>{setPlaying(false);setRendered(false);setFinishesOpen(false);closeFurnish();setStylesOpen(true);setToolsOpen(false);}}><Layers/>Styles</button>}
+          {!wholeHouse&&hasFloor&&<button disabled={saving} onClick={()=>{
             setPlaying(false);setRendered(false);setAdding(false);setStylesOpen(false);setPresetDraft(undefined);closeFurnish();setFinishesOpen(true);
           }}><Layers/>Finishes</button>}
-          {!!suggestions.length&&<button type="button" aria-pressed={showDetections} onClick={()=>setShowDetections(shown=>!shown)}>
+          {!wholeHouse&&!!suggestions.length&&<button type="button" aria-pressed={showDetections} onClick={()=>setShowDetections(shown=>!shown)}>
             <Armchair/>Detected preview
           </button>}
-          {!sample&&<button disabled={saving} onClick={openFurnish}><Armchair/>Furnish</button>}
+          {!wholeHouse&&!sample&&<button disabled={saving} onClick={openFurnish}><Armchair/>Furnish</button>}
           {views.map((v,i)=><button key={v.id} aria-pressed={view===v} onClick={()=>select(i)}><MapPin/>{v.name}</button>)}
           {view&&renders[view.id]&&<button aria-pressed={rendered} onClick={()=>{setPlaying(false);setRendered(!rendered);}}>
             {rendered?<Box/>:<ImageIcon/>}{rendered?"Return to 3D":"Show saved design"}
@@ -700,7 +736,7 @@ export default function Showcase({plan,scene,title,edit,levelAction,desktop=fals
             <button disabled={stop<0} onClick={()=>select(stop-1)}><SkipBack/>Previous stop</button>
             <button disabled={stop>=views.length-1} onClick={()=>select(stop+1)}><SkipForward/>Next stop</button>
           </>}
-          {!view&&hasFloor&&<button aria-pressed={adding} disabled={saving} onClick={()=>{setPlaying(false);setNotice("");setAdding(!adding);}}>
+          {!wholeHouse&&!view&&hasFloor&&<button aria-pressed={adding} disabled={saving} onClick={()=>{setPlaying(false);setNotice("");setAdding(!adding);}}>
             {adding?<X/>:<MapPinPlus/>}{adding?"Cancel adding view":"Add view"}
           </button>}
           {view&&!rendered&&<button disabled={saving} onClick={openCornerView}><Maximize2/>Corner view</button>}
