@@ -217,7 +217,9 @@ export default function Inspector(p: Props) {
             : <label>Height (m)
               <input type="number" min="0.3" step="0.05" value={selOpening.heightM} onChange={(e) => Number(e.target.value) > 0 && p.edit(patchOpening(m, selOpening.id, { heightM: Number(e.target.value) }))} />
             </label>}
-          {selOpening.kind === "door" && (
+          {selOpening.passage && selOpening.kind === "door" && <button onClick={() =>
+            p.edit(patchOpening(m, selOpening.id, { passage: false, swing: "right" }))}>Change passage to a door</button>}
+          {selOpening.kind === "door" && !selOpening.passage && (
             <>
               <button onClick={() => p.edit(patchOpening(m, selOpening.id, { swing: selOpening.swing === "right" ? "left" : "right" }))}>Flip swing</button>
               <button onClick={() => p.edit(patchOpening(m, selOpening.id, { hinge: selOpening.hinge === "end" ? "start" : "end" }))}>Flip hinge</button>

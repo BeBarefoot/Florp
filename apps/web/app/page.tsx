@@ -1,17 +1,111 @@
-'use client';
-import {useEffect,useState} from 'react';
-import Link from 'next/link';
-import {request,Project} from '../lib/api';
-export default function Home(){const [projects,setProjects]=useState<Project[]>([]);const [title,setTitle]=useState('');const [error,setError]=useState('');const [health,setHealth]=useState('Checking API…');
- async function load(){try{setProjects(await request('/projects'));const h=await request<{ok:boolean}>('/health');setHealth(h.ok?'Local API connected':'API not ready')}catch(e){setHealth('Backend not connected');setError(String(e))}}
- useEffect(()=>{void load()},[]);
- async function removeProject(project:Project){
-  if(!window.confirm('Delete "'+project.title+'" and all its blueprints, layouts and render records? This cannot be undone.'))return;
-  try{
-   await request('/projects/'+project.id,{method:'DELETE'});
-   setProjects(current=>current.filter(item=>item.id!==project.id));
-   setError('');
-  }catch(e){setError(String(e))}
- }
- async function create(){try{const p=await request<Project>('/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title})});setProjects([p,...projects]);setTitle('');setError('')}catch(e){setError(String(e))}}
- return <div className="app"><aside><h2>✦ Florp</h2><p style={{opacity:.7}}>From blueprint to possibility.</p><hr style={{borderColor:'#354053'}}/><p>Projects</p><small>{health}</small></aside><main><header><div><h1>Your spaces</h1><p className="muted">Turn floor plans into verified, editable spaces.</p></div><span className="pill">Developer preview</span></header><div className="panel" style={{marginBottom:20}}><h2>Create a project</h2><div className="row"><input placeholder="e.g. Garden apartment" value={title} onChange={e=>setTitle(e.target.value)} onKeyDown={e=>e.key==='Enter'&&create()}/><button onClick={create}>Create project</button></div></div>{error&&<p className="notice">{error}</p>}<div className="grid">{projects.map(p=><div key={p.id} className="panel"><Link href={'/project/'+p.id}><h2>{p.title} →</h2><p className="muted">Open workspace</p></Link><button className="secondary" onClick={()=>void removeProject(p)}>Delete project</button></div>)}</div>{!projects.length&&<div className="notice">Create a project and upload a plan. Florp extracts its walls automatically.</div>}</main></div>}
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ArrowUpRight, Box, Upload } from "lucide-react";
+import { newUuid } from "../lib/uuid";
+import { API, request, type Blueprint, type Project } from "../lib/api";
+
+export default function Home() {
+  const router = useRouter();
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [health, setHealth] = useState("Checking local connection");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [preview, setPreview] = useState<Blueprint | null>(null);
+  const [picked, setPicked] = useState<File | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const inFlight = useRef(false);
+  const pending = useRef<{ file: File; id: string } | null>(null);
+
+  useEffect(() => {
+    request<Project[]>("/projects").then(setProjects).catch(problem => setError(String(problem)));
+    request<{ok: boolean}>("/health").then(result => setHealth(result.ok ? "Mac host ready" : "Local host unavailable"))
+      .catch(() => setHealth("Local host unavailable"));
+  }, []);
+
+  async function upload(file: File) {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setPicked(file);
+    setBusy(true);
+    setError("");
+    setPreview(null);
+    try {
+      const uploadId = pending.current?.file === file ? pending.current.id : newUuid();
+      pending.current = { file, id: uploadId };
+      const data = new FormData();
+      data.append("file", file);
+      const floor = await request<Blueprint>(`/home-uploads/${uploadId}`, { method: "POST", body: data });
+      const project = { id: floor.project_id, title: floor.filename.replace(/\.[^.]+$/, "") };
+      setProjects(current => [project, ...current.filter(home => home.id !== project.id)]);
+      pending.current = null;
+      setPicked(null);
+      setPreview(floor);
+    } catch (problem) {
+      setError(String(problem));
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function removeProject(project: Project) {
+    if (!window.confirm(`Delete “${project.title}” and its floor plans and renders?`)) return;
+    try {
+      await request(`/projects/${encodeURIComponent(project.id)}`, { method: "DELETE" });
+      setProjects(current => current.filter(home => home.id !== project.id));
+      if (preview?.project_id === project.id) setPreview(null);
+    } catch (problem) {
+      setError(String(problem));
+    }
+  }
+
+  const [latest, ...others] = projects;
+  return <main className="desktop-home">
+    <header className="desktop-home-bar"><strong>Florp</strong><span role="status">{health}</span></header>
+    <section className="desktop-home-hero" data-dragging={dragging}
+      onDragOver={event => { event.preventDefault(); setDragging(true); }}
+      onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
+      onDrop={event => {
+        event.preventDefault();
+        setDragging(false);
+        const file = event.dataTransfer.files[0];
+        if (file) void upload(file);
+      }}>
+      {preview ? <>
+        <h1>{preview.filename}</h1>
+        <img className="desktop-upload-preview" src={`${API}/blueprints/${preview.id}/preview`} alt="Drawing ready for extraction"/>
+        {preview.filename.toLowerCase().endsWith(".pdf") && <p>PDF · Page 1</p>}
+        <button className="desktop-primary" onClick={() => router.push("/plan/" + encodeURIComponent(preview.id) + "?review=1")}>
+          Analyze plan <ArrowUpRight size={17}/>
+        </button>
+        <button onClick={() => input.current?.click()}>Choose another file</button>
+      </> : <>
+        <h1>Walk your future home.</h1>
+        <p>Drop a floor plan or choose a PDF, PNG, JPEG, or WebP.</p>
+        <button className="desktop-primary" disabled={busy} onClick={() => input.current?.click()}>
+          <Upload size={17}/>{busy ? "Opening drawing…" : "Upload a plan"}
+        </button>
+        {latest && <Link href={"/project/" + latest.id}>Continue {latest.title} <ArrowUpRight size={15}/></Link>}
+        <Link href="/studio/sample"><Box size={17}/> Explore a sample</Link>
+      </>}
+      <input ref={input} type="file" accept=".pdf,.png,.jpeg,.jpg,.webp" hidden onChange={event => {
+        const file = event.currentTarget.files?.[0];
+        event.currentTarget.value = "";
+        if (file) void upload(file);
+      }}/>
+      {error && <div className="desktop-home-error" role="alert">{error}
+        {picked && <button disabled={busy} onClick={() => void upload(picked)}>Retry upload</button>}</div>}
+    </section>
+    {latest && <section className="desktop-recents" aria-label="Recent homes">
+      <h2>Recent homes</h2>
+      <ul>{[latest, ...others].map(project => <li key={project.id}>
+        <Link href={"/project/" + project.id}>{project.title} <ArrowUpRight size={16}/></Link>
+        <button type="button" aria-label={`Delete ${project.title}`} onClick={() => void removeProject(project)}>Delete</button>
+      </li>)}</ul>
+    </section>}
+  </main>;
+}

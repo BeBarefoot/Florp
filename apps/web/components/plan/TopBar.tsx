@@ -18,6 +18,9 @@ export default function TopBar(p: {
   setDisplay: (d: Display) => void;
   scaled: boolean;
   onWalkthrough: () => void;
+  onPhoneWalkthrough: () => void;
+  onOverview: () => void;
+  reviewAction: React.ReactNode;
   walkthroughBusy: boolean;
   exportBlocker: string | null;
   exportPlanHref: string;
@@ -43,7 +46,10 @@ export default function TopBar(p: {
         <button role="radio" aria-checked={p.display === "split"} disabled={!p.scaled} title={p.scaled ? "" : "Set one measurement first"} onClick={() => p.setDisplay("split")}><Columns2 size={14} /></button>
         <button role="radio" aria-checked={p.display === "3d"} disabled={!p.scaled} title={p.scaled ? "" : "Set one measurement first"} onClick={() => p.setDisplay("3d")}><Box size={14} /> 3D</button>
       </div>
-      <button disabled={p.walkthroughBusy} onClick={p.onWalkthrough}>Phone walkthrough</button>
+      {p.reviewAction}
+      <button disabled={p.walkthroughBusy} onClick={p.onOverview}>Overview</button>
+      <button disabled={p.walkthroughBusy} onClick={p.onWalkthrough}>Walk</button>
+      <button disabled={p.walkthroughBusy} onClick={p.onPhoneWalkthrough}>Phone walkthrough</button>
       <button className="fe-primary" disabled={!p.dirty} onClick={p.onSave}>Save</button>
       <div className="fe-menu">
         <button aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}><Download size={16} /> Export</button>

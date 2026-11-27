@@ -40,7 +40,7 @@ export function renderPrompt(plan:PlanModel, scene:Scene, view:View, frame:{widt
     openings:plan.openings.filter(o=>o.status==="confirmed").map(o=>{
       const ends=openingEnds(plan,o,nodes);
       return {id:o.id,kind:o.kind,wall:o.hostWallId,endpointsXZ:ends?.map(xz),width:o.widthPx*scale,
-        sill:o.sillM,height:o.heightM,...(o.kind==="door"?{hinge:o.hinge,swing:o.swing,closed:scene.closedDoorIds?.includes(o.id)??false}:{}),
+        sill:o.sillM,height:o.heightM,...(o.kind==="door"?{hinge:o.hinge,swing:o.swing,passage:o.passage??false,closed:!o.passage&&(scene.closedDoorIds?.includes(o.id)??false)}:{}),
         ...(o.kind==="window"?{frame:styledWindowFrame(o,scene.designPreset?homePresets[scene.designPreset].frame:undefined,scene.windowFinishes?.[o.id])}:{})};
     }),
     stairs:plan.stairs?.map(s=>({id:s.id,direction:s.direction??"up",risePerStep:s.riseM,treadsXZ:s.treads.map(poly=>poly.map(xz)),

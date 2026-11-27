@@ -3,7 +3,7 @@ import type {PlanModel} from "./model";
 
 export function doorLeaves(plan: PlanModel, scale: number, closedIds?: string[]) {
   return plan.openings.flatMap(opening => {
-    if (opening.status !== "confirmed" || opening.kind !== "door") return [];
+    if (opening.status !== "confirmed" || opening.kind !== "door" || opening.passage) return [];
     const closed = closedIds?.includes(opening.id);
     if (!opening.swing && !closed) return [];
     const ends = openingEnds(plan, opening);

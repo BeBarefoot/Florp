@@ -1,5 +1,7 @@
 import io, os, shutil
 from pathlib import Path
+from uuid import UUID
+from sqlalchemy.exc import IntegrityError
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -152,27 +154,80 @@ def save_floor_pair(pid: str, body: Pair):
 @app.get('/projects/{pid}/blueprints',response_model=list[Blueprint])
 def blueprints(pid:str):
     with Session(engine) as s:return list(s.exec(select(Blueprint).where(Blueprint.project_id==pid)).all())
-@app.post('/projects/{pid}/blueprints',response_model=Blueprint)
-async def upload(pid:str,file:UploadFile=File(...),page_index:int=0):
-    with Session(engine) as s:
-        if not s.get(Project,pid):raise HTTPException(404,'Project not found')
-    contents=await file.read(settings.max_upload_mb*1024*1024+1)
-    if len(contents)>settings.max_upload_mb*1024*1024:raise HTTPException(413,'Upload exceeds configured size')
+async def read_blueprint(file: UploadFile, page_index: int):
+    contents = await file.read(settings.max_upload_mb * 1024 * 1024 + 1)
+    if len(contents) > settings.max_upload_mb * 1024 * 1024:
+        raise HTTPException(413, "Upload exceeds configured size")
     from .uploads import decode
-    import hashlib, json
+
     image, manifest = decode(contents, page_index)
-    bp=Blueprint(project_id=pid,filename=(file.filename or 'plan')[:255],local_path='',preview_path='',width=image.width,height=image.height)
-    folder=Path(settings.storage_path)/bp.id;folder.mkdir(parents=True,exist_ok=True)
-    suffix='.pdf' if contents.startswith(b'%PDF-') else '.bin'
-    raw=folder/('original'+suffix);raw.write_bytes(contents)
-    preview=folder/'preview.png';image.save(preview)
-    manifest['previewSha256'] = hashlib.sha256(preview.read_bytes()).hexdigest()
-    (folder/'source-manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
-    bp.local_path=str(raw);bp.preview_path=str(preview)
-    starting=Geometry(width_px=bp.width,height_px=bp.height,warnings=['No extracted geometry yet. Extract or draw structural walls.'])
-    layout=Layout(blueprint_id=bp.id,geometry=starting.model_dump())
-    with Session(engine) as s:s.add(bp);s.add(layout);s.commit();s.refresh(bp)
+    return contents, image, manifest
+
+
+def store_blueprint(session: Session, pid: str, filename: str, contents, image, manifest):
+    import hashlib
+    import json
+
+    bp = Blueprint(project_id=pid, filename=filename[:255], local_path="", preview_path="",
+                   width=image.width, height=image.height)
+    folder = Path(settings.storage_path) / bp.id
+    folder.mkdir(parents=True, exist_ok=True)
+    try:
+        suffix = ".pdf" if contents.startswith(b"%PDF-") else ".bin"
+        raw = folder / ("original" + suffix)
+        raw.write_bytes(contents)
+        preview = folder / "preview.png"
+        image.save(preview)
+        manifest["previewSha256"] = hashlib.sha256(preview.read_bytes()).hexdigest()
+        (folder / "source-manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        bp.local_path = str(raw)
+        bp.preview_path = str(preview)
+        starting = Geometry(width_px=bp.width, height_px=bp.height,
+                            warnings=["No extracted geometry yet. Extract or draw structural walls."])
+        session.add(bp)
+        session.add(Layout(blueprint_id=bp.id, geometry=starting.model_dump()))
+        session.commit()
+    except Exception:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise
+    session.refresh(bp)
     return bp
+
+
+@app.post("/projects/{pid}/blueprints", response_model=Blueprint)
+async def upload(pid: str, file: UploadFile = File(...), page_index: int = 0):
+    with Session(engine) as session:
+        if not session.get(Project, pid):
+            raise HTTPException(404, "Project not found")
+    source = await read_blueprint(file, page_index)
+    with Session(engine) as session:
+        if not session.get(Project, pid):
+            raise HTTPException(404, "Project not found")
+        return store_blueprint(session, pid, file.filename or "plan", *source)
+
+
+@app.post("/home-uploads/{upload_id}", response_model=Blueprint)
+async def upload_home(upload_id: UUID, file: UploadFile = File(...)):
+    pid = str(upload_id)
+    source = await read_blueprint(file, 0)
+    filename = file.filename or "Floor plan"
+    with Session(engine) as session:
+        prior = session.exec(select(Blueprint).where(Blueprint.project_id == pid).order_by(Blueprint.created_at)).first()
+        if prior:
+            return prior
+        if session.get(Project, pid):
+            raise HTTPException(409, "This upload ID already belongs to a home")
+        session.add(Project(id=pid, title=Path(filename).stem[:255] or "New home"))
+        try:
+            return store_blueprint(session, pid, filename, *source)
+        except IntegrityError:
+            session.rollback()
+            prior = session.exec(select(Blueprint).where(Blueprint.project_id == pid).order_by(Blueprint.created_at)).first()
+            if prior:
+                return prior
+            raise
+
+
 @app.get('/blueprints/{bid}/preview')
 def preview(bid:str):
     with Session(engine) as s:bp=s.get(Blueprint,bid)

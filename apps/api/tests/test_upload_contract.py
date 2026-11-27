@@ -91,3 +91,25 @@ def test_transparent_plan_is_composited_on_white_without_moving_strokes():
     assert image.getpixel((40,10)) == (0,0,0)
     assert image.size == (80,40)
     assert {'operation':'alpha-composite','background':[255,255,255]} in meta['transforms']
+
+
+def test_home_upload_is_atomic_and_retries_return_the_same_floor(client, tmp_path, monkeypatch):
+    from uuid import uuid4
+
+    c, _ = client
+    monkeypatch.setattr(settings, "storage_path", str(tmp_path / "uploads"))
+    upload_id = str(uuid4())
+    url = f"/home-uploads/{upload_id}"
+    before = c.get("/projects").json()
+    assert c.post(url, files={"file": ("bad.png", b"invalid")}).status_code == 415
+    assert c.get("/projects").json() == before
+
+    for retry in range(2):
+        response = c.post(url, files={"file": ("Ground floor.png", encoded())})
+        assert response.status_code == 200, response.text
+        if retry == 0:
+            created = response.json()
+        assert response.json() == created
+    assert created["project_id"] == upload_id
+    assert c.get(f"/projects/{upload_id}/blueprints").json() == [created]
+    assert c.get(f"/blueprints/{created['id']}/preview").status_code == 200

@@ -13,6 +13,7 @@ import { deleteOpening, deleteWall, decideOpening, patchOpening, setReference } 
 import {regionArea} from "../SiteOutline";
 import PlanCanvas from "./PlanCanvas";
 import Inspector from "./Inspector";
+import GuidedReview from "./GuidedReview";
 import PlanReview, {type ReviewState} from "./PlanReview";
 import ToolRail from "./ToolRail";
 import TopBar, { type Display } from "./TopBar";
@@ -24,6 +25,12 @@ const Plan3D = dynamic(() => import("./Plan3D"), { ssr: false });
 
 export default function PlanEditor({ id, phone=false }: { id: string; phone?: boolean }) {
   const router = useRouter();
+  const [guided, setGuided] = useState(false);
+  const reviewButton = useRef<HTMLButtonElement>(null);
+  const closeGuided = useCallback(() => {
+    setGuided(false);
+    reviewButton.current?.focus();
+  }, []);
   const [showSite,setShowSite]=useState(true);
   const [info, setInfo] = useState<Blueprint | null>(null);
   const [model, setModel] = useState<PlanModel | null>(null);
@@ -68,6 +75,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
   useEffect(() => {
     if (!loaded) return;
     const params = new URLSearchParams(window.location.search);
+    if (!phone && params.has("review")) setGuided(true);
     const openingId = params.get("opening");
     if (openingId && live.current?.openings.some(opening=>opening.id===openingId)) {
       setSelection({type:"opening",id:openingId});
@@ -80,7 +88,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
       setView("original");
       setTool("measure");
     }
-  }, [loaded, calibrated, setTool]);
+  }, [loaded, calibrated, phone, setTool]);
   function adopt(r: PlanResponse) {
     if (r.latestExtractionVersion) setLatestExtractor(r.latestExtractionVersion);
     revision.current = r.revision;
@@ -389,6 +397,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
   const checkText=check?`${(check.difference*100).toFixed(1)}% difference · ${check.expected.toFixed(2)} m on the model, ${check.measured.toFixed(2)} m measured.`:"Add a second known distance before relying on furniture fit.";
   function startScaleCheck(){
     setDisplay("2d");
+    setView("overlay");
     setTool("measure");
     setCheckingScale(true);
   }
@@ -401,6 +410,10 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
   }
   const scaleProposal = !mpp ? m.scale.proposal : undefined;
   const showScaleProposal = !!scaleProposal && reviewingScale && view === "overlay" && display === "2d" && tool === "select";
+  const proposedScaleCheck = showScaleProposal && scaleProposal && scaleCheck({
+    ...m,
+    scale: { ...m.scale, reference: scaleProposal.reference, checkReference: scaleProposal.checkReference },
+  });
   const scaleProposalButton = scaleProposal && (showScaleProposal ?
     <button disabled={busy} onClick={()=>{
       const {reference,checkReference}=scaleProposal;
@@ -415,7 +428,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
       setReviewingScale(true);
     }}>Review detected scale</button>);
   const scaleProposalText = scaleProposal && (showScaleProposal ?
-    `Blue ${scaleProposal.reference.lengthMeters.toFixed(2)} m · Purple ${scaleProposal.checkReference.lengthMeters.toFixed(2)} m. Check both spans on the drawing.` :
+    `Blue ${scaleProposal.reference.lengthMeters.toFixed(2)} m · Purple ${scaleProposal.checkReference.lengthMeters.toFixed(2)} m. Check both spans on the drawing.${proposedScaleCheck ? ` · ${(proposedScaleCheck.difference * 100).toFixed(1)}% apart` : ""}` :
     `Found ${scaleProposal.evidenceCount} agreeing printed dimensions. Review the scale before using it.`);
   const footprint = wallFootprint(m, mpp);
   const proposals = m.openings.filter((o) => o.status === "proposed").length;
@@ -610,7 +623,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
     </div>;
   }
   return (
-    <div className="fe" data-display={display}>
+    <div className="fe desktop-plan" data-display={display}>
       <TopBar
         title={info?.filename || "Floor plan"}
         status={status}
@@ -625,7 +638,13 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
         setDisplay={setDisplay}
         scaled={!!mpp}
         walkthroughBusy={busy}
-        onWalkthrough={() => void openTour()}
+        onWalkthrough={() => void navigateAfterSave("/studio/" + encodeURIComponent(id))}
+        onPhoneWalkthrough={() => void openTour()}
+        onOverview={() => void navigateAfterSave("/studio/" + encodeURIComponent(id) + "#overview")}
+        reviewAction={<button ref={reviewButton} aria-pressed={guided} onClick={() => {
+          setDisplay("2d");
+          setGuided(open => !open);
+        }}>Review plan{proposals > 0 ? ` (${proposals})` : ""}</button>}
         exportBlocker={exportBlocker}
         debugHref={`${API}/blueprints/${encodeURIComponent(id)}/plan/debug`}
         exportPlanHref={`${API}/blueprints/${id}/plan/export`}
@@ -677,6 +696,25 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
         )}
         {busy && <progress className="fe-progress" />}
         {display !== "3d" && canvas}
+        {guided && display === "2d" && <GuidedReview model={m} imageUrl={`${API}/blueprints/${id}/preview`}
+          edit={edit} close={closeGuided} attachOpening={openingId => {
+            setGuided(false);
+            setView("overlay");
+            setSelection({type:"opening",id:openingId});
+            setTool("attach");
+          }} next={() => {
+            closeGuided();
+            if (mpp) startScaleCheck();
+            else if (scaleProposal) {
+              setView("overlay");
+              setTool("select");
+              setReviewingScale(true);
+            } else measureScale();
+          }} addDoor={() => {
+            setGuided(false);
+            setView("overlay");
+            setTool("door");
+          }}/>}
         {display !== "2d" && mpp && <Plan3D key={m.id} model={m} dirty={dirty} onPlanEdit={edit}
           savePlan={async () => live.current && await persist(live.current) ? live.current : null} />}
       </main>
@@ -686,6 +724,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
           <p>{scaleProposalText}</p>
           {scaleProposalButton}
           <button onClick={measureScale}>Measure a known distance</button>
+          <button disabled={busy} onClick={() => void navigateAfterSave("/studio/" + encodeURIComponent(id))}>Walk at approximate scale</button>
         </section>}{mpp&&<section className="fe-card">
           <h3>Scale check</h3>
           <p role={check?.mismatch?"alert":undefined}>{check?.mismatch?"Measurements disagree. Review the scale before checking furniture fit. ":""}{checkText}</p>

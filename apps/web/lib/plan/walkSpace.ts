@@ -24,7 +24,7 @@ export function walkSpace(m: PlanModel, scale: number, scene: Scene, eye = 1.6,
       }
     }
     for(const o of m.openings) {
-      if(o.kind!=="door"||o.status!=="confirmed"||!closedDoorIds?.includes(o.id)||
+      if(o.kind!=="door"||o.passage||o.status!=="confirmed"||!closedDoorIds?.includes(o.id)||
          (!walking && o.heightM<eye))continue;
       const ends=openingEnds(m,o,nodeMap);if(!ends)continue;
       const [a,b]=ends, dx=b.x-a.x, dy=b.y-a.y, len2=dx*dx+dy*dy;
@@ -38,7 +38,7 @@ export function walkSpace(m: PlanModel, scale: number, scene: Scene, eye = 1.6,
   // Include the threshold of an open, hosted door in the walkable footprint.
   function inDoorway(p:Pt){
     return m.openings.some(o=>{
-      if(o.kind!=="door" || o.status!=="confirmed" || closedDoorIds?.includes(o.id))return false;
+      if(o.kind!=="door" || o.status!=="confirmed" || (!o.passage && closedDoorIds?.includes(o.id)))return false;
       const wall=m.walls.find(w=>w.id===o.hostWallId);
       const ends=openingEnds(m,o,nodeMap);
       if(!wall || !ends || o.sillM>.02 || o.heightM<eye+.12)return false;

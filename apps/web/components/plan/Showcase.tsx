@@ -123,7 +123,7 @@ function FitOverlay({points,scale,color}:{points:Pt[];scale:number;color:string}
   </mesh>;
 }
 
-export default function Showcase({plan,scene,title,edit,sample=false,approximate=false,renders={},saveView,moveView,saveFinishes,saveFurniture,savePreset,saveWalkEdit}:{plan:PlanModel;scene:Scene;title:string;edit?:string;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View,initial?:View)=>Promise<View>;moveView?:(id:string,position:Pt)=>Promise<void>;saveFinishes?:(finishes:FloorStyles)=>Promise<void>;saveFurniture?:(objects:Item[])=>Promise<void>;savePreset?:(preset:HomePreset|null)=>Promise<void>;saveWalkEdit?:(change:WalkthroughEdit)=>Promise<void>}){
+export default function Showcase({plan,scene,title,edit,desktop=false,stale=false,sample=false,approximate=false,renders={},saveView,moveView,saveFinishes,saveFurniture,savePreset,saveWalkEdit}:{plan:PlanModel;scene:Scene;title:string;edit?:string;desktop?:boolean;stale?:boolean;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View,initial?:View)=>Promise<View>;moveView?:(id:string,position:Pt)=>Promise<void>;saveFinishes?:(finishes:FloorStyles)=>Promise<void>;saveFurniture?:(objects:Item[])=>Promise<void>;savePreset?:(preset:HomePreset|null)=>Promise<void>;saveWalkEdit?:(change:WalkthroughEdit)=>Promise<void>}){
   const [localViews,setLocalViews]=useState<View[]>([]);
   const [localPinPositions,setLocalPinPositions]=useState<Record<string,Pt>>({});
   const [pinNotice,setPinNotice]=useState("");
@@ -133,6 +133,8 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   const savingRef=useRef(false);
   const [selectedId,setSelectedId]=useState<string|null>(()=>
     typeof location!=="undefined"&&location.hash==="#overview"?"overview":null);
+  const studioPoseKey = desktop ? `florp-studio-pose:${plan.id}:${plan.revision}` : null;
+  const lastWalkPose = useRef<View | null>(null);
   const stage=useRef<HTMLDivElement>(null!);
   const tags = useMemo(() => roomTags(plan, true), [plan]);
   const scale=metersPerPixel(plan)!;
@@ -255,6 +257,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     try{
       if(savePreset)await savePreset(presetDraft);
       else setSessionPreset(presetDraft);
+      setNotice(savePreset ? "Style saved" : "Style applied for this session");
       setPresetDraft(undefined);setStylesOpen(false);
     }catch(error){setNotice(String(error));}
     finally{savingRef.current=false;setSaving(false);}
@@ -377,11 +380,16 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   useEffect(()=>{
     const read=()=>{
       const id=new URLSearchParams(location.hash.slice(1)).get("view");
-      setFreeView(null);
+      let previous: View | null = null;
+      if (studioPoseKey) {
+        try { previous = JSON.parse(sessionStorage.getItem(studioPoseKey) ?? "null"); } catch {}
+      }
+      lastWalkPose.current = previous;
+      setFreeView(!location.hash ? previous : null);
       setSelectedId(location.hash==="#overview"?"overview":latestViews.current.some(v=>v.id===id)?id:null);
     };
     read();window.addEventListener("hashchange",read);return ()=>window.removeEventListener("hashchange",read);
-  },[]);
+  },[studioPoseKey]);
   useEffect(()=>{
     if(!playing)return;
     const timer=setTimeout(()=>{
@@ -468,7 +476,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
           void applyQuickEdit({windowFinishes});
         }:undefined};
     }
-    if(hoveredOpening?.kind==="door"){
+    if(hoveredOpening?.kind==="door"&&!hoveredOpening.passage){
       const {id}=hoveredOpening;
       const closed=tourScene.closedDoorIds??[];
       return {kind:"door",href,closed:closed.includes(id),onToggle:()=>void applyQuickEdit({
@@ -548,7 +556,19 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     </Canvas>
     </div>
     {view&&rendered&&renders[view.id]&&<div className="show-render"><img src={renders[view.id]} alt={"Saved design render for "+view.name}/></div>}
-    {view&&<button type="button" className="show-overview" data-tour-tools onClick={()=>select(-1)}><Box size={18}/>Overview</button>}
+    {desktop ? <nav className="studio-modes" aria-label="Workspace views" data-tour-tools>
+      <Link href={edit ?? "/"} onClick={()=>{
+        const previous = view ? pose.current ?? view : lastWalkPose.current;
+        if (studioPoseKey && previous) {
+          try { sessionStorage.setItem(studioPoseKey, JSON.stringify(previous)); } catch {}
+        }
+      }}>{edit ? "Plan" : "Homes"}</Link>
+      <button aria-pressed={!view} onClick={()=>{if(view){lastWalkPose.current=pose.current??view;select(-1);}}}>Overview</button>
+      <button aria-pressed={!!view} disabled={!views.length} onClick={()=>{if(!view){select(0);setFreeView(lastWalkPose.current);}}}>Walk</button>
+    </nav> : view&&<button type="button" className="show-overview" data-tour-tools onClick={()=>select(-1)}><Box size={18}/>Overview</button>}
+    {desktop&&(approximate||stale||notice)&&<div className="studio-status" role="status">
+      {approximate?"Approximate scale":stale?<Link href={(edit??"/")+"?setup=furniture"}>Review scene against the updated plan</Link>:notice}
+    </div>}
     {editor&&<WalkthroughEditMenu key={targetKey(target)} editor={editor} menu={menu} busy={saving} message={quickNotice} close={()=>chooseTarget(null)}/>}
     {stylesOpen&&<section className="finish-sheet style-sheet" aria-label="Whole-home style" data-tour-tools onWheel={scrollTourRail}>
       <div className="finish-heading"><h2>Whole-home style</h2><button aria-label="Close styles" onClick={()=>{setPresetDraft(undefined);setStylesOpen(false);}}><X size={18}/></button></div>
@@ -649,7 +669,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
             setPlaying(false);
             if(pose.current?.id===view.id)void addView(pose.current);
           }}><Bookmark/>Save this view</button>}
-          {edit&&<Link href={"/phone/edit/"+encodeURIComponent(plan.id)}><PencilRuler/>Edit floor</Link>}
+          {edit&&<Link href={desktop?edit:"/phone/edit/"+encodeURIComponent(plan.id)}><PencilRuler/>Edit floor</Link>}
           {view&&!rendered&&viewport?.viewId===view.id&&<>
             <button onClick={()=>{
               setPlaying(false);

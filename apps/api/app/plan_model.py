@@ -109,6 +109,7 @@ class Opening(Base):
     sill_m: float = Field(default=0, ge=0, le=10)
     swing: Literal["left", "right"] | None = None
     hinge: Literal["start", "end"] = "start"
+    passage: bool = False
     confidence: float = Field(default=1.0, ge=0, le=1)
     status: Literal["proposed", "confirmed", "rejected"] = "proposed"
     window_frame: WindowFrame | None = None

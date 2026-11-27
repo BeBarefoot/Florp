@@ -25,6 +25,7 @@ export type Opening = {
   sillM: number;
   swing: "left" | "right" | null;
   hinge: "start" | "end";
+  passage?: boolean;
   confidence: number;
   status: OpeningStatus;
   windowFrame?: WindowFrame | null;

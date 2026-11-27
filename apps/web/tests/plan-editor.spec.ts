@@ -953,3 +953,24 @@ test("the uncalibrated drawing shows detected appliance footprints", async ({pag
   await expect(drawing.getByRole("img", {name:"Cabinets"}).locator("rect").first()).toBeVisible();
   await expect(drawing.getByText("Fridge", {exact:true})).toHaveCount(0);
 });
+
+test("guided review compares one opening, leaves skips unresolved, and persists an undoable passage", async ({page}) => {
+  const {puts} = await setup(page);
+  await page.getByRole("button", {name: "Review plan (1)", exact: true}).click();
+  const review = page.getByRole("region", {name: "Guided review"});
+  await expect(review.getByRole("img", {name: "Selected span on the original drawing"})).toBeVisible();
+  await expect(review.getByRole("img", {name: "Same span in the plan model"})).toBeVisible();
+  await review.getByRole("button", {name: "Skip", exact: true}).click();
+  await expect(review.getByText("Skipped findings are still open.")).toBeVisible();
+  expect(puts).toHaveLength(0);
+  await review.getByRole("button", {name: "Review skipped findings"}).click();
+  await review.getByRole("button", {name: "Open passage"}).click();
+  await page.getByRole("button", {name: "Undo", exact: true}).click();
+  await expect(review.getByRole("button", {name: "Open passage"})).toBeVisible();
+  await review.getByRole("button", {name: "Open passage"}).click();
+  await expect.poll(() => puts.at(-1)?.openings.find(opening => opening.id === "maybe"))
+    .toMatchObject({passage: true, status: "confirmed", hostWallId: "w3", widthPx: 90});
+  await page.reload();
+  await page.getByRole("button", {name: "Review plan", exact: true}).click();
+  await expect(review.getByText("No suggested openings or wall closures to review.")).toBeVisible();
+});
