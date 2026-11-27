@@ -355,3 +355,14 @@
 .closet-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(235px,100%),1fr));gap:12px}
 .closet-options article{padding:10px;border:1px solid var(--desk-line);border-radius:10px;background:var(--desk-surface)}
 .closet-options svg{display:block;width:100%;height:155px;background:var(--desk-paper)}
+.variant-studio main{max-width:1380px;margin:auto;padding:24px 20px}
+.variant-studio h1{font:normal clamp(2rem,4vw,3.6rem)/1 Georgia,serif;color:var(--desk-forest)}
+.variant-studio nav,.variant-exports{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0}
+.variant-studio button[aria-pressed=true]{background:var(--desk-forest);color:var(--desk-surface)}
+.variant-viewports{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.variant-viewports[data-walking=true]{grid-template-columns:1fr}
+.variant-viewports section{min-width:0;border:1px solid var(--desk-line);border-radius:13px;overflow:hidden;background:var(--desk-surface)}
+.variant-viewports h2{margin:0;padding:9px 12px;font:normal 19px Georgia,serif}
+.variant-canvas{height:clamp(230px,50vh,555px)}
+.variant-viewports[data-walking=true] .variant-canvas{height:clamp(280px,60vh,640px)}
+.variant-canvas canvas{touch-action:none}

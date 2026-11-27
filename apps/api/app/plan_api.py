@@ -394,7 +394,8 @@ def history(bid: str):
 def info(bid: str):
     with Session(get_engine()) as s:
         bp = blueprint(s, bid)
-        from .models import FloorPair
+        from .models import DesignVariant, FloorPair
+        variant = s.get(DesignVariant, bid)
         pair = s.get(FloorPair, bp.project_id)
         floor = None
         if pair and bid in (pair.first, pair.second):
@@ -406,6 +407,7 @@ def info(bid: str):
             "project_id": bp.project_id,
             "filename": bp.filename,
             "floor": floor,
+            **({"variantOf": variant.source_id} if variant else {}),
             "width": bp.width,
             "height": bp.height,
         }

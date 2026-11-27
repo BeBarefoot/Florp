@@ -457,7 +457,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, designerOpen=
         <button disabled={!edited&&!dirty} onClick={()=>void save()}>Save scene</button>
         <button disabled={!undo.length} onClick={()=>{setScene(undo[undo.length-1]);setUndo(undo.slice(0,-1));}}>Undo scene edit</button>
       </div>
-      {!phone&&<ClosetDesigner open={designerOpen} plan={m} scene={scene} disabled={dirty||needsReview}/>}
+      {!phone&&<ClosetDesigner open={designerOpen} plan={m} scene={scene} sceneRevision={saved?.revision??0} disabled={dirty||needsReview||JSON.stringify(scene)!==JSON.stringify(saved?.config)}/>}
       <label>Floor finish <select value={scene.floorMaterial?"custom":scene.floorFinish??"default"}
         onChange={e=>change({...scene,floorFinish:e.target.value as FloorFinish,floorMaterial:null})}>
         {scene.floorMaterial&&<option value="custom" disabled>Custom walkthrough finish</option>}

@@ -30,7 +30,7 @@ from .wall_run_normalization import consolidate_wall_runs
 from .evidence_fusion import fuse_evidence
 
 from .floor_pair import Alignment, Pair, StairLanding, suggest
-from .models import FloorAlignment, FloorPair, StairLandings, SceneRevision, SceneRenderJob, PlanReview
+from .models import DesignVariant, FloorAlignment, FloorPair, StairLandings, SceneRevision, SceneRenderJob, PlanReview
 
 Path(settings.storage_path).mkdir(parents=True,exist_ok=True)
 if settings.database_url.startswith('sqlite:///'):
@@ -102,6 +102,8 @@ def delete_project(pid:str):
         if not project:raise HTTPException(404,'Project not found')
         plans=list(s.exec(select(Blueprint).where(Blueprint.project_id==pid)).all())
         ids=[bp.id for bp in plans]
+        for variant in s.exec(select(DesignVariant).where(DesignVariant.blueprint_id.in_(ids))).all():
+            s.delete(variant)
         for bid in ids:
             for table in (PlanReview,SceneRenderJob,SceneRevision,PlanRevision,WorkspaceRevision,Render,ModelWallCorrection,WallAnnotation,FusionCandidateReview,ExtractionEvaluation,PlanGraphRevision,Layout):
                 for row in s.exec(select(table).where(table.blueprint_id==bid)).all():
@@ -125,7 +127,7 @@ def pair_members(s, pid, first, second):
     if first == second:
         raise HTTPException(422, 'Choose two different floor drawings')
     plans = [s.get(Blueprint, key) for key in (first, second)]
-    if any(bp is None or bp.project_id != pid for bp in plans):
+    if any(bp is None or bp.project_id != pid or s.get(DesignVariant, bp.id) for bp in plans):
         raise HTTPException(404, 'Drawing missing from this project')
     return plans
 
@@ -221,7 +223,9 @@ def save_stair_landing(pid: str, bid: str, landing: StairLanding):
 
 @app.get('/projects/{pid}/blueprints',response_model=list[Blueprint])
 def blueprints(pid:str):
-    with Session(engine) as s:return list(s.exec(select(Blueprint).where(Blueprint.project_id==pid)).all())
+    with Session(engine) as s:
+        return list(s.exec(select(Blueprint).where(Blueprint.project_id==pid,
+            Blueprint.id.not_in(select(DesignVariant.blueprint_id)))).all())
 async def read_blueprint(file: UploadFile, page_index: int):
     contents = await file.read(settings.max_upload_mb * 1024 * 1024 + 1)
     if len(contents) > settings.max_upload_mb * 1024 * 1024:
@@ -1449,3 +1453,6 @@ app.include_router(scene_router)
 
 from .plan_review import router as review_router
 app.include_router(review_router)
+
+from .design_variants import router as variants_router
+app.include_router(variants_router)

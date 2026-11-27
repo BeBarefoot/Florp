@@ -1,4 +1,7 @@
-import { useState } from "react";
+import Link from "next/link";
+import { request } from "../../lib/api";
+import type { VariantSummary } from "../../lib/plan/designVariants";
+import { useEffect, useState } from "react";
 import { closetOptions, type ClosetOption } from "../../lib/plan/closetDesigner";
 import { metersPerPixel, nodeMap, wallEnds } from "../../lib/plan/derive";
 import type { PlanModel, Pt } from "../../lib/plan/model";
@@ -28,7 +31,33 @@ export function ClosetDrawing({original,option}: {original:PlanModel;option:Clos
   </svg>;
 }
 
-export default function ClosetDesigner({plan,scene,disabled,open}: {plan:PlanModel;scene:Scene;disabled:boolean;open:boolean}) {
+export default function ClosetDesigner({plan,scene,disabled,open,sceneRevision}: {
+  plan:PlanModel;scene:Scene;disabled:boolean;open:boolean;sceneRevision:number;
+}) {
+  const [variants,setVariants]=useState<VariantSummary[]>([]);
+  const [saving,setSaving]=useState(false);
+  const [message,setMessage]=useState("");
+  const path=`/blueprints/${encodeURIComponent(plan.id)}/variants`;
+  useEffect(()=>{
+    const controller=new AbortController();
+    request<VariantSummary[]>(path,{signal:controller.signal}).then(items=>{
+      if(!controller.signal.aborted&&Array.isArray(items))setVariants(items);
+    }).catch(()=>{});
+    return ()=>controller.abort();
+  },[path]);
+
+  async function save(option:ClosetOption){
+    setSaving(true);setMessage("");
+    try{
+      const result=await request<VariantSummary>(path,{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({requestId:option.storage.id,title:option.title,planRevision:plan.revision,sceneRevision,
+          metrics:{passage:option.passage,storageDepth:option.storage.depth,moved:option.moved},plan:option.plan,scene:option.scene})});
+      setVariants(all=>all.some(item=>item.id===result.id)?all:[...all,result]);
+      setMessage(option.title+" saved.");
+    }catch(error){setMessage(String(error));}
+    finally{setSaving(false);}
+  }
+
   const [roomId,setRoomId]=useState("");
   const [partition,setPartition]=useState(false);
   const [move,setMove]=useState(false);
@@ -40,7 +69,7 @@ export default function ClosetDesigner({plan,scene,disabled,open}: {plan:PlanMod
     <summary>Closet Designer</summary>
     <p>Add a walk-through closet with two open ends. Existing walls, windows, and doors are fixed in these proposals.</p>
     <div className="scene-actions">
-      <label>Room <select value={roomId} onChange={event=>{setRoomId(event.target.value);clear();}}>
+      <label>Room <select aria-label="Room" value={roomId} onChange={event=>{setRoomId(event.target.value);clear();}}>
         <option value="">Choose a room</option>
         {rooms.map((room,index)=><option key={room.id} value={room.id}>{room.label??`Room ${index+1}`}</option>)}
       </select></label>
@@ -57,7 +86,17 @@ export default function ClosetDesigner({plan,scene,disabled,open}: {plan:PlanMod
         <ClosetDrawing original={plan} option={option}/>
         <p>{Math.round(option.passage*100)} cm passage · {Math.round(option.storage.depth*100)} cm storage depth
           {option.moved>0&&` · ${option.moved} items moved`}</p>
+        {variants.some(item=>item.id===option.storage.id)?
+          <Link className="desktop-action" href={`/compare/${option.storage.id}`}>Compare option</Link>:
+          <button disabled={saving||disabled} onClick={()=>void save(option)}>Save as variant</button>}
       </article>)}
     </div>}
+    {message&&<p role="status">{message}</p>}
+    {variants.length>0&&<section aria-label="Saved design variants">
+      <h3>Saved variants</h3>
+      <ul>{variants.map(item=><li key={item.id}>
+        <Link href={`/compare/${item.id}`}>{item.title} · Compare</Link>
+      </li>)}</ul>
+    </section>}
   </details>;
 }

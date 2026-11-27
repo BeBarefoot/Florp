@@ -149,3 +149,43 @@ test('garden area subtracts enclosed patios using calibrated source dimensions',
    holes:[[[.1,.1],[.2,.1],[.2,.2],[.1,.2]] as [number,number][]]};
  expect(regionArea(region,800,600,.01)).toBeCloseTo(11.52);
 });
+
+test("Designer saves an independent variant, compares it, walks it and exports a plan",async({page,request},testInfo)=>{
+ const api=String(testInfo.config.metadata.api);
+ const png=execFileSync('uv',['run','--locked','python','-c',
+   "from scripts.demo_project import fixtures; import sys; sys.stdout.buffer.write(next(fixtures())[2])"],
+   {cwd:resolve(__dirname,'../../api')});
+ const project=await (await request.post(api+'/projects',{data:{title:"Closet test"}})).json();
+ const floor=await (await request.post(`${api}/projects/${project.id}/blueprints`,{
+   multipart:{file:{name:"room.png",mimeType:"image/png",buffer:png}},
+ })).json();
+ const path=`${api}/blueprints/${floor.id}/plan`;
+ const points=[[100,100],[700,100],[700,500],[100,500]];
+ const saved=await request.put(path,{data:{expectedRevision:0,model:{
+   id:floor.id,imageTransform:{width:800,height:600},
+   nodes:points.map(([x,y],i)=>({id:"n"+i,x,y})),
+   walls:points.map((_,i)=>({id:"w"+i,a:"n"+i,b:"n"+((i+1)%4),thicknessPx:10})),
+   scale:{reference:{p1:{x:100,y:100},p2:{x:700,y:100},lengthMeters:6}},
+ }}});
+ expect(saved.ok()).toBe(true);
+ const baseline=await saved.json();
+ await page.goto(`/plan/${floor.id}`);
+ await page.getByRole("button",{name:"Designer",exact:true}).click();
+ const designer=page.locator(".closet-designer");
+ await designer.getByRole("combobox",{name:"Room",exact:true}).selectOption({index:1});
+ await designer.getByRole("checkbox",{name:"A new lightweight partition is possible"}).check();
+ await designer.getByRole("button",{name:"Suggest closet layouts"}).click();
+ await expect(designer.getByRole("heading",{name:/Closet option/})).toHaveCount(2);
+ await designer.getByRole("button",{name:"Save as variant"}).first().click();
+ await designer.getByRole("link",{name:"Compare option",exact:true}).click();
+ await expect(page.getByRole("heading",{name:"Original",exact:true})).toBeVisible({timeout:25_000});
+ await expect(page.locator("canvas")).toHaveCount(2);
+ await page.getByRole("button",{name:"Walk variant",exact:true}).click();
+ await expect(page.locator("canvas")).toHaveCount(1);
+ await page.getByRole("button",{name:"Walk original",exact:true}).click();
+ await expect(page.getByRole("heading",{name:"Original",exact:true})).toBeVisible();
+ const download=page.waitForEvent("download");
+ await page.getByRole("link",{name:"Export plan bundle"}).click();
+ expect((await download).suggestedFilename()).toMatch(/\.zip$/);
+ expect(await (await request.get(path)).json()).toEqual(baseline);
+});

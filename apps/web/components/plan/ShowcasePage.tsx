@@ -87,7 +87,7 @@ export default function ShowcasePage({desktop = false}: {desktop?: boolean}){
   useEffect(() => {
     setHouse(null);
     setHouseStatus("");
-    if (!desktop || blueprint?.id !== id || !blueprint.project_id) return;
+    if (!desktop || blueprint?.id !== id || !blueprint.project_id || blueprint.variantOf) return;
     let active = true;
     let foundOtherFloor = false;
     const project = "/projects/" + encodeURIComponent(blueprint.project_id);
@@ -162,7 +162,7 @@ export default function ShowcasePage({desktop = false}: {desktop?: boolean}){
       return saved.config.views;
     }
     const {floor,project_id}=data[2];
-    const levelAction = desktop && project_id ? floor
+    const levelAction = desktop && project_id && !data[2].variantOf ? floor
       ? {href:`/studio/${encodeURIComponent(floor.otherId)}#overview`, label:floor.level===1?"Second floor":"First floor", importing:false}
       : house?.id===id
         ? {href:`/studio/${encodeURIComponent(house.other.plan.id)}#overview`, label:house.upperIsActive?"First floor":"Second floor", importing:false}

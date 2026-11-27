@@ -170,3 +170,12 @@ class FloorAlignment(SQLModel, table=True):
 class StairLandings(SQLModel, table=True):
     project_id: str = Field(primary_key=True, foreign_key="project.id")
     endpoints: dict = Field(default_factory=dict, sa_type=JSON)
+
+
+class DesignVariant(SQLModel, table=True):
+    blueprint_id: str = Field(primary_key=True, foreign_key="blueprint.id")
+    source_id: str = Field(index=True, foreign_key="blueprint.id")
+    title: str
+    plan_revision: int
+    scene_revision: int
+    metrics: dict = Field(default_factory=dict, sa_type=JSON)
