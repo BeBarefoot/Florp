@@ -639,9 +639,12 @@ export default function Showcase({plan,scene,title,edit,levelAction,house,houseS
       </div>
       {wholeHouse&&<small>{house.alignment?"2 floors":house.provisionalOrder?"2 floors · Confirm floor order":"2 floors · Approximate alignment"}</small>}
       {wholeHouse&&alignmentHref&&<Link href={alignmentHref}>{house.provisionalOrder?"Review floor pair":"Align floors"}</Link>}
+      {!wholeHouse&&(approximate||stale||notice)&&<small role="status">
+        {approximate?"Approximate scale":stale?<Link href={(edit??"/")+"?setup=furniture"}>Review scene against the updated plan</Link>:notice}
+      </small>}
     </div>}
     {desktop&&!view&&!house&&houseStatus&&<div className="studio-status" role="status">{houseStatus}</div>}
-    {desktop&&(!wholeHouse&&!(houseStatus&&!view))&&(approximate||stale||notice)&&<div className="studio-status" role="status">
+    {desktop&&(!!view||!house)&&!(houseStatus&&!view)&&(approximate||stale||notice)&&<div className="studio-status" role="status">
       {approximate?"Approximate scale":stale?<Link href={(edit??"/")+"?setup=furniture"}>Review scene against the updated plan</Link>:notice}
     </div>}
     {editor&&<WalkthroughEditMenu key={targetKey(target)} editor={editor} desktop={desktop} menu={menu} busy={saving} message={quickNotice} close={()=>chooseTarget(null)}/>}
