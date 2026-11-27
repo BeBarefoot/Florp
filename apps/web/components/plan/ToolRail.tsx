@@ -37,14 +37,14 @@ export default function ToolRail(p: {
           title={`${t.label} (${t.key})`}
           onClick={() => p.setTool(t.id)}
         >
-          {t.icon}
+          {t.icon}<span>{t.id === "measure" ? "Measure" : t.id === "select" ? "Select" : t.id[0].toUpperCase() + t.id.slice(1)}</span>
         </button>
       ))}
       <span className="fe-spacer" />
       <div className="fe-views" role="radiogroup" aria-label="Plan view">
         {(["clean", "overlay", "original"] as const).map((v) => (
           <button key={v} role="radio" aria-checked={p.view === v} title={v} onClick={() => p.setView(v)}>
-            {v[0].toUpperCase()}
+            {v === "clean" ? "Plan" : v === "overlay" ? "Overlay" : "Source"}
           </button>
         ))}
       </div>

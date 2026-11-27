@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, Box, Upload } from "lucide-react";
+import { ArrowUpRight, Box, Folder, Trash2, Upload } from "lucide-react";
+import DesktopBrand from "../components/DesktopBrand";
 import { newUuid } from "../lib/uuid";
 import { API, request, type Blueprint, type Project } from "../lib/api";
 
@@ -64,8 +65,8 @@ export default function Home() {
   }
 
   const [latest, ...others] = projects;
-  return <main className="desktop-home">
-    <header className="desktop-home-bar"><strong>Florp</strong><span role="status">{health}</span></header>
+  return <main className="desktop-home desktop-surface">
+    <header className="desktop-mast"><DesktopBrand/><span className="desktop-connection" role="status">{health}</span></header>
     <section className="desktop-home-hero" data-dragging={dragging}
       onDragOver={event => { event.preventDefault(); setDragging(true); }}
       onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
@@ -75,23 +76,27 @@ export default function Home() {
         const file = event.dataTransfer.files[0];
         if (file) void upload(file);
       }}>
+      <div className="desktop-home-copy">
       {preview ? <>
         <h1>{preview.filename}</h1>
-        <img className="desktop-upload-preview" src={`${API}/blueprints/${preview.id}/preview`} alt="Drawing ready for extraction"/>
         {preview.filename.toLowerCase().endsWith(".pdf") && <p>PDF · Page 1</p>}
         <button className="desktop-primary" onClick={() => router.push("/plan/" + encodeURIComponent(preview.id) + "?review=1")}>
           Analyze plan <ArrowUpRight size={17}/>
         </button>
         <button onClick={() => input.current?.click()}>Choose another file</button>
       </> : <>
-        <h1>Walk your future home.</h1>
-        <p>Drop a floor plan or choose a PDF, PNG, JPEG, or WebP.</p>
+        <h1>Walk your<br/>future home.</h1>
+        <p>Turn a floor plan into a home you can walk through, furnish, and make your own.</p>
         <button className="desktop-primary" disabled={busy} onClick={() => input.current?.click()}>
           <Upload size={17}/>{busy ? "Opening drawing…" : "Upload a plan"}
         </button>
-        {latest && <Link href={"/project/" + latest.id}>Continue {latest.title} <ArrowUpRight size={15}/></Link>}
         <Link href="/studio/sample"><Box size={17}/> Explore a sample</Link>
       </>}
+      </div>
+      <figure className="desktop-home-image" data-preview={!!preview}>
+        {preview ? <img src={`${API}/blueprints/${preview.id}/preview`} alt="Drawing ready for extraction"/>
+          : <img src="/desktop-interior.webp" alt="Sunlit living room with a warm timber floor"/>}
+      </figure>
       <input ref={input} type="file" accept=".pdf,.png,.jpeg,.jpg,.webp" hidden onChange={event => {
         const file = event.currentTarget.files?.[0];
         event.currentTarget.value = "";
@@ -103,8 +108,8 @@ export default function Home() {
     {latest && <section className="desktop-recents" aria-label="Recent homes">
       <h2>Recent homes</h2>
       <ul>{[latest, ...others].map(project => <li key={project.id}>
-        <Link href={"/project/" + project.id}>{project.title} <ArrowUpRight size={16}/></Link>
-        <button type="button" aria-label={`Delete ${project.title}`} onClick={() => void removeProject(project)}>Delete</button>
+        <Link href={"/project/" + project.id}><Folder size={18}/><span>{project.title}</span><ArrowUpRight size={16}/></Link>
+        <button type="button" aria-label={`Delete ${project.title}`} onClick={() => void removeProject(project)} title="Delete home"><Trash2 size={16}/></button>
       </li>)}</ul>
     </section>}
   </main>;

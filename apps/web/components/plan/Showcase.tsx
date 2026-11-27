@@ -7,8 +7,9 @@ import {Canvas,useThree} from "@react-three/fiber";
 import {Html} from "@react-three/drei";
 import {DoubleSide,Shape,Vector2,Vector3} from "three";
 import Link from "next/link";
+import DesktopBrand from "../DesktopBrand";
 import {request} from "../../lib/api";
-import {Maximize2,LayoutGrid,Box,MapPin,Pause,Play,SkipBack,SkipForward,Image as ImageIcon,FileDown,ImageDown,Bookmark,MapPinPlus,X,PencilRuler,Layers,Armchair} from "lucide-react";
+import {Maximize2,LayoutGrid,Box,Footprints,MapPin,Pause,Play,SkipBack,SkipForward,Image as ImageIcon,FileDown,ImageDown,Bookmark,MapPinPlus,X,PencilRuler,Layers,Armchair} from "lucide-react";
 import {MAX_HORIZONTAL_FOV_DEG} from "../../lib/plan/camera";
 import {downloadPrompt,renderPrompt} from "../../lib/plan/renderPrompt";
 import {homePresets, presetFloor, type HomePreset} from "../../lib/plan/homePresets";
@@ -556,16 +557,20 @@ export default function Showcase({plan,scene,title,edit,desktop=false,stale=fals
     </Canvas>
     </div>
     {view&&rendered&&renders[view.id]&&<div className="show-render"><img src={renders[view.id]} alt={"Saved design render for "+view.name}/></div>}
-    {desktop ? <nav className="studio-modes" aria-label="Workspace views" data-tour-tools>
+    {desktop ? <header className="studio-header" data-tour-tools>
+      <DesktopBrand/>
+      <nav className="studio-modes" aria-label="Workspace views">
       <Link href={edit ?? "/"} onClick={()=>{
         const previous = view ? pose.current ?? view : lastWalkPose.current;
         if (studioPoseKey && previous) {
           try { sessionStorage.setItem(studioPoseKey, JSON.stringify(previous)); } catch {}
         }
       }}>{edit ? "Plan" : "Homes"}</Link>
-      <button aria-pressed={!view} onClick={()=>{if(view){lastWalkPose.current=pose.current??view;select(-1);}}}>Overview</button>
-      <button aria-pressed={!!view} disabled={!views.length} onClick={()=>{if(!view){select(0);setFreeView(lastWalkPose.current);}}}>Walk</button>
-    </nav> : view&&<button type="button" className="show-overview" data-tour-tools onClick={()=>select(-1)}><Box size={18}/>Overview</button>}
+      <button aria-pressed={!view} onClick={()=>{if(view){lastWalkPose.current=pose.current??view;select(-1);}}}><Box size={16}/>Overview</button>
+      <button aria-pressed={!!view} disabled={!views.length} onClick={()=>{if(!view){select(0);setFreeView(lastWalkPose.current);}}}><Footprints size={16}/>Walk</button>
+      </nav>
+      <span className="studio-floor-name" title={title}>{title}</span>
+    </header> : view&&<button type="button" className="show-overview" data-tour-tools onClick={()=>select(-1)}><Box size={18}/>Overview</button>}
     {desktop&&(approximate||stale||notice)&&<div className="studio-status" role="status">
       {approximate?"Approximate scale":stale?<Link href={(edit??"/")+"?setup=furniture"}>Review scene against the updated plan</Link>:notice}
     </div>}
@@ -627,7 +632,7 @@ export default function Showcase({plan,scene,title,edit,desktop=false,stale=fals
         event.currentTarget.querySelector<HTMLButtonElement>(".show-menu-button")?.focus();
       }
     }}>
-      {(toolsOpen||adding||pickingRoom)&&<div className="show-heading">
+      {(adding||pickingRoom||(!desktop&&toolsOpen))&&<div className="show-heading">
         <small>{approximate?"Approximate scale · ":""}{title}</small>
         <p>{pickingRoom?"Tap a room’s floor to choose it.":adding?"Tap a room to add a wide corner view.":rendered?"Saved design render":view?"Tap to walk. Drag two fingers to move, twist to turn, and pinch to zoom.":"Drag a numbered pin to move its view. Drag the scene to orbit."}</p>
       </div>}
@@ -638,7 +643,7 @@ export default function Showcase({plan,scene,title,edit,desktop=false,stale=fals
             if(pickingRoom){setPickingRoom(false);setFinishesOpen(true);}
             else setToolsOpen(!toolsOpen);
           }}>
-          {toolsOpen||pickingRoom?<X/>:<LayoutGrid/>}
+          {toolsOpen||pickingRoom?<X/>:<LayoutGrid/>}{desktop&&<span>{toolsOpen||pickingRoom?"Close":"Design"}</span>}
         </button>
         <div id="show-tour-actions" className="show-list" role="group" aria-label="Tour actions" hidden={!toolsOpen&&!pickingRoom} onWheel={scrollTourRail}>
           {pickingRoom?<button onClick={()=>{setPickingRoom(false);setFinishesOpen(true);}}><X/>Cancel room selection</button>:<>

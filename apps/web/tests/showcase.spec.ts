@@ -637,3 +637,16 @@ test("furniture can be placed and dragged directly in the current walkthrough",a
   await sheet.getByRole("button",{name:"Close Furnish"}).click();
   await expect(page.getByRole("heading",{name:start.name})).toBeVisible();
 });
+
+test("desktop studio keeps the full viewport canvas beneath the workspace navigation",async({page})=>{
+  test.setTimeout(75_000);
+  await page.setViewportSize({width:1280,height:760});
+  await page.goto("/studio/sample#overview");
+  const modes=page.getByRole("navigation",{name:"Workspace views"});
+  await expect(modes.getByRole("button",{name:"Overview"})).toHaveAttribute("aria-pressed","true",{timeout:30_000});
+  await expect.poll(async()=>Math.round((await page.locator("canvas").boundingBox())?.height??0)).toBe(760);
+  await modes.getByRole("button",{name:"Walk"}).click();
+  await expect(modes.getByRole("button",{name:"Walk"})).toHaveAttribute("aria-pressed","true");
+  await page.getByRole("button",{name:"Open tour tools"}).click();
+  await expect(page.getByRole("group",{name:"Tour actions"})).toBeVisible();
+});

@@ -385,7 +385,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
 
   if (!model)
     return (
-      <main className="fe-loading">
+      <main className={phone ? "fe-loading" : "fe-loading desktop-surface"}>
         {extraction && <ExtractionProgress state={extraction}/>}
         <p>{error || status}</p>
         {error && <button onClick={() => void extract(revision.current, false)}>Try again</button>}
@@ -625,6 +625,7 @@ export default function PlanEditor({ id, phone=false }: { id: string; phone?: bo
   return (
     <div className="fe desktop-plan" data-display={display}>
       <TopBar
+        projectHref={info ? "/project/" + info.project_id : "/"}
         title={info?.filename || "Floor plan"}
         status={status}
         extractionAction={olderExtraction ? extractButton : null}
