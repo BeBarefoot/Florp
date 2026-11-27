@@ -1,6 +1,6 @@
 import type { HomePreset } from "./homePresets";
 import { newUuid } from "../uuid";
-import type { Pt } from "./model";
+import type { Pt, WindowFrame } from "./model";
 import { dimensions, tvDimensions, type ObjectKind } from "./furnitureCatalog";
 export type { ObjectKind } from "./furnitureCatalog";
 
@@ -18,14 +18,17 @@ export type FloorFinish = keyof typeof floorFinishes;
 export type FloorMaterial = { kind: "wood" | "concrete" | "marble" | "tile"; color: string; widthM: number; lengthM: number };
 export type WallSide = "a" | "b";
 export type WallMaterial = {kind:"paint"|"tile";color:string};
+export type WindowFinish = Pick<WindowFrame,"material"|"color">;
 export type Scene = {
   designPreset?: HomePreset | null;
   floorFinish?: FloorFinish;
   floorMaterial?: FloorMaterial | null;
   roomFloorMaterials?: Record<string, FloorMaterial>;
   wallFinishes?: Record<string, Partial<Record<WallSide,WallMaterial|null>>>;
+  windowFinishes?: Record<string, WindowFinish>;
   views: View[]; objects: Item[]; style: string; closedDoorIds?: string[]; dismissedFixtureIds?: string[];
 };
+export type WalkthroughEdit = Partial<Pick<Scene,"objects"|"wallFinishes"|"windowFinishes"|"closedDoorIds">>;
 export type Saved = { revision: number; planRevision: number | null; config: Scene };
 export type Frame = { width: number; height: number; configured: boolean; model: string; provider: string };
 export type Job = { id: string; viewId: string; name: string; prompt: string; model: string;

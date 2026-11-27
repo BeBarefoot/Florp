@@ -3,7 +3,7 @@ import {useThree} from "@react-three/fiber";
 import {Raycaster,Vector2} from "three";
 import type {Pt} from "../../lib/plan/model";
 
-export function FloorPicker({scale,onPick}:{scale:number;onPick:(point:Pt|null,yaw:number)=>void}){
+export function FloorPicker({scale,roomPicking=false,onPick}:{scale:number;roomPicking?:boolean;onPick:(point:Pt|null,yaw:number)=>void}){
   const {gl,get}=useThree();
   useEffect(()=>{
     const canvas=gl.domElement;
@@ -30,27 +30,30 @@ export function FloorPicker({scale,onPick}:{scale:number;onPick:(point:Pt|null,y
       if(!tap||event.defaultPrevented)return;
       const bounds=canvas.getBoundingClientRect();
       const {camera,scene}=get();
+      camera.updateMatrixWorld();
       ray.setFromCamera(new Vector2(
         2*(event.clientX-bounds.left)/bounds.width-1,
         1-2*(event.clientY-bounds.top)/bounds.height,
       ),camera);
-      const hit=ray.intersectObjects(scene.children).find(({object})=>!object.userData.glass);
+      const hit=ray.intersectObjects(scene.children,true).find(({object})=>
+        object.visible&&(roomPicking?object.userData.walkFloor:!object.userData.glass));
       const yaw=Math.atan2(ray.ray.direction.z,ray.ray.direction.x)*180/Math.PI;
       onPick(hit?.object.userData.walkFloor
         ?{x:hit.point.x/scale,y:hit.point.z/scale}:null,yaw);
     }
     canvas.addEventListener("pointerdown",down);
     canvas.addEventListener("pointermove",move);
-    canvas.addEventListener("pointerup",up);
+    // OrbitControls may release pointer capture while handling pointerup.
+    canvas.addEventListener("pointerup",up,true);
     canvas.addEventListener("pointercancel",cancel);
     canvas.addEventListener("lostpointercapture",cancel);
     return ()=>{
       canvas.removeEventListener("pointerdown",down);
       canvas.removeEventListener("pointermove",move);
-      canvas.removeEventListener("pointerup",up);
+      canvas.removeEventListener("pointerup",up,true);
       canvas.removeEventListener("pointercancel",cancel);
       canvas.removeEventListener("lostpointercapture",cancel);
     };
-  },[get,gl,onPick,scale]);
+  },[get,gl,onPick,roomPicking,scale]);
   return null;
 }

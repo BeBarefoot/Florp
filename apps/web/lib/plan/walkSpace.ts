@@ -84,21 +84,26 @@ export function findRoomView(polygon: Pt[], scale: number, valid: (p: Pt, walkin
   }
 }
 
+export function findRoomFloorPoint(polygon:Pt[], valid:(p:Pt, walking:boolean)=>boolean) {
+  if(!polygon.length)return;
+  const xs=polygon.map(p=>p.x), ys=polygon.map(p=>p.y);
+  const left=Math.min(...xs), top=Math.min(...ys);
+  const width=Math.max(...xs)-left, height=Math.max(...ys)-top;
+  const center={x:left+width/2,y:top+height/2};
+  if(contains(center,polygon)&&valid(center,true))return center;
+  for(let row=1;row<8;row++){
+    for(let column=1;column<8;column++){
+      const point={x:left+width*column/8,y:top+height*row/8};
+      if(contains(point,polygon)&&valid(point,true))return point;
+    }
+  }
+}
+
 export function findWalkStart(plan: PlanModel, scale: number, valid: (p: Pt, walking: boolean) => boolean) {
   for (const {polygon} of roomsOf(plan)) {
-    if (!polygon.length) continue;
     const corner=findRoomView(polygon,scale,valid);
-    if (corner) return corner;
-    const xs = polygon.map(p=>p.x), ys = polygon.map(p=>p.y);
-    const left = Math.min(...xs), top = Math.min(...ys);
-    const width = Math.max(...xs) - left, height = Math.max(...ys) - top;
-    const center = {x:left + width/2,y:top + height/2};
-    if (contains(center,polygon)&&valid(center,true)) return {position:center,yaw:0};
-    for (let row = 1; row < 8; row++) {
-      for (let column = 1; column < 8; column++) {
-        const position = {x:left + width*column/8,y:top + height*row/8};
-        if (contains(position,polygon)&&valid(position,true)) return {position,yaw:0};
-      }
-    }
+    if(corner)return corner;
+    const position=findRoomFloorPoint(polygon,valid);
+    if(position)return {position,yaw:0};
   }
 }

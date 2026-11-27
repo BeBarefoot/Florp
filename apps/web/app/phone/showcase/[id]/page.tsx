@@ -8,7 +8,7 @@ import {useEffect,useMemo,useState} from "react";
 import type {HomePreset} from "../../../../lib/plan/homePresets";
 import {API,request,type Blueprint} from "../../../../lib/api";
 import type {PlanModel,PlanResponse} from "../../../../lib/plan/model";
-import type {Job,Saved,Scene} from "../../../../lib/plan/scene";
+import type {Job,Saved,Scene,WalkthroughEdit} from "../../../../lib/plan/scene";
 import {metersPerPixel} from "../../../../lib/plan/derive";
 import {samplePlan,sampleScene} from "../../../../lib/plan/showcaseSample";
 
@@ -74,11 +74,11 @@ export default function ShowcasePage(){
   if(data&&data[2].id===id&&plan&&metersPerPixel(plan)&&plan.walls.length){
     const approximate=plan!==original;
     const currentScene=!approximate&&data[1].planRevision===plan.revision;
-    const {floorFinish,floorMaterial,roomFloorMaterials,wallFinishes,designPreset}=data[1].config;
-    const scene=currentScene?data[1].config:{...emptyScene,floorFinish,floorMaterial,roomFloorMaterials,wallFinishes,designPreset};
+    const {floorFinish,floorMaterial,roomFloorMaterials,wallFinishes,windowFinishes,designPreset}=data[1].config;
+    const scene=currentScene?data[1].config:{...emptyScene,floorFinish,floorMaterial,roomFloorMaterials,wallFinishes,windowFinishes,designPreset};
     const priorScene=data[1], planRevision=plan.revision;
     const canSave=!approximate&&(!priorScene.revision||currentScene);
-    async function saveDesign(change:Pick<Scene,"floorMaterial"|"roomFloorMaterials">|Pick<Scene,"objects">|Pick<Scene,"designPreset">){
+    async function saveDesign(change:Pick<Scene,"floorMaterial"|"roomFloorMaterials">|Pick<Scene,"designPreset">|WalkthroughEdit){
       const saved=await request<Saved>("/blueprints/"+encodeURIComponent(id)+"/scene",{
         method:"PUT",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({expectedRevision:priorScene.revision,planRevision,
@@ -92,6 +92,7 @@ export default function ShowcasePage(){
       edit={"/plan/"+id}
       saveFinishes={canSave?saveDesign:undefined}
       savePreset={canSave?(preset:HomePreset|null)=>saveDesign({designPreset:preset}):undefined}
+      saveWalkEdit={canSave?saveDesign:undefined}
       saveFurniture={canSave?objects=>saveDesign({objects}):undefined}
       saveView={canSave?async (view,initial)=>{
         const path="/blueprints/"+encodeURIComponent(id)+"/scene";

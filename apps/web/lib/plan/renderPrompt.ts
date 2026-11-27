@@ -6,7 +6,7 @@ import {contains, floorFinishes, itemBottom, promptFor, type Scene, type View, t
 import {objectName,tvInches} from "./furnitureCatalog";
 import {roomsOf} from "./walkSpace";
 import {floorMaterialFor} from "./floorMaterials";
-import {windowFrameFor} from "./windowStyle";
+import {styledWindowFrame} from "./windowStyle";
 import {treadLevels} from "./stairLevels";
 
 export function renderPrompt(plan:PlanModel, scene:Scene, view:View, frame:{width:number;height:number}, facts:string[], approximate=false, capture?:Capture|null) {
@@ -41,7 +41,7 @@ export function renderPrompt(plan:PlanModel, scene:Scene, view:View, frame:{widt
       const ends=openingEnds(plan,o,nodes);
       return {id:o.id,kind:o.kind,wall:o.hostWallId,endpointsXZ:ends?.map(xz),width:o.widthPx*scale,
         sill:o.sillM,height:o.heightM,...(o.kind==="door"?{hinge:o.hinge,swing:o.swing,closed:scene.closedDoorIds?.includes(o.id)??false}:{}),
-        ...(o.kind==="window"?{frame:windowFrameFor(o)}:{})};
+        ...(o.kind==="window"?{frame:styledWindowFrame(o,scene.designPreset?homePresets[scene.designPreset].frame:undefined,scene.windowFinishes?.[o.id])}:{})};
     }),
     stairs:plan.stairs?.map(s=>({id:s.id,direction:s.direction??"up",risePerStep:s.riseM,treadsXZ:s.treads.map(poly=>poly.map(xz)),
       treadElevationsM:treadLevels(s).map(tread=>tread.elevation)})),

@@ -18,6 +18,7 @@ import { CaptureBridge, EyeCamera, SceneMesh } from "./SceneMesh";
 import { roomsOf, walkSpace } from "../../lib/plan/walkSpace";
 import { WalkCamera } from "./WalkCamera";
 import { unmatchedFloorFinishes } from "../../lib/plan/floorMaterials";
+import { setWallSurface } from "../../lib/plan/wallMaterials";
 import RenderComparison from "./RenderComparison";
 
 type Mode = "camera" | "aim" | "sight" | "object" | "move" | "zone" | null;
@@ -72,11 +73,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
   const wallFinish=finishWall&&scene.wallFinishes?.[finishWall.id]?.[wallSide];
   function setWallFinish(material:WallMaterial|null){
     if(!finishWall)return;
-    const wallFinishes={...scene.wallFinishes};
-    const sides={...wallFinishes[finishWall.id],[wallSide]:material};
-    if(sides.a||sides.b)wallFinishes[finishWall.id]=sides;
-    else delete wallFinishes[finishWall.id];
-    change({...scene,wallFinishes});
+    change({...scene,wallFinishes:setWallSurface(scene.wallFinishes,finishWall.id,wallSide,material)});
   }
   const unmatchedFinishes=unmatchedFloorFinishes(scene,rooms);
   function resolveFinish(previousRoom:string, destination?:string) {
@@ -102,7 +99,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
   });
   const w=m.imageTransform.width*scale, h=m.imageTransform.height*scale;
   const cameraTarget:[number,number,number]=[w/2,0,h/2];
-  const fingerprintFor=(v:View|undefined)=>JSON.stringify([m,v,scene.objects,scene.closedDoorIds,scene.designPreset,scene.floorFinish,scene.floorMaterial,scene.roomFloorMaterials,scene.wallFinishes,frame.width,frame.height]);
+  const fingerprintFor=(v:View|undefined)=>JSON.stringify([m,v,scene.objects,scene.closedDoorIds,scene.designPreset,scene.floorFinish,scene.floorMaterial,scene.roomFloorMaterials,scene.wallFinishes,scene.windowFinishes,frame.width,frame.height]);
   const fingerprint=fingerprintFor(view);
   const shot=capture?.fingerprint===fingerprint?capture:null;
   const fixtureSuggestions=fixtureScan?.planRevision===m.revision&&!dirty?
@@ -495,7 +492,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
           }} data-mode={view?cameraMode:"orbit"} style={{aspectRatio:`${frame.width}/${frame.height}`}}>
             <Canvas dpr={[1,2]} camera={{position:[w/2+w*.6,Math.max(7,h*.9),h/2+Math.max(8,h)],fov:55}}>
               <color attach="background" args={["#e9eff2"]}/>
-              <SceneMesh floorStyle={scene} designPreset={scene.designPreset} wallFinishes={scene.wallFinishes} m={m} objects={scene.objects} detectedObjects={detectedObjects} closedDoorIds={scene.closedDoorIds}/>
+              <SceneMesh floorStyle={scene} designPreset={scene.designPreset} wallFinishes={scene.wallFinishes} windowFinishes={scene.windowFinishes} m={m} objects={scene.objects} detectedObjects={detectedObjects} closedDoorIds={scene.closedDoorIds}/>
               <CaptureBridge bind={bind}/>
               {view&&cameraMode==="walk"?<WalkCamera view={view} scale={scale} frame={frame} canMove={p=>validCamera(p,true)} pose={walkPose}/>:
                 view&&cameraMode==="preview"?<EyeCamera view={view} scale={scale} frame={frame}/>:

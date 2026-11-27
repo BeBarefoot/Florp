@@ -129,7 +129,7 @@ export async function exportPlan3D(m: PlanModel, review: unknown = {status:"draf
     }
     scene.add(group);
   }
-  const windows=makeWindows(m,null,false,preset?.frame);
+  const windows=makeWindows(m,null,false,preset?.frame,config?.windowFinishes);
   scene.add(windows.group);
   for (const door of doorLeaves(m,scale,config?.closedDoorIds)) {
     const leaf=new THREE.Mesh(new THREE.BoxGeometry(door.length,door.height,.04),

@@ -12,11 +12,12 @@ import {Maximize2,LayoutGrid,Box,MapPin,Pause,Play,SkipBack,SkipForward,Image as
 import {MAX_HORIZONTAL_FOV_DEG} from "../../lib/plan/camera";
 import {downloadPrompt,renderPrompt} from "../../lib/plan/renderPrompt";
 import {homePresets, presetFloor, type HomePreset} from "../../lib/plan/homePresets";
-import {WalkthroughObjects, ObjectHighlight} from "./WalkthroughObjects";
+import {WalkthroughObjects, ObjectHighlight, WalkTargetAnchor, targetKey, type WalkTarget} from "./WalkthroughObjects";
+import {WalkthroughEditMenu,type WalkEditor} from "./WalkthroughEditMenu";
 import {SceneMesh} from "./SceneMesh";
 import {metersPerPixel,scaleCheck} from "../../lib/plan/derive";
 import {WalkCamera} from "./WalkCamera";
-import {findRoomView,findWalkStart,roomsOf,walkSpace} from "../../lib/plan/walkSpace";
+import {findRoomFloorPoint,findRoomView,findWalkStart,roomsOf,walkSpace} from "../../lib/plan/walkSpace";
 import {FloorPicker} from "./FloorPicker";
 import {newUuid} from "../../lib/uuid";
 import FinishSheet from "./FinishSheet";
@@ -28,7 +29,9 @@ import {objectName, furnitureRooms, tvDimensions,yardKinds, type ObjectKind} fro
 import { floorMaterialFor, materialDefaults, unmatchedFloorFinishes } from "../../lib/plan/floorMaterials";
 import { contains, footprint, newItem } from "../../lib/plan/scene";
 import type {PlanModel,Pt} from "../../lib/plan/model";
-import type {FloorMaterial,Frame,Item,Scene,View} from "../../lib/plan/scene";
+import type {FloorMaterial,Frame,Item,Scene,View,WalkthroughEdit} from "../../lib/plan/scene";
+import {styledWindowFrame} from "../../lib/plan/windowStyle";
+import {setWallSurface} from "../../lib/plan/wallMaterials";
 
 type FloorStyles = Pick<Scene,"floorMaterial"|"roomFloorMaterials">;
 const wideView = {pitch:-5, horizontalFov:MAX_HORIZONTAL_FOV_DEG, eyeHeight:1.6};
@@ -116,7 +119,7 @@ function FitOverlay({points,scale,color}:{points:Pt[];scale:number;color:string}
   </mesh>;
 }
 
-export default function Showcase({plan,scene,title,edit,sample=false,approximate=false,renders={},saveView,saveFinishes,saveFurniture,savePreset}:{plan:PlanModel;scene:Scene;title:string;edit?:string;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View,initial?:View)=>Promise<View>;saveFinishes?:(finishes:FloorStyles)=>Promise<void>;saveFurniture?:(objects:Item[])=>Promise<void>;savePreset?:(preset:HomePreset|null)=>Promise<void>}){
+export default function Showcase({plan,scene,title,edit,sample=false,approximate=false,renders={},saveView,saveFinishes,saveFurniture,savePreset,saveWalkEdit}:{plan:PlanModel;scene:Scene;title:string;edit?:string;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View,initial?:View)=>Promise<View>;saveFinishes?:(finishes:FloorStyles)=>Promise<void>;saveFurniture?:(objects:Item[])=>Promise<void>;savePreset?:(preset:HomePreset|null)=>Promise<void>;saveWalkEdit?:(change:WalkthroughEdit)=>Promise<void>}){
   const [localViews,setLocalViews]=useState<View[]>([]);
   const [freeView,setFreeView]=useState<View|null>(null);
   const [adding,setAdding]=useState(false);
@@ -139,7 +142,15 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   const [presetDraft,setPresetDraft]=useState<HomePreset|null|undefined>(undefined);
   const [sessionPreset,setSessionPreset]=useState<HomePreset|null|undefined>(undefined);
   const designPreset=presetDraft!==undefined?presetDraft:sessionPreset!==undefined?sessionPreset:scene.designPreset;
-  const [hoveredId,setHoveredId]=useState("");
+  const [target,setTarget]=useState<WalkTarget|null>(null);
+  const [quickNotice,setQuickNotice]=useState("");
+  const menu=useRef<HTMLDivElement>(null);
+  const [sessionEdits,setSessionEdits]=useState<WalkthroughEdit>({});
+  function chooseTarget(next:WalkTarget|null){
+    if(savingRef.current||targetKey(next)===targetKey(target))return;
+    setQuickNotice("");
+    setTarget(next);
+  }
   const [finishNotice,setFinishNotice]=useState("");
   const [furnishing,setFurnishing]=useState(false);
   const [hiddenDetections,setHiddenDetections]=useState<string[]>([]);
@@ -161,7 +172,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   const [dragPreview,setDragPreview]=useState<Item|null>(null);
   const catalogDrag=useRef<Item|null>(null);
   const [furnitureNotice,setFurnitureNotice]=useState("");
-  const tourScene=useMemo(()=>previewFurniture?{...scene,objects:previewFurniture}:scene,[previewFurniture,scene]);
+  const tourScene=useMemo(()=>({...scene,...sessionEdits,objects:previewFurniture??scene.objects}),[previewFurniture,scene,sessionEdits]);
   const objects=furnitureDraft??tourScene.objects;
   const selectedFurniture=objects.find(item=>item.id===furnitureId);
   const localDetections=useMemo(()=>detectedPreviewItems(plan,scale),[plan,scale]);
@@ -169,14 +180,14 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     detected?.planRevision===plan.revision?detected.suggestions:localDetections,
     objects,scale,[...(scene.dismissedFixtureIds??[]),...hiddenDetections]
   ),[detected,plan.revision,localDetections,objects,scale,scene.dismissedFixtureIds,hiddenDetections]);
-  const hovered=objects.find(item=>item.id===hoveredId)??(showDetections?suggestions.find(item=>item.id===hoveredId):undefined);
-  const hoveredOpening=hoveredId.startsWith("opening:")?plan.openings.find(item=>item.id===hoveredId.slice(8)):undefined;
+  const hovered=target?.kind==="object"?(objects.find(item=>item.id===target.id)??(showDetections?suggestions.find(item=>item.id===target.id):undefined)):undefined;
+  const hoveredOpening=target?.kind==="opening"?plan.openings.find(item=>item.id===target.id):undefined;
   const alternatives=hovered ? [...new Set(furnitureRooms.flatMap(room=>room.groups
     .filter(group=>(group.items as readonly ObjectKind[]).includes(hovered.kind)).flatMap(group=>[...group.items])))]
     .filter(kind=>kind!==hovered.kind) : [];
   const editableObjects=dragPreview?[...objects.filter(item=>item.id!==dragPreview.id),dragPreview]:objects;
   const walkScene=useMemo(()=>furnitureDraft?{...tourScene,objects:furnitureDraft}:tourScene,[tourScene,furnitureDraft]);
-  const styledScene={...scene,...sessionFinishes,...finishDraft,objects,designPreset};
+  const styledScene={...tourScene,...sessionFinishes,...finishDraft,objects,designPreset};
   const needsFinishReview=unmatchedFloorFinishes(styledScene,rooms).length>0;
   const material=floorMaterialFor(styledScene,finishScope)??presetFloor(designPreset,rooms.find(room=>room.id===finishScope)?.roomType)??materialDefaults.wood;
   function changeFinish(next:FloorMaterial){
@@ -232,36 +243,33 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   }
   function openFurnish(){
     setPlaying(false);setRendered(false);setAdding(false);setNotice("");
+    chooseTarget(null);
     setStylesOpen(false);setPresetDraft(undefined);setFinishesOpen(false);
     if(view&&pose.current?.id===view.id)setFreeView(pose.current);
     setFurnishing(true);
   }
-  function editHovered(action:"properties"|"rotate"|"remove"|"replace", kind?:ObjectKind){
-    if(!hovered||saving||(!objects.some(item=>item.id===hovered.id)&&objects.length>=100))return;
-    const current=hovered;
-    if(action==="remove"&&!objects.some(item=>item.id===current.id)){
-      setHiddenDetections(hidden=>[...hidden,current.id]);
-      setHoveredId("");
-      return;
-    }
-    openFurnish();
-    setHoveredId("");
-    if(action==="remove"){
-      setFurnitureDraft(objects.filter(item=>item.id!==current.id));
-      selectFurniture("");
-      return;
-    }
-    const replacement=kind?newItem(kind,current.position):current;
-    const item={...replacement,id:current.id,
-      rotation:action==="rotate"?(current.rotation+90)%360:current.rotation};
-    if(action==="properties"){
-      if(!objects.some(object=>object.id===item.id))setFurnitureDraft([...objects,item]);
-      selectFurniture(item.id);
-    }else if(action==="rotate"){
-      updateFurniture(item);
-    }else if(updateFurniture(item)){
-      selectFurniture(item.id);
-    }
+  async function applyQuickEdit(change:WalkthroughEdit){
+    if(savingRef.current)return;
+    savingRef.current=true;setSaving(true);setQuickNotice("");
+    try{
+      if(change.objects){
+        if(persistFurniture){await persistFurniture(change.objects);setPreviewFurniture(null);}
+        else setPreviewFurniture(change.objects);
+      }else if(saveWalkEdit)await saveWalkEdit(change);
+      else setSessionEdits(current=>({...current,...change}));
+      setTarget(null);
+    }catch(error){setQuickNotice(String(error));}
+    finally{savingRef.current=false;setSaving(false);}
+  }
+  function applyQuickFurniture(item:Item){
+    const exists=objects.some(object=>object.id===item.id);
+    if(!exists&&objects.length>=100){setQuickNotice("This tour already has 100 objects.");return;}
+    if(!fitsFloor(plan,item,scale)){setQuickNotice("The object needs to fit on the floor.");return;}
+    void applyQuickEdit({objects:exists?objects.map(object=>object.id===item.id?item:object):[...objects,item]});
+  }
+  function removeQuickFurniture(item:Item){
+    if(objects.some(object=>object.id===item.id))void applyQuickEdit({objects:objects.filter(object=>object.id!==item.id)});
+    else {setHiddenDetections(current=>[...current,item.id]);chooseTarget(null);}
   }
   function closeFurnish(){
     setFurnishing(false);setFurnitureDraft(null);setFurnitureId("");setPlacement(null);setFurnitureNotice("");
@@ -354,6 +362,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   },[playing,stop,views]);
   function select(index:number){
     setPlaying(false);setRendered(false);setFreeView(null);setAdding(false);
+    chooseTarget(null);
     setSelectedId(views[index]?.id??"overview");setNotice("");
   }
   const addView=useCallback(async (location:View)=>{
@@ -382,16 +391,19 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
       }
       return;
     }
-    const corner=adding&&point?cornerNear(point):undefined;
-    if(!point||(!corner&&!canFrame(point,true))){
-      setNotice("Choose an open spot on the floor.");
+    const room=adding&&point?[...rooms].reverse().find(r=>contains(point,r.polygon)):undefined;
+    const corner=room&&findRoomView(room.polygon,scale,canFrame,point??undefined);
+    const position=corner?.position??(point&&canFrame(point,true)?point:
+      room&&findRoomFloorPoint(room.polygon,canFrame));
+    if(!position){
+      setNotice(room?"No clear camera position in this room.":"Tap a room’s floor.");
       return;
     }
     setPlaying(false);setRendered(false);setNotice("");setSelectedId("overview");
-    const entry:View={id:"free-walk",name:"Walkthrough",...wideView,...(corner??{position:point,yaw})};
+    const entry:View={id:"free-walk",name:"Walkthrough",...wideView,position,yaw:corner?.yaw??yaw};
     if(adding)void addView(entry);
     else setFreeView(entry);
-  },[adding,addView,canFrame,cornerNear,pickingRoom,rooms]);
+  },[adding,addView,canFrame,pickingRoom,rooms,scale]);
   function openCornerView(){
     if(!view)return;
     const point=pose.current?.id===view.id?pose.current.position:view.position;
@@ -401,7 +413,41 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     setNotice("");
     setFreeView({id:"free-walk",name:"Walkthrough",...wideView,...corner});
   }
-  return <main className="showcase-player" data-furnishing={furnishing} data-placing={!!placement} aria-label="3D showcase"
+  function quickEditor():WalkEditor|undefined{
+    if(!target||!view||furnishing||stylesOpen||finishesOpen||rendered||playing)return;
+    const href=edit&&"/phone/edit/"+encodeURIComponent(plan.id)+"?opening="+encodeURIComponent(target.id);
+    const preset=designPreset?homePresets[designPreset]:undefined;
+    if(target.kind==="wall"){
+      const {id,side}=target;
+      const finishes=tourScene.wallFinishes;
+      const wall=plan.walls.find(candidate=>candidate.id===id);
+      return {kind:"wall",finish:finishes?.[id]?.[side]??null,color:preset?.wall??(wall?.material==="concrete"?"#c7c5be":"#efeae0"),
+        onApply:finish=>void applyQuickEdit({wallFinishes:setWallSurface(finishes,id,side,finish)})};
+    }
+    if(hoveredOpening?.kind==="window"){
+      const {id}=hoveredOpening;
+      const overrides=tourScene.windowFinishes;
+      const {material,color}=styledWindowFrame(hoveredOpening,preset?.frame,overrides?.[id]);
+      return {kind:"window",href,finish:{material,color},
+        onApply:finish=>void applyQuickEdit({windowFinishes:{...overrides,[id]:finish}}),
+        onReset:overrides?.[id]?()=>{
+          const windowFinishes={...overrides};
+          delete windowFinishes[id];
+          void applyQuickEdit({windowFinishes});
+        }:undefined};
+    }
+    if(hoveredOpening?.kind==="door"){
+      const {id}=hoveredOpening;
+      const closed=tourScene.closedDoorIds??[];
+      return {kind:"door",href,closed:closed.includes(id),onToggle:()=>void applyQuickEdit({
+        closedDoorIds:closed.includes(id)?closed.filter(door=>door!==id):[...closed,id],
+      })};
+    }
+    if(hovered)return {kind:"object",item:hovered,suggestion:!objects.some(item=>item.id===hovered.id),
+      alternatives,onApply:applyQuickFurniture,onRemove:()=>removeQuickFurniture(hovered)};
+  }
+  const editor=quickEditor();
+  return <main className="showcase-player" data-furnishing={furnishing} data-placing={!!placement||adding} aria-label="3D showcase"
     onPointerDownCapture={event=>{
       if(event.button===0&&furnishing&&event.target instanceof Element&&!event.target.closest(".furnish-sheet,canvas")){
         selectFurniture("");
@@ -410,13 +456,15 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     <h1 className="show-current-view">{view?.name??"Dollhouse view"}</h1>
     <div ref={stage} className="show-stage"><Canvas shadows frameloop="demand" dpr={[1,1.6]} camera={{near:.005,far:2000}} fallback={<p>Enable WebGL to view this tour.</p>}>
       <color attach="background" args={[view?"#d4e3e9":"#d8d9cb"]}/>
-      <SceneMesh m={plan} objects={editableObjects} detectedObjects={showDetections?suggestions:undefined} closedDoorIds={scene.closedDoorIds} floorStyle={styledScene}
-        wallFinishes={scene.wallFinishes} designPreset={designPreset} presentation cutaway={!view}/>
-      {!rendered&&!sample&&!furnishing&&!stylesOpen&&!finishesOpen&&!adding&&<WalkthroughObjects onHover={setHoveredId} onTap={setHoveredId}/>}
-      {hovered&&!furnishing&&!stylesOpen&&!finishesOpen&&!rendered&&<ObjectHighlight item={hovered} scale={scale}/>}
+      <SceneMesh m={plan} objects={editableObjects} detectedObjects={showDetections?suggestions:undefined} closedDoorIds={tourScene.closedDoorIds} floorStyle={styledScene}
+        wallFinishes={tourScene.wallFinishes} windowFinishes={tourScene.windowFinishes} designPreset={designPreset} presentation cutaway={!view}/>
+      {view&&!rendered&&!sample&&!furnishing&&!stylesOpen&&!finishesOpen&&!playing&&<WalkthroughObjects
+        onHover={next=>{if(!menu.current?.contains(document.activeElement))chooseTarget(next);}} onTap={chooseTarget}/>}
+      {editor&&target&&<WalkTargetAnchor key={targetKey(target)} target={target} element={menu}/>}
+      {editor&&hovered&&<ObjectHighlight item={hovered} scale={scale}/>}
       {sample&&<SampleFurniture interior={!!view}/>}
       {view?<ShowcaseWalk key={view.id} plan={plan} scene={walkScene} view={view} sample={sample} pose={pose} onFrame={setViewport} keyboard={!rendered}/>:
-        <><OverviewCamera plan={plan}/>{!furnishing&&<FloorPicker scale={scale} onPick={land}/>}</>}
+        <><OverviewCamera plan={plan}/>{!furnishing&&<FloorPicker scale={scale} roomPicking={adding||pickingRoom} onPick={land}/>}</>}
       {furnishing&&<FurniturePlacement scale={scale} walkthrough={!!view} disabled={saving} pending={placement}
         objects={objects} catalogDrag={catalogDrag}
         onPreview={item=>setDragPreview(item&&fitsFloor(plan,item,scale)?item:null)}
@@ -430,7 +478,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
         position={[tag.position.x*scale,.18,tag.position.y*scale]} zIndexRange={[1,0]}>
         <span className="show-room-tag">{tag.text}</span>
       </Html>)}
-      {!view&&pinGroups.map(({position,indices})=><Html key={views[indices[0]].id} portal={stage} center
+      {!view&&!adding&&pinGroups.map(({position,indices})=><Html key={views[indices[0]].id} portal={stage} center
         style={{display:pickingRoom||furnishing?"none":undefined}} position={[position.x*scale,2,position.y*scale]} zIndexRange={[2,1]}>
         <div className="show-pin-group">{indices.map(i=><button key={views[i].id} className="show-pin" aria-label={"Visit "+views[i].name} onClick={()=>select(i)}>{i+1}</button>)}</div>
       </Html>)}
@@ -438,22 +486,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     </div>
     {view&&rendered&&renders[view.id]&&<div className="show-render"><img src={renders[view.id]} alt={"Saved design render for "+view.name}/></div>}
     {view&&<button type="button" className="show-overview" data-tour-tools onClick={()=>select(-1)}><Box size={18}/>Overview</button>}
-    {edit&&hoveredOpening&&!furnishing&&!stylesOpen&&!finishesOpen&&!rendered&&<div className="walk-object-tools" role="group" aria-label={hoveredOpening.kind} data-tour-tools>
-      <strong>{hoveredOpening.kind==="window"?"Window":"Door"}</strong>
-      <Link href={"/phone/edit/"+encodeURIComponent(plan.id)+"?opening="+encodeURIComponent(hoveredOpening.id)}>Edit opening</Link>
-      <button onClick={()=>setHoveredId("")} aria-label="Close object controls"><X size={16}/></button>
-    </div>}
-    {hovered&&!furnishing&&!stylesOpen&&!finishesOpen&&!rendered&&<div className="walk-object-tools" role="group" aria-label={objectName(hovered.kind)} data-tour-tools>
-      <strong>{objectName(hovered.kind)}</strong>
-      <button onClick={()=>editHovered("properties")}>Edit</button>
-      <button onClick={()=>editHovered("rotate")}>Rotate</button>
-      {!!alternatives.length&&<select aria-label="Replace object" value="" onChange={event=>editHovered("replace",event.target.value as ObjectKind)}>
-        <option value="" disabled>Replace</option>
-        {alternatives.map(kind=><option key={kind} value={kind}>{objectName(kind)}</option>)}
-      </select>}
-      <button onClick={()=>editHovered("remove")}>Remove</button>
-      <button onClick={()=>setHoveredId("")} aria-label="Close object controls"><X size={16}/></button>
-    </div>}
+    {editor&&<WalkthroughEditMenu key={targetKey(target)} editor={editor} menu={menu} busy={saving} message={quickNotice} close={()=>chooseTarget(null)}/>}
     {stylesOpen&&<section className="finish-sheet style-sheet" aria-label="Whole-home style" data-tour-tools onWheel={scrollTourRail}>
       <div className="finish-heading"><h2>Whole-home style</h2><button aria-label="Close styles" onClick={()=>{setPresetDraft(undefined);setStylesOpen(false);}}><X size={18}/></button></div>
       <div className="tour-rail style-presets">

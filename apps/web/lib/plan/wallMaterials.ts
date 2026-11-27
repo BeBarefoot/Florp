@@ -1,8 +1,16 @@
 import { BoxGeometry } from "three";
 import type { Chunk, WallPiece } from "./mesh";
-import type { Scene, WallSide } from "./scene";
+import type { Scene, WallMaterial, WallSide } from "./scene";
 
 export const otherSide = (side: WallSide): WallSide => side==="a"?"b":"a";
+
+export function setWallSurface(finishes:Scene["wallFinishes"],id:string,side:WallSide,finish:WallMaterial|null){
+  const next={...finishes};
+  const sides={...(Object.hasOwn(next,id)?next[id]:undefined),[side]:finish};
+  if(sides.a||sides.b)return {...next,[id]:sides};
+  delete next[id];
+  return next;
+}
 
 export function wallSurfaceMaterials(piece:WallPiece, finishes:Scene["wallFinishes"]){
   const wall=finishes&&Object.hasOwn(finishes,piece.id)?finishes[piece.id]:undefined;

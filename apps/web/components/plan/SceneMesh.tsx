@@ -86,7 +86,7 @@ function WallChunk({piece,chunk,wallIndex,presentation,finishes,tileMap,wallColo
   const geometry=useMemo(()=>wallChunkGeometry(piece,chunk),[piece,chunk]);
   useEffect(()=>()=>geometry.dispose(),[geometry]);
   return <mesh geometry={geometry} castShadow={presentation} receiveShadow={presentation}
-    userData={{maskId:2000+wallIndex}} position={[(chunk.start+chunk.end-piece.lengthM)/2,(chunk.low+chunk.high)/2,0]}>
+    userData={{maskId:2000+wallIndex,wallId:piece.id,positiveSide:piece.positiveSide}} position={[(chunk.start+chunk.end-piece.lengthM)/2,(chunk.low+chunk.high)/2,0]}>
     {front||back?[null,null,null,null,front,back].map((material,index)=>
       <meshStandardMaterial key={index} attach={`material-${index}`} color={material?.color??base} map={material?.kind==="tile"?tileMap:null}/>
     ):<meshStandardMaterial color={base}/>}
@@ -153,13 +153,13 @@ function FurnitureMeshes({objects,scale,presentation,environment,preview=false,d
   });
 }
 
-function Windows({plan,environment,shadows,designPreset}:{plan:PlanModel;environment:T.Texture|null;shadows:boolean;designPreset?:HomePreset|null}){
-  const windows=useMemo(()=>makeWindows(plan,environment,shadows,designPreset?homePresets[designPreset].frame:undefined),[plan,environment,shadows,designPreset]);
+function Windows({plan,environment,shadows,designPreset,finishes}:{plan:PlanModel;environment:T.Texture|null;shadows:boolean;designPreset?:HomePreset|null;finishes?:Scene["windowFinishes"]}){
+  const windows=useMemo(()=>makeWindows(plan,environment,shadows,designPreset?homePresets[designPreset].frame:undefined,finishes),[plan,environment,shadows,designPreset,finishes]);
   useEffect(()=>windows.dispose,[windows]);
   return <primitive object={windows.group}/>;
 }
 
-export function SceneMesh({m, objects, detectedObjects = [], closedDoorIds, floorStyle={}, wallFinishes, designPreset, presentation=false, cutaway=false}: {m: PlanModel; objects: Item[]; detectedObjects?: Item[]; closedDoorIds?: string[]; floorStyle?:FloorStyle; wallFinishes?:Scene["wallFinishes"]; designPreset?:HomePreset|null; presentation?:boolean; cutaway?:boolean}) {
+export function SceneMesh({m, objects, detectedObjects = [], closedDoorIds, floorStyle={}, wallFinishes, windowFinishes, designPreset, presentation=false, cutaway=false}: {m: PlanModel; objects: Item[]; detectedObjects?: Item[]; closedDoorIds?: string[]; floorStyle?:FloorStyle; wallFinishes?:Scene["wallFinishes"]; windowFinishes?:Scene["windowFinishes"]; designPreset?:HomePreset|null; presentation?:boolean; cutaway?:boolean}) {
   const scale = metersPerPixel(m)!;
   const {floorFinish="default",floorMaterial,roomFloorMaterials}=floorStyle;
   const preset=designPreset?homePresets[designPreset]:undefined;
@@ -238,7 +238,7 @@ export function SceneMesh({m, objects, detectedObjects = [], closedDoorIds, floo
       {p.chunks.map((chunk,i)=><WallChunk key={i} piece={p} chunk={chunk} wallIndex={wallIndex}
         presentation={presentation} finishes={wallFinishes} tileMap={wallTiles} wallColor={preset?.wall}/>)}
     </group>)}
-    <Windows plan={m} environment={environment} shadows={presentation} designPreset={designPreset}/>
+    <Windows plan={m} environment={environment} shadows={presentation} designPreset={designPreset} finishes={windowFinishes}/>
     {doorLeaves(m,scale,closedDoorIds).map(door=>
       <group key={door.id} position={[door.x,0,door.z]} rotation={[0,door.angle,0]}>
         <mesh userData={{maskId:1,openingId:door.id}} position={[door.length/2,door.height/2,0]}>

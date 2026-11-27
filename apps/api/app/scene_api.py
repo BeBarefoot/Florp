@@ -78,12 +78,18 @@ class WallFinishes(Data):
     b: WallMaterial | None = None
 
 
+class WindowFinish(Data):
+    material: Literal["aluminium", "wood", "vinyl"]
+    color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
+
+
 class Scene(Data):
     design_preset: Literal["hotel", "country", "monochrome", "plain", "scandinavian", "mediterranean"] | None = None
     floor_finish: Literal["default", "oak", "slate", "limestone"] = "default"
     floor_material: FloorMaterial | None = None
     room_floor_materials: dict[str, FloorMaterial] = Field(default_factory=dict, max_length=990)
     wall_finishes: dict[str, WallFinishes] = Field(default_factory=dict, max_length=10000)
+    window_finishes: dict[str, WindowFinish] = Field(default_factory=dict, max_length=10000)
     views: list[View] = Field(default_factory=list, max_length=30)
     objects: list[SceneObject] = Field(default_factory=list, max_length=100)
     style: str = Field(default="", max_length=1200)
@@ -142,6 +148,11 @@ def save_scene(bid: str, body: SaveScene):
         for wall_id, finishes in body.config.wall_finishes.items():
             if wall_id not in wall_ids and old_walls.get(wall_id) != finishes.model_dump(by_alias=True):
                 raise HTTPException(422, "Assign the wall finish to a wall on the current plan.")
+        window_ids = {opening["id"] for opening in plan.model.get("openings", []) if opening["kind"] == "window"}
+        old_windows = old.config.get("windowFinishes", {}) if old else {}
+        for window_id, finish in body.config.window_finishes.items():
+            if window_id not in window_ids and old_windows.get(window_id) != finish.model_dump(by_alias=True):
+                raise HTTPException(422, "Assign the frame finish to a window on the current plan.")
         for items in (body.config.views, body.config.objects):
             if len({item.id for item in items}) != len(items) or any(
                 not (0 <= item.position.x <= bp.width and 0 <= item.position.y <= bp.height) for item in items

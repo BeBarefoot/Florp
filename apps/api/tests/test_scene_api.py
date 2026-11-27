@@ -70,6 +70,24 @@ def test_floor_material_overrides_round_trip(client):
     assert c.put(path + "/scene", json={**request, "expectedRevision": 2}).status_code == 422
 
 
+def test_window_finish_round_trip_uses_existing_window_id(client):
+    c, bid = client
+    path = f"/blueprints/{bid}"
+    window = {"id": "bay", "hostWallId": "w0", "kind": "window", "offsetPx": 150,
+              "widthPx": 100, "heightM": 1.2, "sillM": .8, "status": "confirmed"}
+    model = plan(scale=reference(), openings=[window])
+    saved_plan = c.put(path + "/plan", json={"expectedRevision": 0, "model": model})
+    assert saved_plan.status_code == 200, saved_plan.text
+    finish = {"material": "wood", "color": "#886741"}
+    payload = {"expectedRevision": 0, "planRevision": 1, "config": {"windowFinishes": {"unknown": finish}}}
+    assert c.put(path + "/scene", json=payload).status_code == 422
+    payload["config"]["windowFinishes"] = {"bay": finish}
+    saved = c.put(path + "/scene", json=payload)
+    assert saved.status_code == 200, saved.text
+    assert c.get(path + "/scene").json()["config"]["windowFinishes"] == {"bay": finish}
+    assert c.get(path + "/plan").json()["model"]["openings"] == saved_plan.json()["model"]["openings"]
+
+
 def test_room_finish_survives_wall_segment_split_and_can_be_reassigned_after_room_split(client):
     c, bid = client
     path = f"/blueprints/{bid}"

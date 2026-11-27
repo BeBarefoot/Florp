@@ -61,7 +61,7 @@
 .show-render{background:var(--ink);z-index:2}
 .show-render img{width:100%;height:100%;object-fit:contain}
 .showcase-player .show-overview {
-  position:absolute;z-index:5;top:max(12px,env(safe-area-inset-top));left:max(12px,env(safe-area-inset-left));
+  position:absolute;z-index:6;top:max(12px,env(safe-area-inset-top));left:max(12px,env(safe-area-inset-left));
   display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:0 13px;
   border-radius:14px;border:1px solid #ffffff59;box-shadow:0 3px 16px #282d293d;
 }
@@ -194,14 +194,24 @@
 .phone-plan-properties .opening-stair-fields :is(input,select,button) {width:100%;min-width:0;min-height:44px}
 
 .walk-object-tools {
-  position:absolute;z-index:5;right:max(12px, env(safe-area-inset-right));bottom:max(76px, calc(env(safe-area-inset-bottom) + 60px));
-  display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:9px;max-width:calc(100% - 24px);
+  position:absolute;z-index:5;visibility:hidden;width:max-content;max-width:min(20rem,calc(100% - 20px));max-height:calc(100% - 20px);overflow:auto;
+  display:grid;gap:6px;padding:9px;
   border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);
   box-shadow:0 8px 24px #282d2930;
 }
+.walk-object-tools header {display:flex;align-items:center;justify-content:space-between;gap:8px}
 .walk-object-tools strong {padding-inline:5px;font-size:13px}
-.walk-object-tools :is(button,select) {min-height:40px;border-radius:9px;padding-inline:8px;font:inherit;font-size:13px}
-.walk-object-tools a {display:inline-flex;align-items:center;min-height:40px;padding-inline:8px;font-size:13px;color:inherit}
+.walk-object-tools fieldset {min-width:0;border:0;margin:0;padding:0}
+.walk-edit-fields,.walk-edit-grid {display:grid;gap:6px}
+.walk-edit-grid {grid-template-columns:repeat(auto-fit,minmax(76px,1fr))}
+.walk-edit-grid label {display:grid;gap:4px;min-width:0;font-size:12px}
+.walk-edit-actions {display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.walk-object-tools :is(button,select,input,a) {min-height:44px;border-radius:9px;padding-inline:8px;font:inherit;font-size:13px}
+.walk-edit-grid :is(select,input) {width:100%;min-width:0}
+.walk-object-tools :is(select,input) {background:var(--paper);color:var(--ink);border:1px solid var(--line)}
+.walk-edit-grid :is(select,input) {font-size:16px}
+.walk-object-tools a {display:inline-flex;align-items:center;color:inherit}
+.walk-object-tools p {margin:0;font-size:12px;color:#8b3927}
 .style-presets button {display:grid;justify-items:start;gap:6px;min-height:54px}
 .style-presets button[aria-pressed=true] {outline:2px solid var(--pine);outline-offset:-2px}
 .style-swatches {display:flex;gap:3px}

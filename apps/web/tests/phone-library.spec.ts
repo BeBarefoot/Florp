@@ -128,7 +128,63 @@ test("hovering over furniture in the walkthrough opens quick editing", async ({p
     await canvas.hover({position:{x:450,y:380}});
     return tools.isVisible();
   }).toBe(true);
+  const panel=await tools.boundingBox();
+  expect(panel).toBeTruthy();
+  expect(Math.abs(panel!.x-450)).toBeLessThan(40);
+  expect(Math.abs(panel!.y-380)).toBeLessThan(40);
+  await tools.getByLabel("Width (cm)").fill("230");
   await tools.getByRole("button",{name:"Rotate",exact:true}).click();
   await page.getByRole("button",{name:"Save furniture"}).click();
   await expect.poll(()=>current.config.objects[0].rotation).toBe(90);
+  expect(current.config.objects[0].width).toBe(2.3);
+});
+
+test.describe("touch walkthrough",()=>{
+  test.use({hasTouch:true});
+
+  test("walkthrough wall and window menus apply finishes and Add view works through furniture", async ({page})=>{
+    await page.setViewportSize({width:390,height:760});
+    const id="wall-and-view-tour";
+    const plan={...samplePlan,id,revision:1};
+    const walk={id:"north-wall",name:"Living room",position:{x:320,y:350},yaw:-90,pitch:0,horizontalFov:85,eyeHeight:1.6};
+    let current:import("../lib/plan/scene").Saved={revision:1,planRevision:1,config:{
+      views:[walk],objects:[{id:"rug",kind:"rug",position:{x:440,y:290},width:3.5,depth:3,height:.02,rotation:0}],
+      style:"",wallFinishes:{"0":{b:{kind:"paint",color:"#aabbcc"}}}
+    }};
+    await page.route(`**/blueprints/${id}/plan`,r=>r.fulfill({json:{model:plan,revision:1}}));
+    await page.route(`**/blueprints/${id}/info`,r=>r.fulfill({json:{id,filename:"Apartment.png",project_id:"s"}}));
+    await page.route(`**/blueprints/${id}/scene/renders`,r=>r.fulfill({json:[]}));
+    await page.route(`**/blueprints/${id}/scene`,r=>{
+      if(r.request().method()==="PUT"){
+        const body=r.request().postDataJSON();
+        expect(body.expectedRevision).toBe(current.revision);
+        current={...current,revision:current.revision+1,config:body.config};
+      }
+      return r.fulfill({json:current});
+    });
+    await page.goto(`/phone/showcase/${id}#overview`);
+    await page.getByRole("button",{name:"Visit Living room"}).click();
+    const canvas=page.locator("canvas");
+    await canvas.screenshot();
+    await canvas.tap({position:{x:165,y:380}});
+    const wall=page.getByRole("group",{name:"Wall",exact:true});
+    await wall.getByLabel("Material").selectOption("tile");
+    await wall.getByLabel("Color").fill("#aacbaa");
+    await wall.getByRole("button",{name:"Apply finish"}).click();
+    await expect.poll(()=>current.config.wallFinishes?.["0"]).toEqual({
+      a:{kind:"tile",color:"#aacbaa"},b:{kind:"paint",color:"#aabbcc"},
+    });
+    await canvas.tap({position:{x:221,y:380}});
+    const window=page.getByRole("group",{name:"Window",exact:true});
+    await window.getByLabel("Frame material").selectOption("wood");
+    await window.getByRole("button",{name:"Apply finish"}).click();
+    await expect.poll(()=>current.config.windowFinishes?.["opening-0"]?.material).toBe("wood");
+    await page.getByRole("button",{name:"Overview",exact:true}).click();
+    await page.getByRole("button",{name:"Open tour tools"}).click();
+    await page.getByRole("button",{name:"Add view",exact:true}).click();
+    await canvas.tap({position:{x:195,y:380}});
+    await expect.poll(()=>current.config.views.length).toBe(2);
+    expect(current.config.views[0]).toEqual(walk);
+    await expect(page.getByRole("heading",{name:"View 2",exact:true})).toBeVisible();
+  });
 });
