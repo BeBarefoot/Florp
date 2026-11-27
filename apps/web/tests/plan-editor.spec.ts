@@ -974,3 +974,33 @@ test("guided review compares one opening, leaves skips unresolved, and persists 
   await page.getByRole("button", {name: "Review plan", exact: true}).click();
   await expect(review.getByText("No suggested openings or wall closures to review.")).toBeVisible();
 });
+
+test("scene changes must be reviewed before a saved finish can be removed",async({page})=>{
+  test.setTimeout(60_000);
+  const prior=fixture({scale:{metersPerPixel:.01,reference:{p1:{x:100,y:100},p2:{x:500,y:100},lengthMeters:4}}});
+  const {puts}=await setup(page,{model:prior});
+  const config={style:"",views:[],objects:[],roomFloorMaterials:{"missing-room":{kind:"wood",color:"#ccb190",widthM:.2,lengthM:1.2}}};
+  let saved:unknown;
+  await page.route("**/blueprints/p/scene**",async route=>{
+    const request=route.request();
+    if(request.method()==="PUT"){
+      saved=request.postDataJSON();
+      return route.fulfill({json:{revision:2,planRevision:1,config:(saved as {config:unknown}).config}});
+    }
+    const endpoint=new URL(request.url()).pathname.split("/").at(-1);
+    return route.fulfill({json:endpoint==="scene"?{revision:1,planRevision:0,config}:endpoint==="renders"?[]:
+      {width:1024,height:768,configured:false}});
+  });
+  await page.getByRole("radio",{name:"3D",exact:true}).click();
+  const review=page.getByRole("region",{name:"Review plan changes"});
+  await expect(review.getByText("Room needs reassignment",{exact:false})).toBeVisible({timeout:20_000});
+  const save=page.getByRole("button",{name:"Save scene",exact:true});
+  await save.click();
+  await expect(page.getByText("Review affected items before saving this scene.",{exact:false})).toBeVisible();
+  expect(saved).toBeUndefined();
+  await review.getByRole("button",{name:"Remove"}).click();
+  await save.click();
+  await expect(page.getByText("Scene saved.",{exact:true})).toBeVisible();
+  expect(saved).toMatchObject({planRevision:1,config:{roomFloorMaterials:{}}});
+  expect(puts).toHaveLength(0);
+});

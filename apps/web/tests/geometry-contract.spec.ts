@@ -8,6 +8,7 @@ import {moveNode,deleteWall,addWall} from '../lib/plan/ops';
 import {connectedWallFace} from '../lib/plan/wallFaces';
 import {samplePlan} from '../lib/plan/showcaseSample';
 import {housePlacement} from '../lib/plan/houseOverview';
+import {sceneReview} from "../lib/plan/sceneReview";
 import {dimensions,objectName} from '../lib/plan/furnitureCatalog';
 import {fitsFloor} from '../lib/plan/furnitureFit';
 import {furnitureParts,makeFurnitureResources} from '../lib/plan/furnitureModels';
@@ -105,4 +106,19 @@ test("whole-house placement converts and rotates the upper drawing in ground-flo
  expect(placement.horizontalScale).toBeCloseTo(.75);
  expect(placement.rotation).toBeCloseTo(Math.PI/2);
  expect(placement.span).toBeGreaterThan(11);
+});
+
+test("scene review finds a blocked view, an orphaned finish and a newly clipped object", async () => {
+ const previous=samplePlan;
+ const plan={...previous,revision:2,rooms:[{...previous.rooms[0],polygon:[{x:0,y:0},{x:250,y:0},{x:250,y:680},{x:0,y:680}]}],
+  nodes:[...previous.nodes,{id:"new-a",x:300,y:80},{id:"new-b",x:300,y:650}],
+  walls:[...previous.walls,{...previous.walls[0],id:"new-wall",a:"new-a",b:"new-b"}]};
+ const scene:import("../lib/plan/scene").Scene={style:"",roomFloorMaterials:{bedroom:{kind:"wood",color:"#c1a27b",widthM:.18,lengthM:1.2}},
+  objects:[{id:"bed",kind:"bed",position:{x:400,y:450},width:1.4,depth:1.7,height:1,rotation:0}],
+  views:[{id:"view",name:"Living view",position:{x:300,y:100},yaw:0,pitch:0,horizontalFov:90,eyeHeight:1.6}]};
+ expect(sceneReview(plan,previous,scene)).toEqual(expect.arrayContaining([
+  expect.objectContaining({kind:"object",id:"bed"}),
+  expect.objectContaining({kind:"view",id:"view"}),
+  expect.objectContaining({kind:"room",id:"bedroom",missing:true}),
+ ]));
 });

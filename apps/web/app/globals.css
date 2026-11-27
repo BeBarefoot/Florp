@@ -348,3 +348,6 @@
 .studio-stair-controls span{padding:6px 9px;border-radius:8px;background:var(--desk-surface);font-size:12px}
 .desktop-studio .studio-stair-controls .desktop-action{min-height:34px;padding:5px 10px}
 @media(max-width:700px){.studio-stair-controls{top:102px}}
+.scene-change-review{padding:12px;border:1px solid var(--desk-line,#ded9cb);border-radius:12px;background:var(--desk-paper,#f5f2e9)}
+.scene-change-review h3{margin:0 0 6px}
+.scene-change-review .scene-actions span{flex:1 1 200px}

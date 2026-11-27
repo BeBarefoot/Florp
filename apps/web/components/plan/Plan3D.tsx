@@ -19,9 +19,10 @@ import { roomsOf, walkSpace } from "../../lib/plan/walkSpace";
 import { WalkCamera } from "./WalkCamera";
 import { unmatchedFloorFinishes } from "../../lib/plan/floorMaterials";
 import { setWallSurface } from "../../lib/plan/wallMaterials";
+import {sceneReview,type ReviewIssue} from "../../lib/plan/sceneReview";
 import RenderComparison from "./RenderComparison";
 
-type Mode = "camera" | "aim" | "sight" | "object" | "move" | "zone" | null;
+type Mode = "camera" | "aim" | "sight" | "object" | "move" | "move-view" | "zone" | null;
 type CaptureFn = (v: View, s: number, f: Frame, key: string) => Capture;
 const initialFrame: Frame = { width:1024,height:768,configured:false,model:"",provider:"fal" };
 const initial: Saved = {revision:0,planRevision:null,config:{views:[],objects:[],style:""}};
@@ -74,6 +75,41 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
   function setWallFinish(material:WallMaterial|null){
     if(!finishWall)return;
     change({...scene,wallFinishes:setWallSurface(scene.wallFinishes,finishWall.id,wallSide,material)});
+  }
+  const oldRevision=saved?.planRevision;
+  const needsReview=oldRevision!=null&&oldRevision!==m.revision;
+  const [history,setHistory]=useState<{source:number;plan:PlanModel|null}|null>(null);
+  const [reviewed,setReviewed]=useState<Record<string,true>>({});
+  useEffect(()=>{
+    setReviewed({});
+    if(!needsReview||oldRevision==null)return;
+    const controller=new AbortController();
+    request<{revision:number;model:PlanModel}[]>(path+"/plan/history",{signal:controller.signal})
+      .then(history=>{if(!controller.signal.aborted)setHistory({source:oldRevision,plan:history.find(entry=>entry.revision===oldRevision)?.model??null});})
+      .catch(()=>{if(!controller.signal.aborted)setHistory({source:oldRevision,plan:null});});
+    return ()=>controller.abort();
+  },[needsReview,oldRevision,m.revision,path]);
+  const reviewPending=needsReview&&history?.source!==oldRevision;
+  const reviewIssues=useMemo(()=>needsReview&&!dirty&&!reviewPending?sceneReview(m,history?.plan??null,scene):[],
+    [needsReview,m,dirty,reviewPending,history,scene]);
+  const issueKey=(issue:ReviewIssue)=>issue.kind+":"+issue.id+":"+issue.reason;
+  const unresolved=reviewIssues.filter(issue=>!reviewed[issueKey(issue)]);
+  function removeReviewItem(issue:ReviewIssue){
+    const {id,kind}=issue;
+    if(kind==="object") change({...scene,objects:scene.objects.filter(item=>item.id!==id)});
+    if(kind==="view") change({...scene,views:scene.views.filter(view=>view.id!==id)});
+    if(kind==="room") resolveFinish(id);
+    if(kind==="door") change({...scene,closedDoorIds:scene.closedDoorIds?.filter(key=>key!==id)});
+    if(kind==="wall"){
+      const wallFinishes={...scene.wallFinishes};
+      delete wallFinishes[id];
+      change({...scene,wallFinishes});
+    }
+    if(kind==="window"){
+      const windowFinishes={...scene.windowFinishes};
+      delete windowFinishes[id];
+      change({...scene,windowFinishes});
+    }
   }
   const unmatchedFinishes=unmatchedFloorFinishes(scene,rooms);
   function resolveFinish(previousRoom:string, destination?:string) {
@@ -235,6 +271,9 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
       if(scene.views.length>=30){setMessage("Delete a saved view before adding another.");return;}
       const v:View={id:newUuid(),name:`View ${scene.views.length+1}`,position:p,yaw:0,pitch:-10,horizontalFov:90,eyeHeight:1.6};
       change({...scene,views:[...scene.views,v]});setViewId(v.id);setMode("aim");setCameraMode("orbit");setMessage("");
+    }else if(mode==="move-view"&&view){
+      if(!validCamera(p,true)){setMessage("Choose a clear position for the saved view.");return;}
+      updateView({position:p});setMode(null);setCameraMode("preview");setMessage("");
     }else if(mode==="aim"&&view){
       if(Math.hypot(x-view.position.x,y-view.position.y)*scale<.1)return;
       updateView({yaw:Math.round(Math.atan2(y-view.position.y,x-view.position.x)*180/Math.PI)});
@@ -297,6 +336,9 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
   async function persistScene(planRevision:number, config=scene){
     if(!saved)throw Error("The scene has not loaded.");
     if(saved.planRevision===planRevision&&JSON.stringify(saved.config)===JSON.stringify(config))return saved;
+    if(saved.planRevision!=null&&saved.planRevision!==planRevision&&
+      (m.revision!==planRevision||reviewPending||unresolved.length))
+      throw Error("Review affected items before saving this scene.");
     const r=await request<Saved>(path+"/scene",json("PUT",{expectedRevision:saved.revision,planRevision,config}));
     setSaved(r);
     setScene(current=>current===scene?r.config:current);
@@ -366,7 +408,27 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
     <fieldset disabled={busy||!saved} className="scene-controls">
       {check?.mismatch&&<p role="alert">Known measurements differ by {(check.difference*100).toFixed(1)}%. Review the scale in 2D before relying on furniture fit.</p>}
       {!check&&<p>Check a second known distance in 2D before relying on furniture fit.</p>}
-      {saved&&saved.planRevision!==null&&saved.planRevision!==m.revision&&<p>Saved scene uses plan revision {saved.planRevision}. Review camera and object placement, then save the scene for this plan.</p>}
+      {needsReview&&<section className="scene-change-review" aria-label="Review plan changes">
+        <h3>Review plan changes</h3>
+        {reviewPending?<p role="status">Comparing the saved scene with this plan…</p>:
+          dirty?<p>Save the plan first to review its changes.</p>:
+          <p>{unresolved.length ? `${unresolved.length} items need review before saving.` : "Affected items reviewed. Save the scene to update it."}</p>}
+        {unresolved.map(issue=><div className="scene-actions" key={issueKey(issue)}>
+          <span><strong>{issue.label}</strong> · {issue.reason}</span>
+          {(issue.kind==="object"||issue.kind==="view")&&<button onClick={()=>{
+            if(issue.kind==="object"){setItemId(issue.id);setMode("move");}
+            else {setViewId(issue.id);setMode("move-view");}
+            setCameraMode("orbit");setMapOpen(true);setMessage("Choose a new position on the plan.");
+          }}>Move {issue.kind==="view"?"view":"furniture"}</button>}
+          {issue.kind==="room"&&<select aria-label="Reassign floor finish" value="" onChange={e=>resolveFinish(issue.id,e.target.value)}>
+            <option value="" disabled>Reassign floor finish</option>
+            {rooms.filter(room=>!Object.hasOwn(scene.roomFloorMaterials??{},room.id)).map((room,index)=>
+              <option key={room.id} value={room.id}>{room.label||`Room ${index+1}`}</option>)}
+          </select>}
+          {!issue.missing&&<button onClick={()=>setReviewed(all=>({...all,[issueKey(issue)]:true}))}>Keep as is</button>}
+          <button onClick={()=>removeReviewItem(issue)}>Remove</button>
+        </div>)}
+      </section>}
       {phone&&<div className="phone-steps">
         <button disabled={!view} aria-pressed={!design&&!showMap&&cameraMode==="walk"} onClick={()=>{setDesign(false);setMapOpen(false);setCameraMode("walk");}}>Walk</button>
         <button disabled={!view||!!mode} aria-pressed={showMap} onClick={()=>{setDesign(false);setCameraMode("walk");setMapOpen(!showMap);}}>Floor map</button>
@@ -420,7 +482,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
             onChange={e=>setWallFinish({...wallFinish,color:e.target.value})}/></label>}
         </>}
       </div>
-      {!!unmatchedFinishes.length&&<section aria-label="Floor finishes to review">
+      {!needsReview&&!!unmatchedFinishes.length&&<section aria-label="Floor finishes to review">
         <h3>Floor finishes to review</h3>
         <p>{dirty?"Save the plan to confirm room matches.":"These finishes belong to rooms from an earlier layout. Reassign them or remove them, then save the scene."}</p>
         {!dirty&&unmatchedFinishes.map(([id,finish],index)=><div className="scene-actions" key={id}>
@@ -434,7 +496,6 @@ export default function Plan3D({model:m, phone=false, dirty=false, onPlanEdit, s
         </div>)}
       </section>}
       {message&&<p role="status">{message}</p>}
-      {saved?.planRevision&&saved.planRevision!==m.revision&&<p>Plan updated. Review camera and furniture clearances, then save the scene against this revision.</p>}
       <div className="scene-layout">
         <div>
           <svg aria-label="Camera and furniture placement plan" className="scene-map" viewBox={`0 0 ${m.imageTransform.width} ${m.imageTransform.height}`} onClick={clickPlan}
