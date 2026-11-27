@@ -137,6 +137,22 @@ test("hovering over furniture in the walkthrough opens quick editing", async ({p
   await page.getByRole("button",{name:"Save furniture"}).click();
   await expect.poll(()=>current.config.objects[0].rotation).toBe(90);
   expect(current.config.objects[0].width).toBe(2.3);
+
+  await page.getByRole("button",{name:"Overview",exact:true}).click();
+  const pin=page.getByRole("button",{name:"Visit Living room",exact:true});
+  const marker=await pin.boundingBox();
+  expect(marker).toBeTruthy();
+  const x=marker!.x+marker!.width/2,y=marker!.y+marker!.height/2;
+  await page.mouse.move(x,y);
+  await page.mouse.down();
+  await page.mouse.move(x+36,y-10,{steps:8});
+  await expect(page.locator(".show-pin-preview")).toHaveAttribute("data-valid","true");
+  await page.mouse.up();
+  await expect.poll(()=>current.config.views[0].position).not.toEqual(view.position);
+  expect(current.config.views).toEqual([{...view,position:current.config.views[0].position}]);
+  await expect(page.getByRole("heading",{name:"Dollhouse view"})).toBeVisible();
+  await pin.click();
+  await expect(page.getByRole("heading",{name:"Living room",exact:true})).toBeVisible();
 });
 
 test.describe("touch walkthrough",()=>{

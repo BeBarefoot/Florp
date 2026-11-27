@@ -19,6 +19,7 @@ import {metersPerPixel,scaleCheck} from "../../lib/plan/derive";
 import {WalkCamera} from "./WalkCamera";
 import {findRoomFloorPoint,findRoomView,findWalkStart,roomsOf,walkSpace} from "../../lib/plan/walkSpace";
 import {FloorPicker} from "./FloorPicker";
+import {ShowcaseViewPins} from "./ShowcaseViewPins";
 import {newUuid} from "../../lib/uuid";
 import FinishSheet from "./FinishSheet";
 import FurnishSheet from "./FurnishSheet";
@@ -119,8 +120,10 @@ function FitOverlay({points,scale,color}:{points:Pt[];scale:number;color:string}
   </mesh>;
 }
 
-export default function Showcase({plan,scene,title,edit,sample=false,approximate=false,renders={},saveView,saveFinishes,saveFurniture,savePreset,saveWalkEdit}:{plan:PlanModel;scene:Scene;title:string;edit?:string;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View,initial?:View)=>Promise<View>;saveFinishes?:(finishes:FloorStyles)=>Promise<void>;saveFurniture?:(objects:Item[])=>Promise<void>;savePreset?:(preset:HomePreset|null)=>Promise<void>;saveWalkEdit?:(change:WalkthroughEdit)=>Promise<void>}){
+export default function Showcase({plan,scene,title,edit,sample=false,approximate=false,renders={},saveView,moveView,saveFinishes,saveFurniture,savePreset,saveWalkEdit}:{plan:PlanModel;scene:Scene;title:string;edit?:string;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View,initial?:View)=>Promise<View>;moveView?:(id:string,position:Pt)=>Promise<void>;saveFinishes?:(finishes:FloorStyles)=>Promise<void>;saveFurniture?:(objects:Item[])=>Promise<void>;savePreset?:(preset:HomePreset|null)=>Promise<void>;saveWalkEdit?:(change:WalkthroughEdit)=>Promise<void>}){
   const [localViews,setLocalViews]=useState<View[]>([]);
+  const [localPinPositions,setLocalPinPositions]=useState<Record<string,Pt>>({});
+  const [pinNotice,setPinNotice]=useState("");
   const [freeView,setFreeView]=useState<View|null>(null);
   const [adding,setAdding]=useState(false);
   const [saving,setSaving]=useState(false);
@@ -317,10 +320,11 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     return room?findRoomView(room.polygon,scale,canFrame,point):undefined;
   },[rooms,scale,canFrame]);
   const views=useMemo(()=>{
-    if(scene.views.length||localViews.length)return [...scene.views,...localViews];
+    if(scene.views.length||localViews.length)return [...scene.views,...localViews].map(view=>
+      Object.hasOwn(localPinPositions,view.id)?{...view,position:localPinPositions[view.id]}:view);
     const start=findWalkStart(plan,scale,canFrame);
     return start?[{id:"walk-start",name:"Walkthrough",...wideView,...start}]:[];
-  },[plan,scene.views,localViews,scale,canFrame]);
+  },[plan,scene.views,localViews,localPinPositions,scale,canFrame]);
   const [playing,setPlaying]=useState(false),[notice,setNotice]=useState("");
   const [rendered,setRendered]=useState(false),[toolsOpen,setToolsOpen]=useState(false);
   const stop=selectedId==="overview"?-1:selectedId===null?(views.length?0:-1):views.findIndex(v=>v.id===selectedId);
@@ -331,15 +335,25 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     return {...first,...wideView,...corner,id:"tour-start-corner"};
   },[views,cornerNear]);
   const view=freeView??(selectedId===null?openingView:views[stop]);
-  const pinGroups=useMemo(()=>{
-    const groups:{position:Pt;indices:number[]}[]=[];
-    views.forEach((v,i)=>{
-      const group=groups.find(g=>Math.hypot(g.position.x-v.position.x,g.position.y-v.position.y)*scale<.35);
-      if(group)group.indices.push(i);
-      else groups.push({position:v.position,indices:[i]});
-    });
-    return groups;
-  },[views,scale]);
+  function canDropView(point:Pt){
+    return point.x>=0&&point.y>=0&&point.x<=plan.imageTransform.width&&point.y<=plan.imageTransform.height&&canFrame(point,true);
+  }
+  async function repositionView(view:View,position:Pt|null){
+    if(savingRef.current)return;
+    if(!position){setPinNotice("Drop the view on a clear spot inside the plan.");return;}
+    setPinNotice("");
+    savingRef.current=true;setSaving(true);
+    try{
+      if(view.id==="walk-start"){
+        const first={...view,id:newUuid(),name:"View 1",position};
+        if(saveView)await saveView(first);
+        else setLocalViews([first]);
+      }else if(moveView)await moveView(view.id,position);
+      else setLocalPinPositions(current=>({...current,[view.id]:position}));
+    }
+    catch(error){setPinNotice(String(error));}
+    finally{savingRef.current=false;setSaving(false);}
+  }
   const latestViews=useRef(views);
   useEffect(()=>{latestViews.current=views;},[views]);
   const pose=useRef<View|null>(null);
@@ -363,6 +377,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   function select(index:number){
     setPlaying(false);setRendered(false);setFreeView(null);setAdding(false);
     chooseTarget(null);
+    setPinNotice("");
     setSelectedId(views[index]?.id??"overview");setNotice("");
   }
   const addView=useCallback(async (location:View)=>{
@@ -478,10 +493,8 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
         position={[tag.position.x*scale,.18,tag.position.y*scale]} zIndexRange={[1,0]}>
         <span className="show-room-tag">{tag.text}</span>
       </Html>)}
-      {!view&&!adding&&pinGroups.map(({position,indices})=><Html key={views[indices[0]].id} portal={stage} center
-        style={{display:pickingRoom||furnishing?"none":undefined}} position={[position.x*scale,2,position.y*scale]} zIndexRange={[2,1]}>
-        <div className="show-pin-group">{indices.map(i=><button key={views[i].id} className="show-pin" aria-label={"Visit "+views[i].name} onClick={()=>select(i)}>{i+1}</button>)}</div>
-      </Html>)}
+      {!view&&!adding&&!pickingRoom&&!furnishing&&<ShowcaseViewPins views={views} scale={scale} portal={stage} disabled={saving}
+        canDrop={canDropView} onVisit={select} onMove={(view,position)=>void repositionView(view,position)}/>}
     </Canvas>
     </div>
     {view&&rendered&&renders[view.id]&&<div className="show-render"><img src={renders[view.id]} alt={"Saved design render for "+view.name}/></div>}
@@ -546,7 +559,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     }}>
       {(toolsOpen||adding||pickingRoom)&&<div className="show-heading">
         <small>{approximate?"Approximate scale · ":""}{title}</small>
-        <p>{pickingRoom?"Tap a room’s floor to choose it.":adding?"Tap a room to add a wide corner view.":rendered?"Saved design render":view?"Tap to walk. Drag two fingers to move, twist to turn, and pinch to zoom.":"Drag to orbit. Use two fingers to pan, twist, or zoom."}</p>
+        <p>{pickingRoom?"Tap a room’s floor to choose it.":adding?"Tap a room to add a wide corner view.":rendered?"Saved design render":view?"Tap to walk. Drag two fingers to move, twist to turn, and pinch to zoom.":"Drag a numbered pin to move its view. Drag the scene to orbit."}</p>
       </div>}
       <div className="show-dock">
         <button type="button" className="show-menu-button" aria-label={toolsOpen?"Close tour tools":"Open tour tools"}
@@ -602,7 +615,8 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
           </>}
         </div>
       </div>
-      {(toolsOpen||adding||pickingRoom)&&(!hasFloor||notice||needsFinishReview)&&<p role="status">{notice||(!hasFloor?"No walkable floor was found.":"Some saved floor finishes need review. Open Finishes.")}</p>}
+      {(pinNotice||(toolsOpen||adding||pickingRoom)&&(!hasFloor||notice||needsFinishReview))&&
+        <p role="status">{pinNotice||notice||(!hasFloor?"No walkable floor was found.":"Some saved floor finishes need review. Open Finishes.")}</p>}
       {toolsOpen&&check?.mismatch&&<p role="alert" className="show-scale-warning">Scale measurements differ by {(check.difference*100).toFixed(1)}%. Check scale in Edit floor.</p>}
     </section>}
   </main>;

@@ -8,7 +8,7 @@ import {useEffect,useMemo,useState} from "react";
 import type {HomePreset} from "../../../../lib/plan/homePresets";
 import {API,request,type Blueprint} from "../../../../lib/api";
 import type {PlanModel,PlanResponse} from "../../../../lib/plan/model";
-import type {Job,Saved,Scene,WalkthroughEdit} from "../../../../lib/plan/scene";
+import type {Job,Saved,Scene,View,WalkthroughEdit} from "../../../../lib/plan/scene";
 import {metersPerPixel} from "../../../../lib/plan/derive";
 import {samplePlan,sampleScene} from "../../../../lib/plan/showcaseSample";
 
@@ -87,6 +87,19 @@ export default function ShowcasePage(){
       setRenders({});
       setData(current=>current?.[2].id===id?[current[0],saved,current[2]]:current);
     }
+    async function saveViews(update:(views:View[])=>View[]){
+      const path="/blueprints/"+encodeURIComponent(id)+"/scene";
+      const latest=await request<Saved>(path);
+      if(latest.revision&&latest.planRevision!==planRevision)
+        throw Error("The floor has changed. Reload the tour before saving.");
+      const saved=await request<Saved>(path,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        expectedRevision:latest.revision,planRevision,
+        config:{...latest.config,views:update(latest.config.views)},
+      })});
+      setRenders({});
+      setData(current=>current?.[2].id===id?[current[0],saved,current[2]]:current);
+      return saved.config.views;
+    }
     return <Player key={id} plan={plan} scene={scene}
       approximate={approximate} renders={currentScene?renders:undefined} title={data[2].filename}
       edit={"/plan/"+id}
@@ -94,20 +107,19 @@ export default function ShowcasePage(){
       savePreset={canSave?(preset:HomePreset|null)=>saveDesign({designPreset:preset}):undefined}
       saveWalkEdit={canSave?saveDesign:undefined}
       saveFurniture={canSave?objects=>saveDesign({objects}):undefined}
+      moveView={canSave?async (viewId,position)=>{
+        await saveViews(views=>{
+          if(!views.some(view=>view.id===viewId))throw Error("This view is no longer saved.");
+          return views.map(view=>view.id===viewId?{...view,position}:view);
+        });
+      }:undefined}
       saveView={canSave?async (view,initial)=>{
-        const path="/blueprints/"+encodeURIComponent(id)+"/scene";
-        const latest=await request<Saved>(path);
-        if(latest.revision && latest.planRevision!==plan.revision)
-          throw Error("The floor has changed. Reload the tour before saving.");
-        const prior=latest.config.views.length||!initial?latest.config.views:[initial];
-        if(prior.length>=30)throw Error("The tour already has 30 saved views.");
-        const saved=await request<Saved>(path,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-          expectedRevision:latest.revision,planRevision:plan.revision,
-          config:{...latest.config,views:[...prior,{...view,name:"View "+(prior.length+1)}]},
-        })});
-        setRenders({});
-        setData(current=>current?.[2].id===id?[current[0],saved,current[2]]:current);
-        return saved.config.views.find(v=>v.id===view.id)!;
+        const views=await saveViews(current=>{
+          const prior=current.length||!initial?current:[initial];
+          if(prior.length>=30)throw Error("The tour already has 30 saved views.");
+          return [...prior,{...view,name:"View "+(prior.length+1)}];
+        });
+        return views.find(v=>v.id===view.id)!;
       }:undefined}/>;
   }
   return <main className="tour-library"><Link href={back}>← Back to floors</Link>
