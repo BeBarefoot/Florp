@@ -6,6 +6,8 @@ for (const width of [390,1280]) {
     await page.setViewportSize({width,height:844});
     const space={id:"s",title:"Garden apartment"};
     let uploaded=false;
+    let releaseExtraction=()=>{};
+    const analysisVisible=new Promise<void>(resolve=>{releaseExtraction=resolve;});
     const floor={id:"f",filename:"ground.png",width:100,height:100,project_id:"s"};
     await page.route("**/projects",r=>r.fulfill({json:r.request().method()==="POST"?space:[]}));
     await page.route("**/projects/s/blueprints",r=>{
@@ -14,8 +16,12 @@ for (const width of [390,1280]) {
     });
     await page.route("**/blueprints/f/info",r=>r.fulfill({json:floor}));
     await page.route("**/blueprints/f/plan",r=>r.fulfill({json:{model:null,revision:0}}));
-    await page.route("**/blueprints/f/plan/extract?expected_revision=0",r=>{
+    await page.route("**/blueprints/f/plan/extraction-progress/*",r=>
+      r.fulfill({json:{percent:48,stage:"Finding openings"}}));
+    await page.route("**/blueprints/f/plan/extract?expected_revision=0",async r=>{
       expect(r.request().method()).toBe("POST");
+      expect(r.request().headers()["x-florp-progress-id"]).toBeTruthy();
+      await analysisVisible;
       return r.fulfill({json:{model:{...samplePlan,id:"f",scale:{reference:null,metersPerPixel:null}},revision:1}});
     });
     await page.route("**/blueprints/f/scene",r=>r.fulfill({json:{revision:0,planRevision:null,config:{views:[],objects:[],style:""}}}));
@@ -32,7 +38,10 @@ for (const width of [390,1280]) {
     await page.getByRole("link",{name:floor.filename}).click();
     expect(uploaded).toBe(true);
     await expect(page).toHaveURL(/\/phone\/showcase\/f$/,{timeout:20000});
+    await expect(page.getByRole("progressbar",{name:"Plan analysis progress"})).toHaveAttribute("value","48");
+    releaseExtraction();
     await expect(page.getByRole("heading",{name:"Walkthrough",exact:true})).toBeVisible({timeout:20000});
+    await page.getByRole("button",{name:"Open tour tools"}).click();
     await expect(page.getByText(/Approximate scale/)).toBeVisible();
     await page.getByRole("button",{name:"Overview"}).click();
     await expect(page.locator(".show-room-tag").filter({hasText:"Bedroom"})).toBeVisible();
