@@ -75,7 +75,7 @@ export default function ShowcasePage({desktop = false}: {desktop?: boolean}){
     const approximate=plan!==original;
     const currentScene=!approximate&&data[1].planRevision===plan.revision;
     const {floorFinish,floorMaterial,roomFloorMaterials,wallFinishes,windowFinishes,designPreset}=data[1].config;
-    const scene=currentScene?data[1].config:{...emptyScene,floorFinish,floorMaterial,roomFloorMaterials,wallFinishes,windowFinishes,designPreset,objects:desktop?data[1].config.objects:[]};
+    const scene=currentScene?data[1].config:{...emptyScene,floorFinish,floorMaterial,roomFloorMaterials,wallFinishes,windowFinishes,designPreset,objects:desktop?data[1].config.objects:[],views:desktop?data[1].config.views:[]};
     const priorScene=data[1], planRevision=plan.revision;
     const canSave=!approximate&&(!priorScene.revision||currentScene);
     async function saveDesign(change:Pick<Scene,"floorMaterial"|"roomFloorMaterials">|Pick<Scene,"designPreset">|WalkthroughEdit){
@@ -100,7 +100,12 @@ export default function ShowcasePage({desktop = false}: {desktop?: boolean}){
       setData(current=>current?.[2].id===id?[current[0],saved,current[2]]:current);
       return saved.config.views;
     }
-    return <Player key={id} plan={plan} scene={scene} desktop={desktop} stale={!!priorScene.revision&&!currentScene&&!approximate}
+    const {floor,project_id}=data[2];
+    const levelAction = desktop && project_id ? floor
+      ? {href:`/studio/${encodeURIComponent(floor.otherId)}#overview`, label:floor.level===1?"Second floor":"First floor", importing:false}
+      : {href:`/project/${encodeURIComponent(project_id)}#add-floor`, label:"Import second floor", importing:true}
+      : undefined;
+    return <Player key={id} levelAction={levelAction} plan={plan} scene={scene} desktop={desktop} stale={!!priorScene.revision&&!currentScene&&!approximate}
       approximate={approximate} renders={currentScene?renders:undefined} title={data[2].filename}
       edit={"/plan/"+id}
       saveFinishes={canSave?saveDesign:undefined}

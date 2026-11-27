@@ -9,7 +9,7 @@ import {DoubleSide,Shape,Vector2,Vector3} from "three";
 import Link from "next/link";
 import DesktopBrand from "../DesktopBrand";
 import {request} from "../../lib/api";
-import {Maximize2,LayoutGrid,Box,Footprints,MapPin,Pause,Play,SkipBack,SkipForward,Image as ImageIcon,FileDown,ImageDown,Bookmark,MapPinPlus,X,PencilRuler,Layers,Armchair} from "lucide-react";
+import {Maximize2,LayoutGrid,Box,Footprints,Plus,MapPin,Pause,Play,SkipBack,SkipForward,Image as ImageIcon,FileDown,ImageDown,Bookmark,MapPinPlus,X,PencilRuler,Layers,Armchair} from "lucide-react";
 import {MAX_HORIZONTAL_FOV_DEG} from "../../lib/plan/camera";
 import {downloadPrompt,renderPrompt} from "../../lib/plan/renderPrompt";
 import {homePresets, presetFloor, type HomePreset} from "../../lib/plan/homePresets";
@@ -124,9 +124,22 @@ function FitOverlay({points,scale,color}:{points:Pt[];scale:number;color:string}
   </mesh>;
 }
 
-export default function Showcase({plan,scene,title,edit,desktop=false,stale=false,sample=false,approximate=false,renders={},saveView,moveView,saveFinishes,saveFurniture,savePreset,saveWalkEdit}:{plan:PlanModel;scene:Scene;title:string;edit?:string;desktop?:boolean;stale?:boolean;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View,initial?:View)=>Promise<View>;moveView?:(id:string,position:Pt)=>Promise<void>;saveFinishes?:(finishes:FloorStyles)=>Promise<void>;saveFurniture?:(objects:Item[])=>Promise<void>;savePreset?:(preset:HomePreset|null)=>Promise<void>;saveWalkEdit?:(change:WalkthroughEdit)=>Promise<void>}){
-  const [localViews,setLocalViews]=useState<View[]>([]);
-  const [localPinPositions,setLocalPinPositions]=useState<Record<string,Pt>>({});
+export default function Showcase({plan,scene,title,edit,levelAction,desktop=false,stale=false,sample=false,approximate=false,renders={},saveView,moveView,saveFinishes,saveFurniture,savePreset,saveWalkEdit}:{plan:PlanModel;scene:Scene;title:string;edit?:string;levelAction?:{href:string;label:string;importing:boolean};desktop?:boolean;stale?:boolean;sample?:boolean;approximate?:boolean;renders?:Record<string,string>;saveView?:(view:View,initial?:View)=>Promise<View>;moveView?:(id:string,position:Pt)=>Promise<void>;saveFinishes?:(finishes:FloorStyles)=>Promise<void>;saveFurniture?:(objects:Item[])=>Promise<void>;savePreset?:(preset:HomePreset|null)=>Promise<void>;saveWalkEdit?:(change:WalkthroughEdit)=>Promise<void>}){
+  const previewKey = `florp-preview-views:${plan.id}:${plan.revision}`;
+  const [previewViews, setPreviewViews] = useState<{views:View[];positions:Record<string,Pt>}>(() => {
+    if (!saveView && !sample) {
+      try {
+        const saved = JSON.parse(localStorage.getItem(previewKey) ?? "null");
+        if (Array.isArray(saved?.views) && saved.positions) return saved;
+      } catch {}
+    }
+    return {views:[],positions:{}};
+  });
+  const {views:localViews,positions:localPinPositions}=previewViews;
+  function storePreview(next:typeof previewViews) {
+    setPreviewViews(next);
+    if(!sample)try { localStorage.setItem(previewKey,JSON.stringify(next)); } catch {}
+  }
   const [pinNotice,setPinNotice]=useState("");
   const [freeView,setFreeView]=useState<View|null>(null);
   const [adding,setAdding]=useState(false);
@@ -367,9 +380,11 @@ export default function Showcase({plan,scene,title,edit,desktop=false,stale=fals
       if(view.id==="walk-start"){
         const first={...view,id:newUuid(),name:"View 1",position};
         if(saveView)await saveView(first);
-        else setLocalViews([first]);
+        else storePreview({...previewViews, views:[first]});
       }else if(moveView)await moveView(view.id,position);
-      else setLocalPinPositions(current=>({...current,[view.id]:position}));
+      else storePreview({...previewViews,positions:{...localPinPositions,[view.id]:position}});
+      if(lastWalkPose.current?.id===view.id)lastWalkPose.current=null;
+      setPinNotice(moveView||saveView?"View position saved":sample?"View position moved":"View position saved in this browser");
     }
     catch(error){setPinNotice(String(error));}
     finally{savingRef.current=false;setSaving(false);}
@@ -386,11 +401,28 @@ export default function Showcase({plan,scene,title,edit,desktop=false,stale=fals
         try { previous = JSON.parse(sessionStorage.getItem(studioPoseKey) ?? "null"); } catch {}
       }
       lastWalkPose.current = previous;
-      setFreeView(!location.hash ? previous : null);
+      setFreeView(!location.hash || previous?.id===id ? previous : null);
       setSelectedId(location.hash==="#overview"?"overview":latestViews.current.some(v=>v.id===id)?id:null);
     };
     read();window.addEventListener("hashchange",read);return ()=>window.removeEventListener("hashchange",read);
   },[studioPoseKey]);
+  const rememberStudioPose = useCallback(() => {
+    if (!studioPoseKey) return;
+    const previous = view ? (pose.current?.id===view.id ? pose.current : view) : lastWalkPose.current;
+    try {
+      if (previous) sessionStorage.setItem(studioPoseKey, JSON.stringify(previous));
+      else sessionStorage.removeItem(studioPoseKey);
+    } catch {}
+  }, [studioPoseKey, view]);
+  useEffect(()=>{
+    if(!studioPoseKey)return;
+    window.addEventListener("pagehide",rememberStudioPose);
+    return ()=>window.removeEventListener("pagehide",rememberStudioPose);
+  },[studioPoseKey,rememberStudioPose]);
+
+  const updateStudioMode=useCallback((overview:boolean)=>{
+    if(desktop)history.replaceState(history.state,"",location.pathname+location.search+(overview?"#overview":""));
+  },[desktop]);
   useEffect(()=>{
     if(!playing)return;
     const timer=setTimeout(()=>{
@@ -400,12 +432,13 @@ export default function Showcase({plan,scene,title,edit,desktop=false,stale=fals
     return ()=>clearTimeout(timer);
   },[playing,stop,views]);
   function select(index:number){
+    updateStudioMode(index<0);
     setPlaying(false);setRendered(false);setFreeView(null);setAdding(false);
     chooseTarget(null);
     setPinNotice("");
     setSelectedId(views[index]?.id??"overview");setNotice("");
   }
-  const addView=useCallback(async (location:View)=>{
+  async function addView(location:View){
     if(savingRef.current)return;
     savingRef.current=true;setSaving(true);
     const entry={...location,id:newUuid(),name:"View "+(views.length+1)};
@@ -413,13 +446,14 @@ export default function Showcase({plan,scene,title,edit,desktop=false,stale=fals
       const initial = !scene.views.length && !localViews.length && views[0]?.id==="walk-start"
         ? {...views[0],id:newUuid(),name:"View 1"} : undefined;
       const saved=saveView?await saveView(entry,initial):entry;
-      if(!saveView)setLocalViews(current=>[...(initial?[initial]:[]),...current,saved]);
+      if(!saveView)storePreview({...previewViews,views:[...(initial?[initial]:[]),...localViews,saved]});
+      updateStudioMode(false);
       setFreeView(null);setSelectedId(saved.id);setAdding(false);
-      setNotice(saveView?"View saved":"View added for this session");
+      setNotice(saveView?"View saved":sample?"View added for this session":"View saved in this browser");
     }catch(e){setNotice(String(e));}
     finally{savingRef.current=false;setSaving(false);}
-  },[scene.views.length,localViews.length,views,saveView]);
-  const land=useCallback((point:Pt|null,yaw:number)=>{
+  }
+  function land(point:Pt|null,yaw:number){
     if(savingRef.current)return;
     if(pickingRoom){
       const room=point&&[...rooms].reverse().find(r=>contains(point,r.polygon));
@@ -442,8 +476,8 @@ export default function Showcase({plan,scene,title,edit,desktop=false,stale=fals
     setPlaying(false);setRendered(false);setNotice("");setSelectedId("overview");
     const entry:View={id:"free-walk",name:"Walkthrough",...wideView,position,yaw:corner?.yaw??yaw};
     if(adding)void addView(entry);
-    else setFreeView(entry);
-  },[adding,addView,canFrame,pickingRoom,rooms,scale]);
+    else {updateStudioMode(false);setFreeView(entry);}
+  }
   function openCornerView(){
     if(!view)return;
     const point=pose.current?.id===view.id?pose.current.position:view.position;
@@ -560,16 +594,16 @@ export default function Showcase({plan,scene,title,edit,desktop=false,stale=fals
     {desktop ? <header className="studio-header" data-tour-tools>
       <DesktopBrand/>
       <nav className="studio-modes" aria-label="Workspace views">
-      <Link href={edit ?? "/"} onClick={()=>{
-        const previous = view ? pose.current ?? view : lastWalkPose.current;
-        if (studioPoseKey && previous) {
-          try { sessionStorage.setItem(studioPoseKey, JSON.stringify(previous)); } catch {}
-        }
-      }}>{edit ? "Plan" : "Homes"}</Link>
+      <Link href={edit ?? "/"} onClick={rememberStudioPose}>{edit ? "Plan" : "Homes"}</Link>
       <button aria-pressed={!view} onClick={()=>{if(view){lastWalkPose.current=pose.current??view;select(-1);}}}><Box size={16}/>Overview</button>
       <button aria-pressed={!!view} disabled={!views.length} onClick={()=>{if(!view){select(0);setFreeView(lastWalkPose.current);}}}><Footprints size={16}/>Walk</button>
       </nav>
-      <span className="studio-floor-name" title={title}>{title}</span>
+      <div className="studio-floor-controls">
+        <span className="studio-floor-name" title={title}>{title}</span>
+        {levelAction&&<Link href={levelAction.href} className="desktop-action" onClick={rememberStudioPose}>
+          {levelAction.importing&&<Plus size={15}/>}<span>{levelAction.label}</span>
+        </Link>}
+      </div>
     </header> : view&&<button type="button" className="show-overview" data-tour-tools onClick={()=>select(-1)}><Box size={18}/>Overview</button>}
     {desktop&&(approximate||stale||notice)&&<div className="studio-status" role="status">
       {approximate?"Approximate scale":stale?<Link href={(edit??"/")+"?setup=furniture"}>Review scene against the updated plan</Link>:notice}

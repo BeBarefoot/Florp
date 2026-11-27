@@ -644,9 +644,72 @@ test("desktop studio keeps the full viewport canvas beneath the workspace naviga
   await page.goto("/studio/sample#overview");
   const modes=page.getByRole("navigation",{name:"Workspace views"});
   await expect(modes.getByRole("button",{name:"Overview"})).toHaveAttribute("aria-pressed","true",{timeout:30_000});
-  await expect.poll(async()=>Math.round((await page.locator("canvas").boundingBox())?.height??0)).toBe(760);
+  await expect.poll(() => page.locator("canvas").evaluate(canvas => Math.round(canvas.getBoundingClientRect().height)),
+    {timeout:15_000}).toBe(760);
   await modes.getByRole("button",{name:"Walk"}).click();
   await expect(modes.getByRole("button",{name:"Walk"})).toHaveAttribute("aria-pressed","true");
   await page.getByRole("button",{name:"Open tour tools"}).click();
   await expect(page.getByRole("group",{name:"Tour actions"})).toBeVisible();
+});
+
+test("desktop keeps a moved draft pin and the live walk camera after refresh",async({page})=>{
+  test.setTimeout(75_000);
+  const {readFile}=await import("node:fs/promises");
+  await page.setViewportSize({width:1100,height:820});
+  const draft={...samplePlan,id:"draft",scale:{metersPerPixel:null,reference:null}};
+  await page.route("**/blueprints/draft/*",route=>{
+    const endpoint=new URL(route.request().url()).pathname.split("/").at(-1);
+    return route.fulfill({json:endpoint==="plan"?{revision:1,model:draft}:endpoint==="scene"?
+      {revision:0,planRevision:null,config:{views:[],objects:[],style:""}}:endpoint==="renders"?[]:
+      {id:"draft",filename:"Ground floor",project_id:"project"}});
+  });
+  await page.goto("/studio/draft#overview");
+  const first=page.getByRole("button",{name:"Visit Walkthrough",exact:true});
+  await expect(first).toBeVisible({timeout:25_000});
+  const pin=(await first.boundingBox())!;
+  await page.mouse.move(pin.x+pin.width/2,pin.y+pin.height/2);
+  await page.mouse.down();
+  await page.mouse.move(pin.x+pin.width/2+66,pin.y+pin.height/2+20,{steps:5});
+  await page.mouse.up();
+  const moved=page.getByRole("button",{name:"Visit View 1",exact:true});
+  await expect(moved).toBeVisible();
+  const position=(await moved.boundingBox())!;
+  await page.reload();
+  await expect(moved).toBeVisible({timeout:20_000});
+  await expect.poll(async()=>Math.round((await moved.boundingBox())?.x??0)).toBe(Math.round(position.x));
+  await moved.click();
+  async function camera(){
+    await openTools(page);
+    const download=page.waitForEvent("download");
+    await page.getByRole("button",{name:"Download view prompt"}).click();
+    const path=await (await download).path();
+    return JSON.parse((await readFile(path!,"utf8")).trim().split("\n").at(-1)!).camera;
+  }
+  const before=await camera();
+  await page.mouse.move(420,320);
+  await page.mouse.down();
+  await page.mouse.move(455,290,{steps:4});
+  await page.mouse.up();
+  const after=await camera();
+  expect(after.forwardUnitXYZ).not.toEqual(before.forwardUnitXYZ);
+  expect(after.eyeXYZ).not.toEqual(before.eyeXYZ);
+  await page.reload();
+  const restored=await camera();
+  for(const field of ["eyeXYZ","forwardUnitXYZ"]){
+    for(let i=0;i<3;i++)expect(restored[field][i]).toBeCloseTo(after[field][i],8);
+  }
+
+  await expect(page.getByRole("link",{name:"Import second floor"})).toHaveAttribute("href","/project/project#add-floor");
+  await page.route("**/projects/project/blueprints",route=>route.fulfill({
+    json:route.request().method()==="POST"?{id:"upper",filename:"Upper floor.png"}:[{id:"draft",filename:"Ground floor"}],
+  }));
+  await page.route("**/projects/project/floor-pair",route=>route.fulfill({json:null}));
+  await page.route("**/projects",route=>route.fulfill({json:[{id:"project",title:"Courtyard house"}]}));
+  await page.getByRole("link",{name:"Import second floor"}).click();
+  const input=page.getByLabel("Floor plan file");
+  await expect(input).toBeFocused({timeout:20_000});
+  await input.setInputFiles({name:"Upper floor.png",mimeType:"image/png",buffer:Buffer.from("drawing")});
+  await page.getByRole("button",{name:"Upload plan",exact:true}).click();
+  await expect(page.getByRole("heading",{name:"Upper floor.png"})).toBeVisible();
+  await expect(page.getByRole("button",{name:"Identify floors, garden and stairs"})).toBeEnabled();
 });

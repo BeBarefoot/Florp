@@ -4,7 +4,7 @@ import { useThree } from "@react-three/fiber";
 import * as T from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { PlanModel } from "../../lib/plan/model";
-import { metersPerPixel } from "../../lib/plan/derive";
+import { metersPerPixel, wallFootprint } from "../../lib/plan/derive";
 import { doorLeaves } from "../../lib/plan/doorLeaves";
 import { wallPieces } from "../../lib/plan/mesh";
 import { roomsOf } from "../../lib/plan/walkSpace";
@@ -175,11 +175,31 @@ export function SceneMesh({m, objects, detectedObjects = [], closedDoorIds, floo
   useEffect(()=>()=>stairs.forEach(stair=>stair.wells.forEach(well=>well.walls.dispose())),[stairs]);
   const {rooms,ground} = useMemo(()=>{
     const cutouts=stairCutouts(m);
-    const rooms=roomsOf(m).map(room=>({room, surfaces:roomSurfaces(room.polygon,scale,cutouts),
-      ceilings:roomSurfaces(room.polygon,scale,stairHeadroom(m,room.ceilingHeightM??2.8))}));
+    const rooms=roomsOf(m).map(room=>({room,surfaces:roomSurfaces(room.polygon,scale,cutouts)}));
     const {width,height}=m.imageTransform;
     return {rooms,ground:walkGround?roomSurfaces([{x:0,y:0},{x:width,y:0},{x:width,y:height},{x:0,y:height}],scale,cutouts):[]};
   },[m,scale,walkGround]);
+  const ceilings=useMemo(()=>{
+    if(cutaway)return [];
+    const surfacesAt=(polygon:PlanModel["rooms"][number]["polygon"], height:number)=>
+      roomSurfaces(polygon,scale,stairHeadroom(m,height)).map(shape=>({shape,height}));
+    const wallHeights=new Map(m.walls.map(wall=>[wall.id,wall.heightM]));
+    const roomWalls=new Map(m.rooms.map(room=>[room.id,room.wallIds]));
+    if(rooms.length)return rooms.flatMap(({room})=>{
+      if(room.roomType==="balcony")return [];
+      const boundaryHeights=(roomWalls.get(room.id)??[]).flatMap(id=>{
+        const height=wallHeights.get(id);
+        return height===undefined?[]:[height];
+      });
+      const height=room.ceilingHeightM??(boundaryHeights.length?Math.min(...boundaryHeights):2.8);
+      return surfacesAt(room.polygon,height);
+    });
+    // A draft without room polygons can still have an interior roof in Walk.
+    const footprint=walkGround&&wallFootprint(m,scale);
+    if(!footprint||footprint.width<=0||footprint.depth<=0)return [];
+    const {left,right,top,bottom}=footprint;
+    return surfacesAt([{x:left,y:top},{x:right,y:top},{x:right,y:bottom},{x:left,y:bottom}],footprint.lowestWall);
+  },[m,scale,rooms,cutaway,walkGround]);
   const materials = useMemo(()=>rooms.map(({room})=>
     floorMaterialFor({floorFinish,floorMaterial,roomFloorMaterials},room.id) ??
       presetFloor(designPreset,room.roomType)
@@ -226,7 +246,11 @@ export function SceneMesh({m, objects, detectedObjects = [], closedDoorIds, floo
     {yards.map(({shape,surface},i)=><mesh key={"yard"+i} rotation={[-Math.PI/2,0,0]} position={[0,-.01,0]} receiveShadow userData={{maskId:1,furnishGround:true}}>
       <shapeGeometry args={[shape]}/><meshStandardMaterial color={yardColor[surface]} side={T.DoubleSide}/>
     </mesh>)}
-    {rooms.map(({room,surfaces,ceilings}, i)=>{
+    {ceilings.map(({shape,height},index)=><mesh key={index} receiveShadow={presentation}
+      rotation={[-Math.PI/2,0,0]} position={[0,height,0]} userData={{maskId:1}}>
+      <shapeGeometry args={[shape]}/><meshStandardMaterial color="#f1efea" side={T.BackSide}/>
+    </mesh>)}
+    {rooms.map(({room,surfaces}, i)=>{
       const finish = floors.finishes[i];
       const photoFloor = "normalMap" in finish && !!finish.normalMap;
       return <group key={room.id}>
@@ -234,9 +258,6 @@ export function SceneMesh({m, objects, detectedObjects = [], closedDoorIds, floo
           <shapeGeometry args={[shape]}/>
           <meshStandardMaterial key={photoFloor?"photo":"map" in finish?"pattern":"solid"} {...finish}
             envMap={photoFloor?environment:null} envMapIntensity={.42} side={T.DoubleSide}/>
-        </mesh>)}
-        {!cutaway&&room.roomType!=="balcony"&&ceilings.map((ceiling,j)=><mesh key={j} receiveShadow={presentation} rotation={[-Math.PI/2,0,0]} position={[0,room.ceilingHeightM ?? 2.8,0]} userData={{maskId:1}}>
-          <shapeGeometry args={[ceiling]}/><meshStandardMaterial color="#f1efea" side={T.BackSide}/>
         </mesh>)}
       </group>;
     })}

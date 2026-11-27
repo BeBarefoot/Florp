@@ -77,7 +77,7 @@ export function wallFootprint(m: PlanModel, scale: number | null) {
     lowestWall = Math.min(lowestWall, wall.heightM);
   }
   const width = (right - left) * scale, depth = (bottom - top) * scale;
-  return { width, depth, unusuallySmall: width > 0 && depth > 0 && Math.max(width, depth) < lowestWall };
+  return { left, right, top, bottom, lowestWall, width, depth, unusuallySmall: width > 0 && depth > 0 && Math.max(width, depth) < lowestWall };
 }
 export const toM = (m: PlanModel, px: number) => {
   const s = metersPerPixel(m);

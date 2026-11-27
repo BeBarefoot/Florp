@@ -294,3 +294,11 @@
   .studio-header {display:flex;justify-content:space-between;padding-inline:10px}
   .studio-header .desktop-brand span,.studio-floor-name {display:none}
 }
+
+.studio-floor-controls {display:flex;justify-content:flex-end;align-items:center;gap:10px;min-width:0}
+.studio-floor-controls .desktop-action {white-space:nowrap;min-height:34px}
+.project-upload:target {scroll-margin-top:20px;outline:2px solid var(--desk-forest);outline-offset:4px}
+@media(max-width:700px) {
+  .studio-header:has(.studio-floor-controls a) {flex-wrap:wrap}
+  .studio-header:has(.studio-floor-controls a) + .studio-status {top:100px}
+}

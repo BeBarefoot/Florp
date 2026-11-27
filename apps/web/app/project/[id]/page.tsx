@@ -29,6 +29,9 @@ export default function ProjectPage() {
     }).catch(() => {});
     return () => { active = false; };
   }, [id]);
+  useEffect(() => {
+    if (window.location.hash === "#add-floor") file.current?.focus();
+  }, [id]);
   const uploadInFlight = useRef(false);
   async function upload(files = queued) {
     if (!files.length || uploadInFlight.current) return;
@@ -101,7 +104,7 @@ export default function ProjectPage() {
           </div>
           {plans.length >= 2 && <FloorPairReview pid={id} plans={plans}/>}
         </section>
-        <section className="project-upload" aria-labelledby="project-upload-title" data-dragging={dragging}
+        <section id="add-floor" className="project-upload" aria-labelledby="project-upload-title" data-dragging={dragging}
           onDragOver={event => { event.preventDefault(); setDragging(true); }}
           onDragLeave={event => {
             if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false);
