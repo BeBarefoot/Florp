@@ -20,7 +20,7 @@ SIZES = {
     "bathtub": [(w, d) for w in (.57, .64, .72, .8) for d in (1.45, 1.62, 1.8, 1.9, 1.96, 2.04)],
     "shower": [(w, d) for w in (.78, .9, 1.02, 1.14) for d in (.78, .9, 1.02, 1.14)],
 }
-HEIGHT = {"bed": .9, "wardrobe": 2.2, "toilet": .8, "bathtub": .56, "shower": 2, "vanity": .86, "sofa": .85, "dining_6": .86, "coffee_table": .42, "sink": .85, "cabinets": .9, "console_standing": .55, "island": .92, "car": 1.48, "tree": 3, "cooktop": .045, "bar_stools": 1.02, "fridge": 1.8}
+HEIGHT = {"bed": .9, "wardrobe": 2.2, "toilet": .8, "bathtub": .56, "shower": 2, "vanity": .86, "sofa": .85, "dining_6": .86, "coffee_table": .42, "sink": .85, "cabinets": .9, "console_standing": .55, "island": .92, "car": 1.275, "tree": 3, "cooktop": .045, "bar_stools": 1.02, "fridge": 1.8}
 MIN_SCORE = {"bed": .32, "wardrobe": .34, "toilet": .36, "bathtub": .29, "shower": .47}
 
 

@@ -1,4 +1,6 @@
 import {expect,test} from "@playwright/test";
+import {PerspectiveCamera,Vector3} from "three";
+import {dimensions} from "../lib/plan/furnitureCatalog";
 import {samplePlan} from "../lib/plan/showcaseSample";
 
 for (const width of [390,1280]) {
@@ -102,14 +104,15 @@ test("a whole-home style is saved with the current scene revision", async ({page
   expect(current.config.designPreset).toBe("hotel");
 });
 
-test("hovering over furniture in the walkthrough opens quick editing", async ({page})=>{
+test("hover outlines furniture and a click opens its walkthrough menu", async ({page})=>{
   await page.setViewportSize({width:900,height:760});
   const id="edit-tour";
   const plan={...samplePlan,id,revision:1};
   const sofa={id:"sofa",kind:"sofa",position:{x:300,y:340},width:2.2,depth:.92,height:.9,rotation:0};
+  const car={id:"car",kind:"car",position:{x:820,y:330},rotation:90,...dimensions("car")};
   const view={id:"facing-sofa",name:"Living room",position:{x:300,y:570},yaw:-90,pitch:-24,
     horizontalFov:85,eyeHeight:1.6};
-  let current={revision:1,planRevision:1,config:{views:[view],objects:[sofa],style:""}};
+  let current={revision:1,planRevision:1,config:{views:[view],objects:[sofa,car],style:""}};
   await page.route(`**/blueprints/${id}/plan`,r=>r.fulfill({json:{model:plan,revision:1}}));
   await page.route(`**/blueprints/${id}/info`,r=>r.fulfill({json:{id,filename:"Apartment.png",project_id:"s"}}));
   await page.route(`**/blueprints/${id}/scene/renders`,r=>r.fulfill({json:[]}));
@@ -122,12 +125,13 @@ test("hovering over furniture in the walkthrough opens quick editing", async ({p
   await page.getByRole("button",{name:"Visit Living room"}).click();
   await expect(page.getByRole("button",{name:"Overview",exact:true})).toBeVisible();
   const canvas=page.locator("canvas");
-  await canvas.screenshot();
+  const before=await canvas.screenshot();
   const tools=page.getByRole("group",{name:"Sofa",exact:true});
-  await expect.poll(async ()=>{
-    await canvas.hover({position:{x:450,y:380}});
-    return tools.isVisible();
-  }).toBe(true);
+  await canvas.hover({position:{x:450,y:380}});
+  await expect.poll(async ()=>(await canvas.screenshot()).equals(before)).toBe(false);
+  await expect(tools).toHaveCount(0);
+  await canvas.click({position:{x:450,y:380}});
+  await expect(tools).toBeVisible();
   const panel=await tools.boundingBox();
   expect(panel).toBeTruthy();
   expect(Math.abs(panel!.x-450)).toBeLessThan(40);
@@ -139,6 +143,17 @@ test("hovering over furniture in the walkthrough opens quick editing", async ({p
   expect(current.config.objects[0].width).toBe(2.3);
 
   await page.getByRole("button",{name:"Overview",exact:true}).click();
+  const camera=new PerspectiveCamera(45,900/760);
+  const target=new Vector3(5,.65,3.4);
+  camera.position.copy(target).addScaledVector(new Vector3(.82,1.1,1.22).normalize(),19);
+  camera.lookAt(target);
+  camera.updateMatrixWorld();
+  const roof=new Vector3(8.2,1.2,3.2).project(camera);
+  await canvas.click({position:{x:(roof.x+1)*450,y:(1-roof.y)*380}});
+  const carMenu=page.getByRole("group",{name:"Aston Martin Vantage",exact:true});
+  await expect(carMenu).toBeVisible();
+  await expect(page.getByRole("heading",{name:"Dollhouse view"})).toBeVisible();
+  await carMenu.getByRole("button",{name:"Close object controls"}).click();
   const pin=page.getByRole("button",{name:"Visit Living room",exact:true});
   const marker=await pin.boundingBox();
   expect(marker).toBeTruthy();
@@ -158,10 +173,15 @@ test("hovering over furniture in the walkthrough opens quick editing", async ({p
 test.describe("touch walkthrough",()=>{
   test.use({hasTouch:true});
 
-  test("walkthrough wall and window menus apply finishes and Add view works through furniture", async ({page})=>{
+  test("wall finish crosses split edges, and window and Add view still work", async ({page})=>{
     await page.setViewportSize({width:390,height:760});
     const id="wall-and-view-tour";
-    const plan={...samplePlan,id,revision:1};
+    const north=samplePlan.walls[0];
+    const plan={...samplePlan,id,revision:1,
+      nodes:[...samplePlan.nodes,{id:"split",x:315,y:0}],
+      walls:[{...north,b:"split"},{...north,id:"north-right",a:north.b,b:"split"},...samplePlan.walls.slice(1)],
+      openings:samplePlan.openings.map(opening=>opening.id==="opening-0"?{...opening,hostWallId:"north-right",offsetPx:45}:opening),
+    };
     const walk={id:"north-wall",name:"Living room",position:{x:320,y:350},yaw:-90,pitch:0,horizontalFov:85,eyeHeight:1.6};
     let current:import("../lib/plan/scene").Saved={revision:1,planRevision:1,config:{
       views:[walk],objects:[{id:"rug",kind:"rug",position:{x:440,y:290},width:3.5,depth:3,height:.02,rotation:0}],
@@ -190,6 +210,7 @@ test.describe("touch walkthrough",()=>{
     await expect.poll(()=>current.config.wallFinishes?.["0"]).toEqual({
       a:{kind:"tile",color:"#aacbaa"},b:{kind:"paint",color:"#aabbcc"},
     });
+    expect(current.config.wallFinishes?.["north-right"]).toEqual({b:{kind:"tile",color:"#aacbaa"}});
     await canvas.tap({position:{x:221,y:380}});
     const window=page.getByRole("group",{name:"Window",exact:true});
     await window.getByLabel("Frame material").selectOption("wood");

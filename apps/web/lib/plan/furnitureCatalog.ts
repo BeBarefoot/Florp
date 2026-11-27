@@ -27,7 +27,7 @@ const products = {
   patio_set: ["Patio dining set", 1.74, 1.95, .85],
   lounge: ["Sun lounger", .71, 1.96, .8],
   planter: ["Planter", .55, .55, .98],
-  car: ["Car", 4.5, 1.8, 1.48],
+  car: ["Aston Martin Vantage", 4.495, 1.98, 1.275],
   tree: ["Tree", 2.5, 2.5, 3],
   cooktop: ["Cooktop", .6, .52, .045],
   bar_stools: ["Bar stools", 1.8, .45, 1.02],
@@ -62,8 +62,9 @@ export const furnitureRooms = [
     {name:"Worktops & storage", items:["island","cabinets","bar_stools"]},
   ], tip:"Dining footprints include chairs. Leave extra space to pull chairs out and open appliance doors."},
   {name:"Yard", groups:[
-    {name:"Outdoor living", items:["patio_set","lounge","grill","car"]},
+    {name:"Outdoor living", items:["patio_set","lounge","grill"]},
     {name:"Plants & shade", items:["planter","parasol","tree"]},
+    {name:"Parking", items:["car"]},
   ], tip:"Place items on a detected yard or balcony. Keep circulation and grill clearance in mind."},
 ] as const satisfies readonly {name:string;groups:readonly {name:string;items:readonly ObjectKind[]}[];tip:string}[];
 

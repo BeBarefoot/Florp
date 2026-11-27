@@ -12,10 +12,13 @@ import {Maximize2,LayoutGrid,Box,MapPin,Pause,Play,SkipBack,SkipForward,Image as
 import {MAX_HORIZONTAL_FOV_DEG} from "../../lib/plan/camera";
 import {downloadPrompt,renderPrompt} from "../../lib/plan/renderPrompt";
 import {homePresets, presetFloor, type HomePreset} from "../../lib/plan/homePresets";
-import {WalkthroughObjects, ObjectHighlight, WalkTargetAnchor, targetKey, type WalkTarget} from "./WalkthroughObjects";
+import {WalkthroughObjects, ObjectHighlight, SelectionBox, WallHighlight, WalkTargetAnchor, targetKey, type WalkTarget} from "./WalkthroughObjects";
 import {WalkthroughEditMenu,type WalkEditor} from "./WalkthroughEditMenu";
 import {SceneMesh} from "./SceneMesh";
-import {metersPerPixel,scaleCheck} from "../../lib/plan/derive";
+import {metersPerPixel,openingEnds,scaleCheck} from "../../lib/plan/derive";
+import {doorLeaves} from "../../lib/plan/doorLeaves";
+import {wallPieces} from "../../lib/plan/mesh";
+import {connectedWallFace} from "../../lib/plan/wallFaces";
 import {WalkCamera} from "./WalkCamera";
 import {findRoomFloorPoint,findRoomView,findWalkStart,roomsOf,walkSpace} from "../../lib/plan/walkSpace";
 import {FloorPicker} from "./FloorPicker";
@@ -146,10 +149,12 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   const [sessionPreset,setSessionPreset]=useState<HomePreset|null|undefined>(undefined);
   const designPreset=presetDraft!==undefined?presetDraft:sessionPreset!==undefined?sessionPreset:scene.designPreset;
   const [target,setTarget]=useState<WalkTarget|null>(null);
+  const [pointed,setPointed]=useState<WalkTarget|null>(null);
   const [quickNotice,setQuickNotice]=useState("");
   const menu=useRef<HTMLDivElement>(null);
   const [sessionEdits,setSessionEdits]=useState<WalkthroughEdit>({});
   function chooseTarget(next:WalkTarget|null){
+    setPointed(null);
     if(savingRef.current||targetKey(next)===targetKey(target))return;
     setQuickNotice("");
     setTarget(next);
@@ -183,7 +188,8 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     detected?.planRevision===plan.revision?detected.suggestions:localDetections,
     objects,scale,[...(scene.dismissedFixtureIds??[]),...hiddenDetections]
   ),[detected,plan.revision,localDetections,objects,scale,scene.dismissedFixtureIds,hiddenDetections]);
-  const hovered=target?.kind==="object"?(objects.find(item=>item.id===target.id)??(showDetections?suggestions.find(item=>item.id===target.id):undefined)):undefined;
+  const displayedObjects=showDetections?[...objects,...suggestions]:objects;
+  const hovered=target?.kind==="object"?displayedObjects.find(item=>item.id===target.id):undefined;
   const hoveredOpening=target?.kind==="opening"?plan.openings.find(item=>item.id===target.id):undefined;
   const alternatives=hovered ? [...new Set(furnitureRooms.flatMap(room=>room.groups
     .filter(group=>(group.items as readonly ObjectKind[]).includes(hovered.kind)).flatMap(group=>[...group.items])))]
@@ -280,7 +286,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
   }
   function updateFurniture(item:Item){
     if(!fitsFloor(plan,item,scale)){
-      setFurnitureNotice(yardKinds.has(item.kind)
+      setFurnitureNotice(item.kind==="car"?"Choose a spot in a garage or yard where the car fits.":yardKinds.has(item.kind)
         ?"Choose a position where the whole object fits in a yard or balcony."
         :"Choose a position where the whole object fits inside one room.");
       return false;
@@ -312,7 +318,8 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     }catch(error){setFurnitureNotice(String(error));}
     finally{savingRef.current=false;setSaving(false);}
   }
-  const space=useMemo(()=>walkSpace(plan,scale,tourScene),[plan,scale,tourScene]);
+  const pieces=useMemo(()=>wallPieces(plan),[plan]);
+  const space=useMemo(()=>walkSpace(plan,scale,tourScene,undefined,pieces),[plan,scale,tourScene,pieces]);
   const canFrame=useCallback((point:Pt,walking:boolean)=>
     space.validCamera(point,walking)&&(!sample||clearSampleFloor(point,scale)),[space,sample,scale]);
   const cornerNear=useCallback((point:Pt)=>{
@@ -429,7 +436,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     setFreeView({id:"free-walk",name:"Walkthrough",...wideView,...corner});
   }
   function quickEditor():WalkEditor|undefined{
-    if(!target||!view||furnishing||stylesOpen||finishesOpen||rendered||playing)return;
+    if(!target||!canSelect)return;
     const href=edit&&"/phone/edit/"+encodeURIComponent(plan.id)+"?opening="+encodeURIComponent(target.id);
     const preset=designPreset?homePresets[designPreset]:undefined;
     if(target.kind==="wall"){
@@ -437,7 +444,8 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
       const finishes=tourScene.wallFinishes;
       const wall=plan.walls.find(candidate=>candidate.id===id);
       return {kind:"wall",finish:finishes?.[id]?.[side]??null,color:preset?.wall??(wall?.material==="concrete"?"#c7c5be":"#efeae0"),
-        onApply:finish=>void applyQuickEdit({wallFinishes:setWallSurface(finishes,id,side,finish)})};
+        onApply:finish=>void applyQuickEdit({wallFinishes:connectedWallFace(plan,target).reduce(
+          (result,face)=>setWallSurface(result,face.id,face.side,finish),finishes)})};
     }
     if(hoveredOpening?.kind==="window"){
       const {id}=hoveredOpening;
@@ -461,8 +469,35 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     if(hovered)return {kind:"object",item:hovered,suggestion:!objects.some(item=>item.id===hovered.id),
       alternatives,onApply:applyQuickFurniture,onRemove:()=>removeQuickFurniture(hovered)};
   }
+  const canSelect=!sample&&!furnishing&&!stylesOpen&&!finishesOpen&&!rendered&&!playing&&!adding&&!pickingRoom;
   const editor=quickEditor();
-  return <main className="showcase-player" data-furnishing={furnishing} data-placing={!!placement||adding} aria-label="3D showcase"
+  const highlight=canSelect?(editor?target:pointed):null;
+  const selected=!!editor;
+  function selectionOutline(){
+    if(!highlight)return null;
+    if(highlight.kind==="wall")return <WallHighlight faces={connectedWallFace(plan,highlight)}
+      pieces={pieces} overview={!view} selected={selected}/>;
+    if(highlight.kind==="object"){
+      const item=displayedObjects.find(candidate=>candidate.id===highlight.id);
+      return item?<ObjectHighlight item={item} scale={scale} selected={selected}/>:null;
+    }
+    const opening=plan.openings.find(candidate=>candidate.id===highlight.id);
+    if(!opening)return null;
+    if(opening.kind==="door"){
+      const door=doorLeaves(plan,scale,tourScene.closedDoorIds).find(candidate=>candidate.id===opening.id);
+      if(door)return <SelectionBox position={[door.x+Math.cos(door.angle)*door.length/2,door.height/2,
+        door.z-Math.sin(door.angle)*door.length/2]} rotation={door.angle} width={door.length}
+        height={door.height} depth={.06} selected={selected}/>;
+    }
+    const ends=openingEnds(plan,opening);
+    if(!ends)return null;
+    const [a,b]=ends;
+    return <SelectionBox position={[(a.x+b.x)*scale/2,opening.sillM+opening.heightM/2,(a.y+b.y)*scale/2]}
+      rotation={-Math.atan2(b.y-a.y,b.x-a.x)} width={Math.hypot(b.x-a.x,b.y-a.y)*scale}
+      height={opening.heightM} depth={.11} selected={selected}/>;
+  }
+  return <main className="showcase-player" data-furnishing={furnishing} data-placing={!!placement||adding}
+    data-pointing={canSelect&&!!pointed} aria-label="3D showcase"
     onPointerDownCapture={event=>{
       if(event.button===0&&furnishing&&event.target instanceof Element&&!event.target.closest(".furnish-sheet,canvas")){
         selectFurniture("");
@@ -473,10 +508,10 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
       <color attach="background" args={[view?"#d4e3e9":"#d8d9cb"]}/>
       <SceneMesh m={plan} objects={editableObjects} detectedObjects={showDetections?suggestions:undefined} closedDoorIds={tourScene.closedDoorIds} floorStyle={styledScene}
         wallFinishes={tourScene.wallFinishes} windowFinishes={tourScene.windowFinishes} designPreset={designPreset} presentation cutaway={!view}/>
-      {view&&!rendered&&!sample&&!furnishing&&!stylesOpen&&!finishesOpen&&!playing&&<WalkthroughObjects
-        onHover={next=>{if(!menu.current?.contains(document.activeElement))chooseTarget(next);}} onTap={chooseTarget}/>}
+      {canSelect&&<WalkthroughObjects onHover={next=>setPointed(current=>targetKey(current)===targetKey(next)?current:next)}
+        onTap={chooseTarget}/>}
       {editor&&target&&<WalkTargetAnchor key={targetKey(target)} target={target} element={menu}/>}
-      {editor&&hovered&&<ObjectHighlight item={hovered} scale={scale}/>}
+      {selectionOutline()}
       {sample&&<SampleFurniture interior={!!view}/>}
       {view?<ShowcaseWalk key={view.id} plan={plan} scene={walkScene} view={view} sample={sample} pose={pose} onFrame={setViewport} keyboard={!rendered}/>:
         <><OverviewCamera plan={plan}/>{!furnishing&&<FloorPicker scale={scale} roomPicking={adding||pickingRoom} onPick={land}/>}</>}

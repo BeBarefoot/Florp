@@ -16,7 +16,7 @@ export function fitsFloor(plan:PlanModel,item:Item,scale:number) {
     polygon.some((q,j)=>crosses(p,corners[(i+1)%corners.length],q,polygon[(j+1)%polygon.length])));
   const within=(polygon:Pt[])=>corners.every(p=>contains(p,polygon))&&!crossesEdge(polygon);
   if(!yardKinds.has(item.kind))return roomsOf(plan).some(({polygon})=>within(polygon));
-  return roomsOf(plan).some(room=>room.roomType==="balcony"&&within(room.polygon))||
+  return roomsOf(plan).some(room=>(item.kind==="car"?room.roomType==="garage":room.roomType==="balcony")&&within(room.polygon))||
     yardAreas(plan).some(({polygon,holes})=>within(polygon)&&!holes.some(hole=>
       corners.some(p=>contains(p,hole))||hole.some(p=>contains(p,corners))||crossesEdge(hole)));
 }

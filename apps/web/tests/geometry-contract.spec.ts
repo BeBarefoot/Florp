@@ -5,6 +5,42 @@ import type {PlanModel} from '../lib/plan/model';
 import {withDerived,metersPerPixel,wallFootprint,inset} from '../lib/plan/derive';
 import {wallPieces} from '../lib/plan/mesh';
 import {moveNode,deleteWall,addWall} from '../lib/plan/ops';
+import {connectedWallFace} from '../lib/plan/wallFaces';
+import {samplePlan} from '../lib/plan/showcaseSample';
+import {dimensions,objectName} from '../lib/plan/furnitureCatalog';
+import {fitsFloor} from '../lib/plan/furnitureFit';
+import {furnitureParts,makeFurnitureResources} from '../lib/plan/furnitureModels';
+
+test('wall face continues past a partition on the opposite side only',()=>{
+ const template=samplePlan.walls[0];
+ const plan={...samplePlan,nodes:[
+  {id:"n0",x:0,y:0},{id:"n1",x:200,y:0},{id:"n2",x:400,y:0},{id:"n3",x:200,y:100},
+ ],walls:[
+  {...template,id:"left",a:"n0",b:"n1"},
+  {...template,id:"right",a:"n2",b:"n1"},
+  {...template,id:"partition",a:"n1",b:"n3"},
+ ]};
+ expect(connectedWallFace(plan,{id:"left",side:"a"})).toEqual([{id:"left",side:"a"}]);
+ expect(connectedWallFace(plan,{id:"left",side:"b"})).toEqual([{id:"left",side:"b"},{id:"right",side:"b"}]);
+});
+
+test('Vantage uses the garage footprint and renders four correctly oriented wheels',()=>{
+ const car={id:"parking",kind:"car" as const,position:{x:320,y:340},rotation:0,...dimensions("car")};
+ const garage={...samplePlan,rooms:[{...samplePlan.rooms[0],roomType:"garage" as const}]};
+ expect(objectName(car.kind)).toBe("Aston Martin Vantage");
+ expect(fitsFloor(garage,car,.01)).toBe(true);
+ expect(fitsFloor(samplePlan,car,.01)).toBe(false);
+ const parts=furnitureParts(car,"hotel");
+ expect(parts.filter(part=>part.shape==="wheel"&&part.finish==="black")).toHaveLength(4);
+ const resources=makeFurnitureResources();
+ const tire=resources.geometry("wheel");
+ tire.computeBoundingBox();
+ expect(tire.boundingBox?.min.z).toBeCloseTo(-.5);
+ expect(tire.boundingBox?.max.z).toBeCloseTo(.5);
+ expect(resources.geometry("vantageBody").getAttribute("position").count).toBeGreaterThan(100);
+ resources.dispose();
+});
+
 const cases=JSON.parse(readFileSync(resolve(process.cwd(),'../../tests/fixtures/geometry-contract.json'),'utf8')) as {name:string;model:PlanModel;expectedAreasPx2:number[];expectedBoundsPx:number[][]}[];
 for(const c of cases)test(`shared geometry contract: ${c.name}`,()=>{
  const m=withDerived(c.model);

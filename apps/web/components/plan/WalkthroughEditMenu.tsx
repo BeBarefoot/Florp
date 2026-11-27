@@ -1,5 +1,5 @@
 import {useState, type FormEvent, type RefObject} from "react";
-import {X} from "lucide-react";
+import {PaintRoller,RotateCw,Trash2,X} from "lucide-react";
 import Link from "next/link";
 import {objectName,tvDimensions,tvInches,tvSizeRange,type ObjectKind} from "../../lib/plan/furnitureCatalog";
 import {newItem,type Item,type WallMaterial,type WindowFinish} from "../../lib/plan/scene";
@@ -40,7 +40,7 @@ function FurnitureFields({editor}:{editor:Extract<WalkEditor,{kind:"object"}>}){
     </div>}
     <div className="walk-edit-actions">
       {removed?<button type="button" onClick={()=>setRemoved(false)}>Undo remove</button>:<>
-        <button type="button" onClick={()=>{setItem({...item,rotation:(item.rotation+90)%360});setChanged(true);}}>Rotate</button>
+        <button type="button" onClick={()=>{setItem({...item,rotation:(item.rotation+90)%360});setChanged(true);}}><RotateCw size={15} aria-hidden/>Rotate</button>
         {editor.alternatives.length>0&&<select aria-label="Replace object" value={item.kind===editor.item.kind?"":item.kind} onChange={event=>{
         setItem({...newItem(event.target.value as ObjectKind,item.position),id:item.id,rotation:item.rotation});
       }}>
@@ -48,7 +48,7 @@ function FurnitureFields({editor}:{editor:Extract<WalkEditor,{kind:"object"}>}){
         <option value="" disabled>Replace</option>
         {editor.alternatives.map(kind=><option key={kind} value={kind}>{objectName(kind)}</option>)}
       </select>}
-        <button type="button" onClick={()=>setRemoved(true)}>{editor.suggestion?"Hide":"Remove"}</button>
+        <button type="button" onClick={()=>setRemoved(true)}><Trash2 size={15} aria-hidden/>{editor.suggestion?"Hide":"Remove"}</button>
       </>}
       <button type="submit" disabled={!changed&&!removed&&!editor.suggestion}
         aria-label={editor.suggestion&&!removed?"Place detected object":"Save furniture"}>{editor.suggestion&&!removed?"Place":"Save"}</button>
@@ -66,7 +66,7 @@ function WallFields({editor}:{editor:Extract<WalkEditor,{kind:"wall"}>}){
       </select></label>
       <label>Color<input type="color" value={color} onChange={event=>{setColor(event.target.value);if(!kind)setKind("paint");}}/></label>
     </div>
-    <div className="walk-edit-actions"><button>Apply finish</button></div>
+    <div className="walk-edit-actions"><button><PaintRoller size={15} aria-hidden/>Apply finish</button></div>
   </form>;
 }
 

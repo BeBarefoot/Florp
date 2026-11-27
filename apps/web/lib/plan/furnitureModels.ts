@@ -1,4 +1,4 @@
-import {BoxGeometry, CanvasTexture, CylinderGeometry, DoubleSide, LatheGeometry, MeshStandardMaterial,
+import {BoxGeometry, BufferGeometry, CanvasTexture, CylinderGeometry, DoubleSide, Float32BufferAttribute, LatheGeometry, MeshStandardMaterial,
   RepeatWrapping, SphereGeometry, SRGBColorSpace, Vector2} from "three";
 import {RoundedBoxGeometry} from "three/addons/geometries/RoundedBoxGeometry.js";
 import {homePresets, type HomePreset} from "./homePresets";
@@ -12,12 +12,35 @@ const palette = {
   ceramic:["#f0f0e9",.24,0], stone:["#b1a89a",.41,0], steel:["#aeb3b3",.34,.52],
   chrome:["#b4bfbd",.24,.63], glass:["#abdce0",.19,0], screen:["#171e21",.22,0],
   soil:["#46372b",1,0], pot:["#b97558",.79,0], leaf:["#64815b",.72,0], twig:["#596d47",.76,0],
+  vantage_green:["#174d43",.24,.68], smoked_glass:["#182831",.17,.26],
+  headlamp:["#edf5ff",.21,.1], tail_lamp:["#e22341",.25,.08],
 } as const;
 export type FurnitureFinish = keyof typeof palette;
 export const furnitureColor = (finish: FurnitureFinish) => palette[finish][0];
-type Shape = "box" | "soft" | "upholstered" | "sphere" | "tube" | "bowl" | "pot";
+type Shape = "box" | "soft" | "upholstered" | "sphere" | "tube" | "bowl" | "pot" |
+  "vantageBody" | "vantageCabin" | "vantageRoof" | "vantageGrille" | "wheel";
 type XYZ = [number,number,number];
 type Part = {position:XYZ;size:XYZ;finish:FurnitureFinish;shape:Shape;turn?:XYZ};
+
+// Profiles run from the tail to the nose. The local X axis follows the
+// long axis of the detected car footprint.
+function coachwork(profiles:[number,number,number,number,number][]) {
+  const positions=profiles.flatMap(([x,halfWidth,sill,shoulder,crest])=>[
+    [sill,-.76],[sill,-.91],[shoulder,-1],[crest,-.73],[crest,.73],[shoulder,1],[sill,.91],[sill,.76],
+  ].flatMap(([y,z])=>[x,y-.5,z*halfWidth]));
+  const indices:number[]=[];
+  for(let station=0;station<profiles.length-1;station++)for(let edge=0;edge<8;edge++){
+    const a=station*8+edge,b=station*8+(edge+1)%8;
+    indices.push(a,b,a+8,b,b+8,a+8);
+  }
+  const tail=(profiles.length-1)*8;
+  for(let i=1;i<7;i++)indices.push(0,i+1,i,tail,tail+i,tail+i+1);
+  const geometry=new BufferGeometry();
+  geometry.setAttribute("position",new Float32BufferAttribute(positions,3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
 
 const geometries = {
   box:()=>new BoxGeometry(1,1,1),
@@ -25,9 +48,30 @@ const geometries = {
   upholstered:()=>new RoundedBoxGeometry(1,1,1,2,.15),
   sphere:()=>new SphereGeometry(.5,16,10),
   tube:()=>new CylinderGeometry(.5,.5,1,20),
+  wheel:()=>new CylinderGeometry(.5,.5,1,32).rotateX(Math.PI/2),
   bowl:()=>new LatheGeometry([[0,-.5],[.19,-.5],[.36,-.40],[.48,-.15],[.5,.35],[.49,.48],
     [.44,.5],[.41,.39],[.40,.1],[.30,-.26],[.16,-.36],[0,-.36]].map(([x,y])=>new Vector2(x,y)),32),
   pot:()=>new CylinderGeometry(.5,.35,1,20),
+  vantageBody:()=>coachwork([
+    [-.50,.32,.21,.49,.56],[-.475,.43,.16,.53,.62],[-.405,.47,.16,.58,.63],
+    [-.369,.485,.23,.59,.64],[-.340,.49,.41,.60,.64],[-.295,.496,.48,.61,.65],
+    [-.25,.488,.41,.59,.64],[-.22,.466,.23,.57,.63],[-.195,.455,.16,.54,.62],
+    [-.09,.437,.15,.49,.60],[.10,.435,.15,.48,.60],[.20,.459,.16,.53,.63],
+    [.226,.473,.23,.55,.64],[.247,.479,.4,.56,.64],[.29,.484,.48,.57,.64],
+    [.336,.478,.4,.55,.62],[.363,.466,.23,.52,.59],[.396,.449,.16,.49,.56],
+    [.465,.41,.14,.44,.52],[.491,.35,.145,.40,.49],[.50,.27,.18,.36,.455],
+  ]),
+  vantageCabin:()=>coachwork([
+    [-.355,.27,.596,.617,.625],[-.275,.347,.601,.68,.74],[-.202,.357,.608,.738,.88],
+    [-.14,.344,.618,.77,.965],[-.045,.33,.616,.78,.979],[.026,.322,.615,.75,.946],
+    [.101,.33,.617,.68,.823],[.174,.343,.604,.625,.639],
+  ]),
+  vantageRoof:()=>coachwork([
+    [-.145,.256,.948,.956,.977],[-.115,.271,.955,.974,.991],[-.047,.266,.957,.980,1],
+    [.012,.255,.945,.972,.985],[.038,.239,.925,.943,.956],
+  ]),
+  vantageGrille:()=>coachwork([[-.5,.40,0,.14,.72],[-.28,.49,.09,.18,.95],
+    [.3,.46,.09,.18,.95],[.5,.35,.29,.45,.68]]),
 } satisfies Record<Shape,()=>import("three").BufferGeometry>;
 
 function materialMap(style:"weave"|"grain"){
@@ -149,14 +193,31 @@ export function furnitureParts(o:Item, designPreset?:HomePreset|null):Part[]{
 
   switch(o.kind){
     case "car":
-      add(0,.34,0,.99,.38,.96,"steel","upholstered");
-      add(-.04,.64,0,.56,.26,.81,"screen","upholstered");
-      add(-.04,.85,0,.37,.23,.72,"steel","upholstered");
-      for(const x of [-.31,.31])for(const z of [-.43,.43])
-        add(x,.18,z,.15,.36,.13,"black","tube",[Math.PI/2,0,0]);
-      for(const z of [-.32,.32]){
-        add(.47,.41,z,.055,.09,.20,"ceramic");
-        add(-.47,.41,z,.055,.09,.20,"rust");
+      add(0,.5,0,1,1,1,"vantage_green","vantageBody");
+      add(0,.5,0,1,1,1,"smoked_glass","vantageCabin");
+      add(0,.5,0,1,1,1,"vantage_green","vantageRoof");
+      add(.491,.273,0,.021,.29,.61,"black","vantageGrille");
+      add(.478,.141,0,.042,.036,.74,"screen");
+      add(-.489,.186,0,.022,.092,.68,"screen");
+      add(-.475,.53,0,.021,.022,.77,"tail_lamp");
+      add(.441,.503,0,.022,.011,.048,"chrome");
+      for(const side of [-1,1]){
+        add(.43,.484,.366*side,.113,.025,.125,"headlamp","soft",[0,.36*side,0]);
+        add(-.473,.52,.398*side,.036,.022,.103,"tail_lamp","soft",[0,.6*side,0]);
+        add(.126,.66,.427*side,.047,.042,.14,"vantage_green","soft",[0,.20*side,0]);
+        add(.135,.53,.442*side,.082,.026,.014,"screen");
+        add(-.031,.546,.442*side,.052,.01,.014,"vantage_green");
+        for(const offset of [.265,.34])add(-.493,.173,offset*side,.028,.035,.028,"chrome","tube",[0,0,Math.PI/2]);
+        for(const x of [-.295,.29]){
+          add(x,.247,.413*side,.151,.494,.146,"black","wheel");
+          add(x,.247,.486*side,.114,.371,.016,"screen","wheel");
+          add(x,.247,.495*side,.036,.118,.008,"chrome","wheel");
+          for(let i=0;i<10;i++){
+            const angle=i*Math.PI/5;
+            add(x+.035*Math.cos(angle),.247+.115*Math.sin(angle),.497*side,
+              .057,.018,.008,"chrome","box",[0,0,angle]);
+          }
+        }
       }
       break;
     case "tree":

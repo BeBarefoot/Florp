@@ -57,6 +57,7 @@
 }
 .show-stage,.show-render{position:absolute;inset:0}
 .show-stage canvas{touch-action:none}
+.showcase-player[data-pointing=true] .show-stage canvas{cursor:pointer}
 .showcase-player[data-placing=true] .show-stage canvas{cursor:crosshair}
 .show-render{background:var(--ink);z-index:2}
 .show-render img{width:100%;height:100%;object-fit:contain}
@@ -210,6 +211,7 @@
 .walk-edit-grid {grid-template-columns:repeat(auto-fit,minmax(76px,1fr))}
 .walk-edit-grid label {display:grid;gap:4px;min-width:0;font-size:12px}
 .walk-edit-actions {display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.walk-edit-actions button {display:inline-flex;align-items:center;gap:5px}
 .walk-object-tools :is(button,select,input,a) {min-height:44px;border-radius:9px;padding-inline:8px;font:inherit;font-size:13px}
 .walk-edit-grid :is(select,input) {width:100%;min-width:0}
 .walk-object-tools :is(select,input) {background:var(--paper);color:var(--ink);border:1px solid var(--line)}
