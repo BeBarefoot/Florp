@@ -158,12 +158,13 @@ test("hover outlines furniture and a click opens its walkthrough menu", async ({
   const marker=await pin.boundingBox();
   expect(marker).toBeTruthy();
   const x=marker!.x+marker!.width/2,y=marker!.y+marker!.height/2;
+  const outside=new Vector3(10.7,2,3.4).project(camera);
   await page.mouse.move(x,y);
   await page.mouse.down();
-  await page.mouse.move(x+36,y-10,{steps:8});
-  await expect(page.locator(".show-pin-preview")).toHaveAttribute("data-valid","true");
+  await page.mouse.move((outside.x+1)*450,(1-outside.y)*380,{steps:8});
+  await expect(page.locator(".show-pin-preview")).toBeVisible();
   await page.mouse.up();
-  await expect.poll(()=>current.config.views[0].position).not.toEqual(view.position);
+  await expect.poll(()=>current.config.views[0].position.x).toBeGreaterThan(plan.imageTransform.width);
   expect(current.config.views).toEqual([{...view,position:current.config.views[0].position}]);
   await expect(page.getByRole("heading",{name:"Dollhouse view"})).toBeVisible();
   await pin.click();

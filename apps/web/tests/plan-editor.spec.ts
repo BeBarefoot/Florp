@@ -152,8 +152,8 @@ test("phone inspector saves window calibration and a two-way stair",async({page}
   const model=setReference(fixture({stairs:[stair]}),{x:100,y:100},{x:500,y:100},4);
   const {puts}=await setup(page,{model,phone:true});
   await clickAt(page,260,100);
-  await page.getByText("Window dimensions and frame",{exact:true}).click();
   const width=page.getByLabel("Window width (m)");
+  await expect(width).toBeVisible();
   await width.fill("1.4");
   await width.press("Enter");
   await page.getByLabel("Frame material").selectOption("wood");

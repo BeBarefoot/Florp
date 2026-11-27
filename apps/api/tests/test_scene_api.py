@@ -324,6 +324,24 @@ def test_save_furniture_catalog_items_preserves_metric_dimensions(client):
     }).status_code == 422
 
 
+def test_camera_can_be_saved_outside_drawing_without_relaxing_object_bounds(client):
+    c, bid = client
+    path = f"/blueprints/{bid}"
+    assert c.put(path + "/plan", json={"expectedRevision": 0, "model": plan(scale=reference())}).status_code == 200
+    view = {"id": "outside", "name": "Outside", "position": {"x": -150, "y": 900},
+            "yaw": 45, "pitch": -5, "horizontalFov": 120, "eyeHeight": 1.6}
+    payload = {"expectedRevision": 0, "planRevision": 1, "config": {"views": [view]}}
+    saved = c.put(path + "/scene", json=payload)
+    assert saved.status_code == 200, saved.text
+    assert c.get(path + "/scene").json()["config"]["views"] == [view]
+    payload["expectedRevision"] = 1
+    payload["config"]["objects"] = [
+        {"id": "table", "kind": "table", "position": view["position"],
+         "width": 1.4, "depth": .8, "height": .75, "rotation": 0},
+    ]
+    assert c.put(path + "/scene", json=payload).status_code == 422
+
+
 def test_fixture_review_scan_does_not_edit_scene(client, monkeypatch):
     import app.fixture_detection as detector
     from app.fixture_detection import Hit

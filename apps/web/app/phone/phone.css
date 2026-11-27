@@ -106,7 +106,6 @@
 .showcase-player .show-pin[data-movable=true]{cursor:grab;touch-action:none;user-select:none}
 .showcase-player .show-pin[data-dragging=true]{cursor:grabbing;opacity:.4}
 .show-pin-preview{display:grid;place-items:center;width:44px;height:44px;border:2px solid white;border-radius:50%;background:var(--pine);color:white;font-weight:700;box-shadow:0 2px 8px #26382d55}
-.show-pin-preview[data-valid=false]{background:#8b3927}
 .show-room-tag {
   display: block;
   padding: .15rem .48rem;

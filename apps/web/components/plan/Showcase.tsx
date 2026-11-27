@@ -342,12 +342,8 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
     return {...first,...wideView,...corner,id:"tour-start-corner"};
   },[views,cornerNear]);
   const view=freeView??(selectedId===null?openingView:views[stop]);
-  function canDropView(point:Pt){
-    return point.x>=0&&point.y>=0&&point.x<=plan.imageTransform.width&&point.y<=plan.imageTransform.height&&canFrame(point,true);
-  }
-  async function repositionView(view:View,position:Pt|null){
+  async function repositionView(view:View,position:Pt){
     if(savingRef.current)return;
-    if(!position){setPinNotice("Drop the view on a clear spot inside the plan.");return;}
     setPinNotice("");
     savingRef.current=true;setSaving(true);
     try{
@@ -529,7 +525,7 @@ export default function Showcase({plan,scene,title,edit,sample=false,approximate
         <span className="show-room-tag">{tag.text}</span>
       </Html>)}
       {!view&&!adding&&!pickingRoom&&!furnishing&&<ShowcaseViewPins views={views} scale={scale} portal={stage} disabled={saving}
-        canDrop={canDropView} onVisit={select} onMove={(view,position)=>void repositionView(view,position)}/>}
+        onVisit={select} onMove={(view,position)=>void repositionView(view,position)}/>}
     </Canvas>
     </div>
     {view&&rendered&&renders[view.id]&&<div className="show-render"><img src={renders[view.id]} alt={"Saved design render for "+view.name}/></div>}

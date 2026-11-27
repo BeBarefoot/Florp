@@ -153,11 +153,14 @@ def save_scene(bid: str, body: SaveScene):
         for window_id, finish in body.config.window_finishes.items():
             if window_id not in window_ids and old_windows.get(window_id) != finish.model_dump(by_alias=True):
                 raise HTTPException(422, "Assign the frame finish to a window on the current plan.")
-        for items in (body.config.views, body.config.objects):
-            if len({item.id for item in items}) != len(items) or any(
-                not (0 <= item.position.x <= bp.width and 0 <= item.position.y <= bp.height) for item in items
-            ):
-                raise HTTPException(422, "Scene positions or IDs are invalid")
+        duplicate_ids = any(len({item.id for item in items}) != len(items)
+                            for items in (body.config.views, body.config.objects))
+        objects_outside_drawing = any(
+            not (0 <= item.position.x <= bp.width and 0 <= item.position.y <= bp.height)
+            for item in body.config.objects
+        )
+        if duplicate_ids or objects_outside_drawing:
+            raise HTTPException(422, "Scene positions or IDs are invalid")
         data = body.config.model_dump(by_alias=True)
         rev = body.expected_revision + 1
         s.add(SceneRevision(blueprint_id=bid, revision=rev, plan_revision=body.plan_revision, config=data))
