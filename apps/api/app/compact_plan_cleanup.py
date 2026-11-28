@@ -14,7 +14,7 @@ from shapely.ops import unary_union
 from .ink_layers import _local_paper
 from .neutral_partitions import _fill_support
 from .plan_derive import derive, faces
-from .plan_model import Node, Wall
+from .plan_model import Node, Pt, Wall
 
 
 def _same_aperture(a, b):
@@ -159,6 +159,7 @@ def reconnect_soft_scan_jambs(model, image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     paper = _local_paper(gray)
     fill = (gray >= 0.45 * paper) & (gray <= 0.90 * paper)
+    model = _mount_doors_inside_wall_bands(model, fill)
     nodes = {node.id: node for node in model.nodes}
     points = {node.id: np.array([node.x, node.y]) for node in model.nodes}
     walls = {wall.id: wall for wall in model.walls}
@@ -234,6 +235,64 @@ def reconnect_soft_scan_jambs(model, image):
         "walls": list(walls.values()), "nodes": list(nodes.values()), "openings": openings,
     })
     return _with_geometry(updated, set(), openings)
+
+
+def _mount_doors_inside_wall_bands(model, fill):
+    """Cut a fitted entrance into the solid wall band occupying its opening."""
+    points = {node.id: np.array([node.x, node.y]) for node in model.nodes}
+    walls = {wall.id: wall for wall in model.walls}
+    degrees = Counter(key for wall in walls.values() for key in (wall.a, wall.b))
+    hosted = Counter(op.host_wall_id for op in model.openings)
+    openings = list(model.openings)
+    removed = set()
+    for i, door in enumerate(openings):
+        if door.kind != "door" or door.status == "rejected" or not door.swing or door.confidence < 0.78:
+            continue
+        host = walls.get(door.host_wall_id)
+        if not host or hosted[host.id] != 1 or degrees[host.a] != 1 or degrees[host.b] != 1:
+            continue
+        start, end = points[host.a], points[host.b]
+        length = math.dist(start, end)
+        if length < 2 or door.width_px < 0.8 * length:
+            continue
+        axis = (end - start) / length
+        jambs = [start + axis * gap for gap in (door.offset_px, door.offset_px + door.width_px)]
+        first, last = jambs
+        shoulder = min(door.width_px * 0.3, host.thickness_px * 1.5)
+        flanks = [LineString([first - shoulder * axis, first]), LineString([last, last + shoulder * axis])]
+        if not all(_fill_support(fill, flank, host.thickness_px) >= 0.85 for flank in flanks):
+            continue
+        candidates = []
+        for wall in walls.values():
+            if (wall.thickness_px < 2 * host.thickness_px or wall.height_m < door.height_m
+                    or hosted[wall.id] or wall.id in removed):
+                continue
+            a, b = points[wall.a], points[wall.b]
+            run_length = math.dist(a, b)
+            if run_length < door.width_px + 2:
+                continue
+            unit = (b - a) / run_length
+            alignment = float(unit @ axis)
+            if abs(alignment) < 0.998:
+                continue
+            normal = np.array([-unit[1], unit[0]])
+            distance = max(abs((p - a) @ normal) for p in jambs)
+            lo, hi = sorted(float((p - a) @ unit) for p in jambs)
+            if distance <= wall.thickness_px / 2 and 1 <= lo and hi <= run_length - 1:
+                candidates.append((distance, wall.id, a, unit, lo, alignment))
+        if len(candidates) != 1:
+            continue
+        _, wall_id, a, unit, offset, alignment = candidates[0]
+        span = [a + unit * gap for gap in (offset, offset + door.width_px)]
+        openings[i] = door.model_copy(update={
+            "host_wall_id": wall_id, "offset_px": offset,
+            "span": tuple(Pt(x=float(p[0]), y=float(p[1])) for p in span),
+            "hinge": door.hinge if alignment > 0 else {"start": "end", "end": "start"}[door.hinge],
+            "swing": door.swing if alignment > 0 else {"left": "right", "right": "left"}[door.swing],
+        })
+        hosted[wall_id] += 1
+        removed.add(host.id)
+    return _with_geometry(model, removed, openings) if removed else model
 
 
 def _with_geometry(model, removed, openings):

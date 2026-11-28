@@ -25,7 +25,7 @@ from .plan_reconstruct import configured_config
 
 router = APIRouter()
 WORKER_BUDGET_S = 120
-EXTRACTION_VERSION = 6
+EXTRACTION_VERSION = 7
 
 
 # The local API runs in one process. Progress is scoped to the active request

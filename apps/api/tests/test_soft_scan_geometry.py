@@ -104,6 +104,35 @@ def test_soft_scan_connects_drawn_jamb_seam_without_moving_openings():
         assert _opening_geom(plan, old)[1:] == _opening_geom(updated, joined)[1:]
 
 
+@pytest.mark.parametrize("reverse_host", [False, True])
+def test_soft_scan_mounts_detached_door_in_the_overlapping_wall_band(reverse_host):
+    coords = [(18, 113), (202, 113), (83, 127), (124, 127)]
+    a, b = ("n1", "n0") if reverse_host else ("n0", "n1")
+    plan = derive(PlanModel(
+        id="plan", image_transform=ImageTransform(width=220, height=160),
+        nodes=[Node(id=f"n{i}", x=x, y=y) for i, (x, y) in enumerate(coords)],
+        walls=[
+            Wall(id="outer-wall", a=a, b=b, thickness_px=34),
+            Wall(id="floating-host", a="n2", b="n3", thickness_px=12),
+        ],
+        openings=[
+            Opening(id="entry", kind="door", host_wall_id="floating-host", width_px=41,
+                    confidence=0.78, swing="left", hinge="start"),
+        ],
+    ))
+    image = np.full((160, 220, 3), 251, np.uint8)
+    assert reconnect_soft_scan_jambs(plan, image) is plan
+    cv2.rectangle(image, (18, 122), (82, 132), (207,) * 3, -1)
+    cv2.rectangle(image, (125, 122), (202, 132), (207,) * 3, -1)
+    updated = reconnect_soft_scan_jambs(plan, image)
+    door, = updated.openings
+    assert [wall.id for wall in updated.walls] == ["outer-wall"]
+    assert door.host_wall_id == "outer-wall"
+    assert door.width_px == 41
+    assert sorted(_opening_geom(updated, door)[1:]) == [(83, 113), (124, 113)]
+    assert (door.hinge, door.swing) == (("end", "right") if reverse_host else ("start", "left"))
+
+
 def test_compact_cleanup_removes_shallow_fitting_even_if_inset_room_collapses():
     coords = [(12, 40), (190, 40), (190, 135), (12, 135), (64, 135), (147, 135), (147, 123), (64, 123)]
     plan = derive(PlanModel(
