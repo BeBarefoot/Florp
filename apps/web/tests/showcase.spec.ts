@@ -393,8 +393,8 @@ test("the tour opens full screen, scrolls its dock, and walks through an open do
     const dock=page.getByRole("group",{name:"Tour actions"});
     await expect(toggle).toHaveAttribute("aria-expanded","false",{timeout:15_000});
     await expect(dock).toBeHidden();
-    const frame=(await canvas.boundingBox())!;
-    expect(frame).toMatchObject({x:0,y:0,width:390,height:844});
+    const frame={x:0,y:0,width:390,height:844};
+    await expect.poll(()=>canvas.boundingBox(),{timeout:15_000}).toEqual(frame);
     const button=(await toggle.boundingBox())!;
     expect(button.x).toBeLessThan(24);
     expect(button.y+button.height).toBeGreaterThan(810);
