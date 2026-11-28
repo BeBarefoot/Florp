@@ -94,7 +94,10 @@ export default function Plan3D({model:m, phone=false, dirty=false, designerOpen=
   const reviewIssues=useMemo(()=>needsReview&&!dirty&&!reviewPending?sceneReview(m,history?.plan??null,scene):[],
     [needsReview,m,dirty,reviewPending,history,scene]);
   const issueKey=(issue:ReviewIssue)=>issue.kind+":"+issue.id+":"+issue.reason;
-  const unresolved=reviewIssues.filter(issue=>!reviewed[issueKey(issue)]);
+  // A finish explicitly assigned to a current room during this edit has
+  // already been reviewed. Continue to check every finish from the saved scene.
+  const unresolved=reviewIssues.filter(issue=>!reviewed[issueKey(issue)]&&
+    (issue.kind!=="room"||issue.missing||Object.hasOwn(saved?.config.roomFloorMaterials??{},issue.id)));
   function removeReviewItem(issue:ReviewIssue){
     const {id,kind}=issue;
     if(kind==="object") change({...scene,objects:scene.objects.filter(item=>item.id!==id)});
@@ -405,6 +408,19 @@ export default function Plan3D({model:m, phone=false, dirty=false, designerOpen=
   const viewJobs=jobs.filter(j=>j.viewId===view?.id);
   const job=viewJobs.find(j=>j.id===selectedJob)??viewJobs[0];
   const asset=(name:string)=>`${API}${path}/scene/renders/${job?.id}/${name}`;
+  const finishRecovery=!!unmatchedFinishes.length&&<section aria-label="Floor finishes to review">
+    <h3>Floor finishes to review</h3>
+    <p>{dirty?"Save the plan to confirm room matches.":"These finishes belong to rooms from an earlier layout. Reassign them or remove them, then save the scene."}</p>
+    {!dirty&&unmatchedFinishes.map(([id,finish],index)=><div className="scene-actions" key={id}>
+      <span>{index+1}. {finish.kind} · {finish.color}{finish.kind!=="concrete"?` · ${Math.round(finish.widthM*100)} × ${Math.round(finish.lengthM*100)} cm`:""}</span>
+      <label>Move finish {index+1} to <select value="" onChange={e=>resolveFinish(id,e.target.value)}>
+        <option value="" disabled>Choose a room</option>
+        {rooms.map((room,i)=>!Object.hasOwn(scene.roomFloorMaterials??{},room.id)&&
+          <option key={room.id} value={room.id}>{room.label||`Room ${i+1}`}</option>)}
+      </select></label>
+      <button onClick={()=>resolveFinish(id)}>Remove finish {index+1}</button>
+    </div>)}
+  </section>;
   return <div className="plan3d scene-studio" data-phone-map={phone?showMap:undefined} data-phone-step={phone?(design?"design":"walk"):undefined} data-testid="plan-3d" data-wall-lengths={meshSignature(pieces)} data-stair-count={m.stairs?.length??0}>
     <fieldset disabled={busy||!saved} className="scene-controls">
       {check?.mismatch&&<p role="alert">Known measurements differ by {(check.difference*100).toFixed(1)}%. Review the scale in 2D before relying on furniture fit.</p>}
@@ -414,7 +430,8 @@ export default function Plan3D({model:m, phone=false, dirty=false, designerOpen=
         {reviewPending?<p role="status">Comparing the saved scene with this plan…</p>:
           dirty?<p>Save the plan first to review its changes.</p>:
           <p>{unresolved.length ? `${unresolved.length} items need review before saving.` : "Affected items reviewed. Save the scene to update it."}</p>}
-        {unresolved.map(issue=><div className="scene-actions" key={issueKey(issue)}>
+        {!reviewPending&&finishRecovery}
+        {unresolved.filter(issue=>issue.kind!=="room"||!issue.missing).map(issue=><div className="scene-actions" key={issueKey(issue)}>
           <span><strong>{issue.label}</strong> · {issue.reason}</span>
           {(issue.kind==="object"||issue.kind==="view")&&<button onClick={()=>{
             if(issue.kind==="object"){setItemId(issue.id);setMode("move");}
@@ -484,19 +501,7 @@ export default function Plan3D({model:m, phone=false, dirty=false, designerOpen=
             onChange={e=>setWallFinish({...wallFinish,color:e.target.value})}/></label>}
         </>}
       </div>
-      {!needsReview&&!!unmatchedFinishes.length&&<section aria-label="Floor finishes to review">
-        <h3>Floor finishes to review</h3>
-        <p>{dirty?"Save the plan to confirm room matches.":"These finishes belong to rooms from an earlier layout. Reassign them or remove them, then save the scene."}</p>
-        {!dirty&&unmatchedFinishes.map(([id,finish],index)=><div className="scene-actions" key={id}>
-          <span>{index+1}. {finish.kind} · {finish.color}{finish.kind!=="concrete"?` · ${Math.round(finish.widthM*100)} × ${Math.round(finish.lengthM*100)} cm`:""}</span>
-          <label>Move finish {index+1} to <select value="" onChange={e=>resolveFinish(id,e.target.value)}>
-            <option value="" disabled>Choose a room</option>
-            {rooms.map((room,i)=>!Object.hasOwn(scene.roomFloorMaterials??{},room.id)&&
-              <option key={room.id} value={room.id}>{room.label||`Room ${i+1}`}</option>)}
-          </select></label>
-          <button onClick={()=>resolveFinish(id)}>Remove finish {index+1}</button>
-        </div>)}
-      </section>}
+      {!needsReview&&finishRecovery}
       {message&&<p role="status">{message}</p>}
       <div className="scene-layout">
         <div>

@@ -993,12 +993,13 @@ test("scene changes must be reviewed before a saved finish can be removed",async
   });
   await page.getByRole("radio",{name:"3D",exact:true}).click();
   const review=page.getByRole("region",{name:"Review plan changes"});
-  await expect(review.getByText("Room needs reassignment",{exact:false})).toBeVisible({timeout:20_000});
+  const recovery=review.getByRole("region",{name:"Floor finishes to review"});
+  await expect(recovery).toBeVisible({timeout:20_000});
   const save=page.getByRole("button",{name:"Save scene",exact:true});
   await save.click();
   await expect(page.getByText("Review affected items before saving this scene.",{exact:false})).toBeVisible();
   expect(saved).toBeUndefined();
-  await review.getByRole("button",{name:"Remove"}).click();
+  await recovery.getByRole("button",{name:"Remove finish 1"}).click();
   await save.click();
   await expect(page.getByText("Scene saved.",{exact:true})).toBeVisible();
   expect(saved).toMatchObject({planRevision:1,config:{roomFloorMaterials:{}}});

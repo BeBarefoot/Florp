@@ -63,12 +63,15 @@ test("walkthrough keeps matching finishes after a plan edit and links to finish 
   let revision=1;
   let planRevision=1;
   const model={...samplePlan,id:"f",revision:2};
+  const previous={...model,revision:1,rooms:model.rooms.map(room=>
+    room.id==="bedroom"?{...room,id:"previous-room"}:room)};
   await page.setViewportSize({width:390,height:844});
-  await page.route("**/blueprints/f/*",route=>{
+  await page.route("**/blueprints/f/**",route=>{
     const endpoint=new URL(route.request().url()).pathname.split("/").pop();
     if(endpoint==="plan")return route.fulfill({json:{revision:2,model}});
     if(endpoint==="info")return route.fulfill({json:{id:"f",filename:"Owner floor",project_id:"p",width:1000,height:680}});
-    if(endpoint==="renders"||endpoint==="history")return route.fulfill({json:[]});
+    if(endpoint==="history")return route.fulfill({json:[{revision:2,model},{revision:1,model:previous}]});
+    if(endpoint==="renders")return route.fulfill({json:[]});
     if(endpoint==="review")return route.fulfill({json:{revision:2,status:"draft",blockers:[]}});
     if(endpoint==="render-settings")return route.fulfill({json:{width:1024,height:768,configured:false,model:"",provider:""}});
     if(route.request().method()==="PUT"){
@@ -90,8 +93,10 @@ test("walkthrough keeps matching finishes after a plan edit and links to finish 
   await page.getByRole("link",{name:"Review finishes from the previous layout"}).click();
   const recovery=page.getByRole("region",{name:"Floor finishes to review"});
   await expect(recovery).toBeVisible({timeout:20_000});
+  await expect(recovery.getByRole("option",{name:"Living room"})).toHaveCount(0);
   await recovery.getByRole("combobox",{name:/Move finish/}).selectOption("bedroom");
   await expect(recovery).toHaveCount(0);
+  await expect(page.getByRole("region",{name:"Review plan changes"}).getByText("Affected items reviewed. Save the scene to update it.")).toBeVisible();
   await page.getByRole("button",{name:"Save scene",exact:true}).filter({visible:true}).first().click();
   await expect.poll(()=>config.roomFloorMaterials).toEqual({living:wood,bedroom:tile});
   await page.goto("/phone/showcase/f");
