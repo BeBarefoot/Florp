@@ -330,6 +330,36 @@ def test_refreshing_an_older_plan_marks_revision_and_keeps_new_room_tags(client,
     assert len(c.get(path + "/history").json()) == 2
 
 
+def test_refreshing_a_saved_plan_preserves_the_recovered_balcony(client, monkeypatch):
+    from app import plan_api
+    from app.plan_derive import derive
+    from app.plan_model import Node, PlanModel, Wall
+
+    c, bid = client
+    path = f"/blueprints/{bid}/plan"
+    saved = c.put(path, json={"expectedRevision": 0, "model": plan(scale=reference())}).json()["model"]
+
+    async def worker(*args, **kwargs):
+        model = PlanModel.model_validate(plan())
+        model.nodes += [Node(id="left", x=100, y=20), Node(id="right", x=700, y=20)]
+        model.walls += [
+            Wall(id=f"rail-{i}", a=a, b=b, thickness_px=6, height_m=1.05)
+            for i, (a, b) in enumerate([("n0", "left"), ("left", "right"), ("right", "n1")])
+        ]
+        model = derive(model)
+        model.rooms[0].label, model.rooms[0].room_type = "Balcony", "balcony"
+        return model
+
+    monkeypatch.setattr(plan_api, "run_worker", worker)
+    response = c.post(path + "/extract?expected_revision=1")
+    assert response.status_code == 200, response.text
+    refreshed = c.get(path).json()["model"]
+    balcony, indoor = refreshed["rooms"]
+    assert (balcony["label"], balcony["roomType"]) == ("Balcony", "balcony")
+    assert indoor["id"] == saved["rooms"][0]["id"]
+    assert refreshed["scale"] == saved["scale"]
+
+
 def test_extraction_diagnostics_include_saved_model_source_and_runtime(client):
     c, bid = client
     endpoint = f"/blueprints/{bid}/plan"

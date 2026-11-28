@@ -94,14 +94,16 @@ def _outline(ink, facade, span, wall_width):
     return max(choices, default=(None, None, None))[2]
 
 
-def _attach(model, points, widths):
-    coords = {(n.x, n.y): n for n in model.nodes}
+def _attach(model, points, widths, replaced):
+    old_walls = [wall for wall in model.walls if wall.id not in replaced]
+    retained = {node for wall in old_walls for node in (wall.a, wall.b)}
+    nodes = [node for node in model.nodes if node.id in retained]
+    coords = {(n.x, n.y): n for n in nodes}
     if len(model.nodes) > 19996 or len(model.walls) > 9995:
         return model
     key = "balcony-" + sha256(repr(points).encode()).hexdigest()[:16]
     if any(w.id.startswith(key) for w in model.walls):
         return model
-    nodes = list(model.nodes)
     ends = []
     for i, (x, y) in enumerate(points):
         node = coords.get((x, y))
@@ -115,25 +117,55 @@ def _attach(model, points, widths):
         Wall(id=f"{key}-edge-{i}", a=a, b=b, thickness_px=width, height_m=1.05, exterior=True)
         for i, (a, b, width) in enumerate(zip(ends, ends[1:], widths))
     ]
-    updated = _join_tees(model.model_copy(update={"nodes": nodes, "walls": model.walls + walls}))
+    updated = _join_tees(model.model_copy(update={"nodes": nodes, "walls": old_walls + walls}))
     # Keep extraction-only observations that are unavailable to derivation.
     observed = {"pruned_fragments", "merged_duplicates", "open_passage"}
     updated = derive(updated)
     updated.findings.extend(f for f in model.findings if f.category in observed)
     boundary = {w.id for w in walls}
+    deck = Polygon(points)
     for room in updated.rooms:
         if boundary <= set(room.wall_ids):
-            room.label, room.room_type = "Balcony", "balcony"
-            break
+            floor = Polygon([(p.x, p.y) for p in room.polygon])
+            if floor.is_valid and deck.buffer(2).covers(floor):
+                room.label, room.room_type = "Balcony", "balcony"
+                break
     else:
         return model
     # Keep the editor outline consistent with the newly recovered boundary.
     if updated.envelope:
         old = Polygon([(p.x, p.y) for p in updated.envelope])
-        combined = old.union(Polygon(points))
+        combined = old.union(deck)
         if combined.geom_type == "Polygon" and len(combined.exterior.coords) <= 65:
             updated.envelope = [Pt(x=x, y=y) for x, y in list(combined.exterior.coords)[:-1]]
     return updated
+
+
+def _partial_rails(model, coordinates, nodes, protected):
+    """Replace centerlines supported by the drawn rail without crossing a room."""
+    inside = Polygon(coordinates).buffer(-2)
+    rails = [LineString([a, b]) for a, b in zip(coordinates, coordinates[1:])]
+    replaced = set()
+    for wall in model.walls:
+        line = LineString([(nodes[key].x, nodes[key].y) for key in (wall.a, wall.b)])
+        if line.is_empty or not line.length:
+            continue
+        tolerance = max(3, min(10, wall.thickness_px / 2))
+        start, end = line.coords
+        for rail in rails:
+            first, last = rail.coords
+            axis = int(first[0] == last[0])
+            if abs(end[1 - axis] - start[1 - axis]) > 0.1 * line.length:
+                continue
+            if rail.buffer(tolerance).covers(line):
+                if wall.id in protected:
+                    return None
+                replaced.add(wall.id)
+                break
+        else:
+            if inside.intersection(line).length > 2:
+                return None
+    return replaced
 
 
 def recover_balconies(model, image):
@@ -141,6 +173,7 @@ def recover_balconies(model, image):
         return model
     by_wall = {w.id: w for w in model.walls}
     nodes = {n.id: n for n in model.nodes}
+    protected = {opening.host_wall_id for opening in model.openings}
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     strokes = gray < 0.84 * _local_paper(gray)
     for door in model.openings:
@@ -163,33 +196,30 @@ def recover_balconies(model, image):
             continue
         direction = math.copysign(1, end - start)
         span = sorted(start + direction * offset for offset in (door.offset_px, door.offset_px + door.width_px))
-        bounds = [getattr(n, cross) for n in model.nodes]
-        reverse = abs(max(bounds) - lane) < abs(min(bounds) - lane)
-        if min(abs(lane - min(bounds)), abs(lane - max(bounds))) > wall.thickness_px:
-            continue
         far_edge = raster.shape[0] - 1
-        facade = round(far_edge - lane if reverse else lane)
-        found = _outline(raster[::-1] if reverse else raster, facade, span, wall.thickness_px)
-        if found is None:
-            continue
-        left, right, edge, t_left, t_outer, t_right = found
-        # Snap a return to an established joint when it agrees with the
-        # source within one rail thickness.
-        anchors = [getattr(n, axis) for n in nodes.values() if abs(getattr(n, cross) - lane) < 1e-6]
-        left_joint = min(anchors, key=lambda x: abs(x - left))
-        right_joint = min(anchors, key=lambda x: abs(x - right))
-        left = left_joint if abs(left_joint - left) <= 3 else left
-        right = right_joint if abs(right_joint - right) <= 3 else right
-        edge = far_edge - edge if reverse else edge
-        coordinates = [(left, lane), (left, edge), (right, edge), (right, lane)]
-        if axis == "y":
-            coordinates = [(c, x) for x, c in coordinates]
-        # Ignore an outline over walls the extractor has already recovered.
-        interior = Polygon(coordinates).buffer(-2)
-        if any(interior.intersects(LineString([(nodes[w.a].x, nodes[w.a].y), (nodes[w.b].x, nodes[w.b].y)]))
-               for w in model.walls):
-            continue
-        updated = _attach(model, coordinates, (t_left, t_outer, t_right))
-        if updated is not model:
-            return updated
+        anchors = set()
+        for candidate in model.walls:
+            p, q = nodes[candidate.a], nodes[candidate.b]
+            if all(abs(getattr(n, cross) - lane) < 1e-6 for n in (p, q)):
+                anchors.update((getattr(p, axis), getattr(q, axis)))
+        for reverse in (False, True):
+            facade = round(far_edge - lane if reverse else lane)
+            found = _outline(raster[::-1] if reverse else raster, facade, span, wall.thickness_px)
+            if found is None:
+                continue
+            left, right, edge, t_left, t_outer, t_right = found
+            left_joint = min(anchors, key=lambda x: (abs(x - left), x))
+            right_joint = min(anchors, key=lambda x: (abs(x - right), x))
+            left = left_joint if abs(left_joint - left) <= 4 else left
+            right = right_joint if abs(right_joint - right) <= 4 else right
+            edge = far_edge - edge if reverse else edge
+            coordinates = [(left, lane), (left, edge), (right, edge), (right, lane)]
+            if axis == "y":
+                coordinates = [(c, x) for x, c in coordinates]
+            replaced = _partial_rails(model, coordinates, nodes, protected)
+            if replaced is None:
+                continue
+            updated = _attach(model, coordinates, (t_left, t_outer, t_right), replaced)
+            if updated is not model:
+                return updated
     return model

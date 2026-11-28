@@ -25,7 +25,7 @@ from .plan_reconstruct import configured_config
 
 router = APIRouter()
 WORKER_BUDGET_S = 120
-EXTRACTION_VERSION = 5
+EXTRACTION_VERSION = 6
 
 
 # The local API runs in one process. Progress is scoped to the active request
@@ -322,9 +322,14 @@ async def extract_revision(bid: str, expected_revision: int, body: Extract | Non
         model.scale = previous.scale.model_copy(deep=True)
         if not model.scale.reference and proposal:
             model.scale.proposal = proposal
+        balconies = {tuple(room.wall_ids): room for room in model.rooms if room.room_type == "balcony"}
         model.rooms = previous.rooms
         model.room_zones = previous.room_zones
         model = derive(model)
+        for room in model.rooms:
+            recovered = balconies.get(tuple(room.wall_ids))
+            if recovered and not (room.label or room.room_type):
+                room.label, room.room_type = recovered.label, recovered.room_type
         from .room_symbols import tag_rooms
         model = tag_rooms(model, model.room_symbols)
     with Session(get_engine()) as s:

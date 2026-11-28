@@ -485,6 +485,10 @@ def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, p
     found = gap_openings.detect(
         image, [o for o in objects if o.kind == "wall"], strips, boxes, exterior_zone, framed_site=bool(framed)
     )
+    if resize is not None:
+        from .neutral_swings import filter_soft_scan_swings
+
+        found.objects = filter_soft_scan_swings(image, objects, found.objects)
     # Photo void probes extend past the ends of walls. A crop must constrain
     # the inferred aperture and its generated host as well as the masonry.
     if polygon:
@@ -551,9 +555,12 @@ def _extract_raster(source, roi, plan_id, reconstruct_config, detect_scale, *, p
             model = remove_dimension_hosts(model, image, strips)
             model = painted_swings(model, image)
     if resize is not None:
-        from .compact_plan_cleanup import clean_compact_plan
+        from .compact_plan_cleanup import clean_compact_plan, reconnect_soft_scan_jambs
 
         model = clean_compact_plan(model)
+        joined = reconnect_soft_scan_jambs(model, image)
+        if joined is not model:
+            model = clean_compact_plan(joined)
     if not roi and stats.get("neutral_wall_bands"):
         from .balconies import recover_balconies
 

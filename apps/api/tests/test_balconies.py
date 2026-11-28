@@ -9,7 +9,8 @@ from app.plan_score import _opening_geom
 
 
 @pytest.mark.parametrize("rotation", [0, 1, 2, 3])
-def test_paired_balcony_rails_follow_an_exterior_door(rotation):
+@pytest.mark.parametrize("partial_rails", [False, True])
+def test_paired_balcony_rails_follow_an_exterior_door(rotation, partial_rails):
     def point(x, y):
         for _ in range(rotation):
             x, y = y, 209 - x
@@ -28,6 +29,17 @@ def test_paired_balcony_rails_follow_an_exterior_door(rotation):
             Opening(id="window", host_wall_id="w0", kind="window", offset_px=115, width_px=25),
         ],
     ))
+    if partial_rails:
+        extra = [
+            ("left", point(24, 54)), ("right", point(132, 60)), ("right-base", point(132, 96)),
+        ]
+        model = derive(model.model_copy(update={
+            "nodes": model.nodes + [Node(id=key, x=x, y=y) for key, (x, y) in extra],
+            "walls": model.walls + [
+                Wall(id="left-stub", a="0", b="left", thickness_px=9),
+                Wall(id="right-stub", a="right", b="right-base", thickness_px=8),
+            ],
+        }))
     image = np.full((210, 210, 3), 251, np.uint8)
 
     def draw_rail(points):
@@ -43,6 +55,7 @@ def test_paired_balcony_rails_follow_an_exterior_door(rotation):
     assert balcony.label == "Balcony"
     assert balcony.area_px2 == 102 * 52
     assert len(recovered.rooms) == 2
+    assert all(not w.id.endswith("-stub") for w in recovered.walls)
     assert sum(w.exterior and w.height_m == 1.05 for w in recovered.walls if w.exterior) == 3
     for old, new in zip(model.openings, recovered.openings):
         assert new.width_px == old.width_px

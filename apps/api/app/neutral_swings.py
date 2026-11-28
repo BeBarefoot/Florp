@@ -17,6 +17,49 @@ def _samples(raster, points):
     )
 
 
+def filter_soft_scan_swings(image, walls, items):
+    """Separate architectural door swings from leaves and fixture arcs."""
+    from shapely import STRtree
+    from shapely.geometry import LineString, Point
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    paper = _local_paper(gray)
+    fill = (gray >= 0.77 * paper) & (gray <= 0.92 * paper)
+    lines = [LineString([(w.start.x, w.start.y), (w.end.x, w.end.y)]) for w in walls]
+    index = STRtree(lines)
+    removed = set()
+    for item in items:
+        if item.kind != "door" or not item.boundary_supported or item.leaf is None:
+            continue
+        start = np.array([item.start.x, item.start.y])
+        end = np.array([item.end.x, item.end.y])
+        width = math.dist(start, end)
+        if width < 16:
+            continue
+        axis = (end - start) / width
+        normal = np.array([-axis[1], axis[0]])
+        depth = width * np.linspace(0.10, 0.36, 12)[:, None, None] * axis
+        shoulder = width * np.linspace(-0.14, 0.14, 11)[None, :, None] * normal
+        first = _samples(fill, start - depth + shoulder).mean()
+        second = _samples(fill, end + depth + shoulder).mean()
+        backed = min(first, second) >= 0.18
+        if backed and min(abs(axis)) > 0.25:
+            # Diagonal bathroom fixtures can have the same drawn arc as a
+            # door. Require a structural run at each jamb, not a thin panel.
+            reach = 0.37 * width
+            for tip in (start, end):
+                point = Point(tip)
+                backed &= any(
+                    walls[j].thickness_px >= 0.18 * width
+                    and lines[j].length >= 0.70 * width
+                    and lines[j].distance(point) <= reach
+                    for j in index.query(point.buffer(reach))
+                )
+        if not backed:
+            removed.update((item.id, item.host_id))
+    return [item for item in items if item.id not in removed]
+
+
 def swing_candidates(gray, walls):
     # Bound the sweep search on large scans. Geometry is returned in source
     # coordinates, and the gap-first detector still sees the full resolution.

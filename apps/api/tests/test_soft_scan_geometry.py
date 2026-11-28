@@ -2,9 +2,12 @@ import cv2
 import numpy as np
 import pytest
 
-from app.compact_plan_cleanup import clean_compact_plan
+from app.compact_plan_cleanup import clean_compact_plan, reconnect_soft_scan_jambs
+from app.neutral_swings import filter_soft_scan_swings
 from app.plan_derive import derive
 from app.plan_model import ImageTransform, Node, Opening, PlanModel, Wall
+from app.plan_score import _opening_geom
+from app.plan_workspace import Point, Segment
 from app.workspace_worker import build
 
 
@@ -58,3 +61,64 @@ def test_compact_cleanup_keeps_the_wider_door_and_installed_room():
     assert [door.id for door in cleaned.openings] == ["entry"]
     assert {wall.id for wall in cleaned.walls} == {"w0", "w1", "w2", "w3"}
     assert [room.id for room in cleaned.rooms] == [room.id for room in plan.rooms]
+
+
+def test_soft_scan_swing_needs_masonry_beyond_the_arc():
+    image = np.full((150, 200, 3), 251, np.uint8)
+    cv2.rectangle(image, (10, 43), (65, 55), (213,) * 3, -1)
+    cv2.rectangle(image, (108, 43), (170, 55), (213,) * 3, -1)
+    cv2.line(image, (108, 49), (108, 89), (150,) * 3, 2)
+    cv2.ellipse(image, (108, 49), (41, 41), 0, 90, 180, (150,) * 3, 2)
+    horizontal = Segment(id="masonry", start=Point(x=108, y=49), end=Point(x=68, y=49))
+    vertical = Segment(id="leaf", start=Point(x=108, y=49), end=Point(x=108, y=89))
+    doors = [
+        horizontal.model_copy(update={"id": "door", "kind": "door", "host_id": horizontal.id,
+                                      "boundary_supported": True, "leaf": Point(x=0, y=1)}),
+        vertical.model_copy(update={"id": "false-door", "kind": "door", "host_id": vertical.id,
+                                    "boundary_supported": True, "leaf": Point(x=-1, y=0)}),
+    ]
+    found = filter_soft_scan_swings(image, [], [horizontal, vertical, *doors])
+    assert [item.id for item in found] == ["masonry", "door"]
+
+
+def test_soft_scan_connects_drawn_jamb_seam_without_moving_openings():
+    plan = derive(PlanModel(
+        id="plan", image_transform=ImageTransform(width=220, height=160),
+        nodes=[Node(id=f"n{i}", x=x, y=y) for i, (x, y) in enumerate(
+            [(14, 45), (82, 45), (114, 45), (125, 45), (200, 45), (200, 140), (14, 140)]
+        )],
+        walls=[Wall(id=f"w{i}", a=f"n{a}", b=f"n{b}", thickness_px=14)
+               for i, (a, b) in enumerate([(0, 1), (1, 2), (3, 4), (4, 5), (5, 6), (6, 0)])],
+        openings=[
+            Opening(id="door", kind="door", host_wall_id="w1", width_px=32),
+            Opening(id="window", kind="window", host_wall_id="w2", offset_px=20, width_px=40),
+        ],
+    ))
+    image = np.full((160, 220, 3), 251, np.uint8)
+    assert reconnect_soft_scan_jambs(plan, image) is plan
+    cv2.rectangle(image, (114, 40), (125, 50), (202,) * 3, -1)
+    updated = reconnect_soft_scan_jambs(plan, image)
+    assert len(updated.walls) == len(plan.walls) + 1
+    assert len(updated.rooms) == 1
+    for old, joined in zip(plan.openings, updated.openings):
+        assert _opening_geom(plan, old)[1:] == _opening_geom(updated, joined)[1:]
+
+
+def test_compact_cleanup_removes_shallow_fitting_even_if_inset_room_collapses():
+    coords = [(12, 40), (190, 40), (190, 135), (12, 135), (64, 135), (147, 135), (147, 123), (64, 123)]
+    plan = derive(PlanModel(
+        id="plan", image_transform=ImageTransform(width=220, height=160),
+        nodes=[Node(id=f"n{i}", x=x, y=y) for i, (x, y) in enumerate(coords)],
+        walls=[
+            Wall(id=f"w{i}", a=f"n{a}", b=f"n{b}", thickness_px=width)
+            for i, (a, b, width) in enumerate([
+                (0, 1, 16), (1, 2, 16), (2, 5, 29), (5, 4, 29), (4, 3, 29), (3, 0, 16),
+                (4, 7, 5), (7, 6, 5), (6, 5, 5),
+            ])
+        ],
+        openings=[Opening(id="door", kind="door", host_wall_id="w0", offset_px=54, width_px=35)],
+    ))
+    cleaned = clean_compact_plan(plan)
+    assert {wall.id for wall in cleaned.walls} == {f"w{i}" for i in range(6)}
+    assert len(cleaned.rooms) == 1
+    assert cleaned.openings == plan.openings
